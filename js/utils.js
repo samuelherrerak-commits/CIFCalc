@@ -132,8 +132,9 @@ export function computeContainer(container, items) {
     acc.vat += c.vatAmount;
     acc.other += c.otherExpenses;
     acc.landed += c.landedTotal;
+    acc.totalQty += c.qty;
     return acc;
-  }, { fob: 0, insurance: 0, cif: 0, tariff: 0, portFee: 0, customsBroker: 0, vat: 0, other: 0, landed: 0 });
+  }, { fob: 0, insurance: 0, cif: 0, tariff: 0, portFee: 0, customsBroker: 0, vat: 0, other: 0, landed: 0, totalQty: 0 });
 
   return { totalVolume, volumePercentage, containersRequired, calculated, summary };
 }

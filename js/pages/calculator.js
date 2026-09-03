@@ -21,6 +21,8 @@ const Calculator = {
     }
 
     let items = Store.getItemsByContainer(containerId);
+    let pendingSupplierItem = null;
+    let pendingSupplierId = null;
 
     // --- Helper de actualización de UI ---
     const refreshResults = () => {
@@ -47,7 +49,7 @@ const Calculator = {
       if (!tbody) return;
 
       if (items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="18" class="p-4 text-center text-slate-400">Sin productos. Agrega un SKU para calcular.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="19" class="p-4 text-center text-slate-400">Sin productos. Agrega un SKU para calcular.</td></tr>`;
         tfoot.innerHTML = '';
       } else {
         tbody.innerHTML = res.calculated.map(c => `
@@ -64,6 +66,7 @@ const Calculator = {
             <td class="p-2 text-teal-700 font-medium">$${fmtNum(c.portFeeAmount)}</td>
             <td class="p-2 text-amber-700 font-medium">$${fmtNum(c.customsBrokerAmount)}</td>
             <td class="p-2 text-purple-700 font-medium">$${fmtNum(c.vatAmount)}</td>
+            <td class="p-2 text-purple-600 font-medium">$${fmtNum(c.ivPerUnit)}</td>
             <td class="p-2">$${fmtNum(c.otherExpenses)}</td>
             <td class="p-2 font-bold text-slate-900">$${fmtNum(c.landedTotal)}</td>
             <td class="p-2 bg-slate-50 font-semibold text-slate-700">$${fmtNum(c.costNoVat)}</td>
@@ -88,6 +91,7 @@ const Calculator = {
             <td class="p-2 text-teal-800">$${fmtNum(s.portFee)}</td>
             <td class="p-2 text-amber-700">$${fmtNum(Number(container.customs_broker_fee) || 0)}</td>
             <td class="p-2 text-purple-800">$${fmtNum(s.vat)}</td>
+            <td class="p-2 text-purple-700">${s.totalQty > 0 ? '$' + fmtNum(s.vat / s.totalQty) : '-'}</td>
             <td class="p-2">$${fmtNum(s.other)}</td>
             <td class="p-2 font-black text-slate-900">$${fmtNum(s.landed)}</td>
             <td class="p-2 bg-slate-200">-</td>
@@ -133,11 +137,14 @@ const Calculator = {
       tbody.innerHTML = items.map((item, index) => `
         <tr class="border-b border-slate-100 hover:bg-slate-50" data-idx="${index}">
           <td class="p-2">
-            <select data-field="supplier_id" data-idx="${index}" class="w-32 p-1 border rounded bg-white text-xs">
-              <option value="">— Proveedor —</option>
-              ${suppliers.map(s => `<option value="${s.id}" ${s.id === item.supplier_id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
-              <option value="__new__">+ Nuevo proveedor</option>
-            </select>
+            <div class="flex items-center gap-1">
+              <select data-field="supplier_id" data-idx="${index}" class="w-32 p-1 border rounded bg-white text-xs">
+                <option value="">— Proveedor —</option>
+                ${suppliers.map(s => `<option value="${s.id}" ${s.id === item.supplier_id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
+                <option value="__new__">+ Nuevo proveedor</option>
+              </select>
+              ${item.supplier_id ? `<button data-edit-supplier="${index}" title="Editar proveedor" class="text-blue-600 hover:text-blue-800 font-bold px-1">✎</button>` : ''}
+            </div>
           </td>
           <td class="p-2"><input data-field="origin_country" data-idx="${index}" value="${esc(item.origin_country)}" class="w-20 p-1 border rounded bg-white text-xs"></td>
           <td class="p-2"><input data-field="sku" data-idx="${index}" value="${esc(item.sku)}" class="w-20 p-1 border rounded bg-white text-xs"></td>
@@ -203,16 +210,69 @@ const Calculator = {
           refreshItemsTable();
         });
       });
+      tbody.querySelectorAll('[data-edit-supplier]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          openEditSupplier(Number(e.target.dataset.editSupplier));
+        });
+      });
     };
 
     const createNewSupplier = (itemIdx) => {
-      const name = prompt('Nombre del nuevo proveedor:');
-      if (!name) {
-        refreshItemsTable();
-        return;
+      pendingSupplierItem = itemIdx;
+      document.getElementById('supplier-modal').classList.remove('hidden');
+      document.getElementById('sup-name').focus();
+    };
+
+    const openEditSupplier = (itemIdx) => {
+      const item = items[itemIdx];
+      const sup = Store.getById('suppliers', item.supplier_id);
+      if (!sup) return;
+      pendingSupplierItem = itemIdx;
+      pendingSupplierId = sup.id;
+      document.getElementById('sup-name').value = sup.name || '';
+      document.getElementById('sup-country').value = sup.country || '';
+      document.getElementById('sup-email').value = sup.contact_email || '';
+      document.getElementById('sup-phone').value = sup.contact_phone || '';
+      document.getElementById('supplier-modal').classList.remove('hidden');
+      document.getElementById('supplier-modal-title').textContent = 'Editar Proveedor';
+      document.getElementById('sup-name').focus();
+    };
+
+    const closeSupplierModal = () => {
+      document.getElementById('supplier-modal').classList.add('hidden');
+      pendingSupplierItem = null;
+      pendingSupplierId = null;
+      ['sup-name', 'sup-country', 'sup-email', 'sup-phone'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      refreshItemsTable();
+    };
+
+    const saveSupplier = () => {
+      const name = document.getElementById('sup-name').value.trim();
+      if (!name) { document.getElementById('sup-name').focus(); return; }
+      const country = document.getElementById('sup-country').value.trim();
+      const email = document.getElementById('sup-email').value.trim();
+      const phone = document.getElementById('sup-phone').value.trim();
+
+      let supplier;
+      if (pendingSupplierId) {
+        supplier = Store.update('suppliers', {
+          id: pendingSupplierId,
+          name,
+          country,
+          contact_email: email,
+          contact_phone: phone
+        });
+      } else {
+        supplier = Store.insert('suppliers', { name, country, contact_email: email, contact_phone: phone });
       }
-      const supplier = Store.insert('suppliers', { name, country: '', contact_email: '', contact_phone: '' });
-      items[itemIdx] = { ...items[itemIdx], supplier_id: supplier.id };
+      if (pendingSupplierItem != null && items[pendingSupplierItem]) {
+        items[pendingSupplierItem] = { ...items[pendingSupplierItem], supplier_id: supplier.id };
+      }
+      pendingSupplierItem = null;
+      pendingSupplierId = null;
+      closeSupplierModal();
       refreshResults();
       refreshItemsTable();
     };
@@ -225,6 +285,9 @@ const Calculator = {
       <div class="flex items-center justify-between gap-3">
         <a href="#/" class="text-blue-600 hover:text-blue-800 text-sm font-semibold">← Dashboard</a>
         <div class="flex items-center gap-2">
+          <button id="btn-export" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 px-3 rounded-lg border transition">
+            ⬇ Exportar Excel
+          </button>
           <button id="btn-reset" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-2 px-3 rounded-lg border transition">
             🔄 Restablecer Datos
           </button>
@@ -235,7 +298,7 @@ const Calculator = {
       </div>
 
       <!-- Header + Compañía -->
-      <header class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
+      <header class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
           <div>
             <h1 class="text-2xl font-bold text-slate-900">CIFCalc — Calculadora CIF</h1>
@@ -331,7 +394,7 @@ const Calculator = {
       </header>
 
       <!-- Tabla de productos -->
-      <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
         <div class="flex justify-between items-center border-b pb-2">
           <h2 class="text-lg font-bold text-slate-800">Registro de Productos (SKUs)</h2>
           <button id="btn-add-item" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-sm transition">
@@ -363,7 +426,7 @@ const Calculator = {
       </div>
 
       <!-- Tabla de resultados -->
-      <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
+      <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
         <h2 class="text-lg font-bold text-slate-800 border-b pb-2">Resultados Prorrateados y Costo Landed Final</h2>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse text-xs">
@@ -381,6 +444,7 @@ const Calculator = {
                 <th class="p-2 text-teal-300">Tasa Port. ($)</th>
                 <th class="p-2 text-amber-300">Ag. Aduanal ($)</th>
                 <th class="p-2 text-purple-300">IVA ($)</th>
+                <th class="p-2 text-purple-300">IVA Unit. ($)</th>
                 <th class="p-2">Otros Gastos ($)</th>
                 <th class="p-2">Landed Total ($)</th>
                 <th class="p-2 bg-slate-700">Costo Unit. sin IVA ($)</th>
@@ -398,6 +462,40 @@ const Calculator = {
       <!-- Acción de estado (irreversible) -->
       <div class="flex justify-end">
         <button id="btn-status" class="text-sm font-bold py-2.5 px-6 rounded-lg shadow-sm transition hidden"></button>
+      </div>
+
+      <!-- Modal Proveedor -->
+      <div id="supplier-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-5 space-y-4">
+          <div class="flex justify-between items-center">
+            <h3 id="supplier-modal-title" class="text-lg font-bold text-slate-800">Nuevo Proveedor</h3>
+            <button id="sup-close" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
+          </div>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre *</label>
+              <input id="sup-name" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nombre del proveedor">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">País</label>
+              <input id="sup-country" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="País de origen">
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Email</label>
+                <input id="sup-email" type="email" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="correo@ejemplo.com">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Teléfono</label>
+                <input id="sup-phone" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="+52...">
+              </div>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 pt-1">
+            <button id="sup-cancel" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-2 px-4 rounded-lg transition">Cancelar</button>
+            <button id="sup-save" class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition">Guardar</button>
+          </div>
+        </div>
       </div>
     `;
 
@@ -533,6 +631,109 @@ const Calculator = {
       Store.removeContainer(containerId);
       window.location.hash = '#/';
     });
+
+    // Modal proveedor
+    document.getElementById('sup-save').addEventListener('click', saveSupplier);    document.getElementById('sup-cancel').addEventListener('click', closeSupplierModal);
+    document.getElementById('sup-close').addEventListener('click', closeSupplierModal);
+    document.getElementById('supplier-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'supplier-modal') closeSupplierModal();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeSupplierModal();
+    });
+    ['sup-name', 'sup-country', 'sup-email', 'sup-phone'].forEach(id => {
+      document.getElementById(id).addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); saveSupplier(); }
+      });
+    });
+
+    // Exportar a Excel
+    const exportExcel = () => {
+      if (!window.XLSX) { alert('La librería de exportación no está disponible. Revisa tu conexión.'); return; }
+      const res = computeContainer(container, items);
+      const cs = companies.find(co => co.id === container.company_id);
+      const companyName = cs ? cs.name : 'Sin asignar';
+
+      const supName = (id) => {
+        const s = suppliers.find(x => x.id === id);
+        return s ? (s.name || '') : '';
+      };
+
+      const products = items.map(it => {
+        const sup = suppliers.find(x => x.id === it.supplier_id);
+        return {
+          'Proveedor': sup ? (sup.name || '') : '',
+          'País Origen': it.origin_country || '',
+          'SKU': it.sku || '',
+          'Nombre': it.name || '',
+          'Cantidad': Number(it.qty) || 0,
+          'Unid/Caja': Number(it.units_per_box) || 0,
+          'Vol. Caja (m³)': Number(it.box_volume) || 0,
+          'FOB Unit ($)': Number(it.fob_unit) || 0,
+          'Cód. Arancel': it.hs_code || '',
+          '% Arancel': Number(it.tariff_rate) || 0,
+          'Margen %': Number(it.gain_margin) || 0
+        };
+      });
+
+      const results = res.calculated.map(c => ({
+        'SKU': c.item.sku || '',
+        'Vol. Total (m³)': c.volTotal,
+        '% Prorrateo': c.factor * 100,
+        'Unid/Cont.': c.unitsPerContainer,
+        'FOB Total ($)': c.fobTotal,
+        'Flete Mar. ($)': c.oceanFreightAssigned,
+        'Seguro ($)': c.insuranceAmount,
+        'CIF Total ($)': c.cifTotal,
+        'Arancel ($)': c.tariffAmount,
+        'Tasa Port. ($)': c.portFeeAmount,
+        'Ag. Aduanal ($)': c.customsBrokerAmount,
+        'IVA ($)': c.vatAmount,
+        'IVA Unit. ($)': c.ivPerUnit,
+        'Otros Gastos ($)': c.otherExpenses,
+        'Landed Total ($)': c.landedTotal,
+        'Costo Unit. sin IVA ($)': c.costNoVat,
+        'Costo Unit. + IVA ($)': c.costWithVat,
+        'P. Venta / Costo ($)': c.salePriceOnCost,
+        'P. Venta / Costo + IVA ($)': c.salePriceOnCostVat
+      }));
+
+      const summary = [
+        { 'Concepto': 'Nº Embarque / BL', 'Valor': container.bl_number || '' },
+        { 'Concepto': 'Fecha de Operación', 'Valor': container.operation_date || '' },
+        { 'Concepto': 'Compañía', 'Valor': companyName },
+        { 'Concepto': 'Vol. Contenedor (m³)', 'Valor': container.container_capacity },
+        { 'Concepto': 'Tasa Seguro (%)', 'Valor': container.insurance_rate },
+        { 'Concepto': 'Tasa Portuaria (%)', 'Valor': container.port_fee_rate },
+        { 'Concepto': 'Tasa IVA Importación (%)', 'Valor': container.vat_rate },
+        { 'Concepto': 'Flete Marítimo ($)', 'Valor': container.ocean_freight },
+        { 'Concepto': 'Flete Terrestre ($)', 'Valor': container.inland_freight },
+        { 'Concepto': 'Gastos Aduana ($)', 'Valor': container.customs_expenses },
+        { 'Concepto': 'Agente Aduanal ($)', 'Valor': container.customs_broker_fee },
+        { 'Concepto': 'Gastos Operativos ($)', 'Valor': container.op_expenses },
+        { 'Concepto': 'Vol. Total Ocupado (m³)', 'Valor': res.totalVolume },
+        { 'Concepto': 'Ocupación (%)', 'Valor': res.volumePercentage },
+        { 'Concepto': 'Contenedores Requeridos (FCL)', 'Valor': res.containersRequired },
+        { 'Concepto': 'Total FOB ($)', 'Valor': res.summary.fob },
+        { 'Concepto': 'Total CIF ($)', 'Valor': res.summary.cif },
+        { 'Concepto': 'Total Arancel ($)', 'Valor': res.summary.tariff },
+        { 'Concepto': 'Total Tasa Portuaria ($)', 'Valor': res.summary.portFee },
+        { 'Concepto': 'Total IVA ($)', 'Valor': res.summary.vat },
+        { 'Concepto': 'Total Otros Gastos ($)', 'Valor': res.summary.other },
+        { 'Concepto': 'Landed Total ($)', 'Valor': res.summary.landed },
+        { 'Concepto': 'Cantidad Total', 'Valor': res.summary.totalQty }
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(products), 'Productos');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(results), 'Resultados');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'Resumen');
+      const fname = `CIFCalc_${(container.bl_number || 'contenedor').replace(/[^\w\-]+/g, '_')}.xlsx`;
+      XLSX.writeFile(wb, fname);
+    };
+
+    // Exportar a Excel
+    document.getElementById('btn-export').addEventListener('click', exportExcel);
 
     // Inicial
     refreshResults();
