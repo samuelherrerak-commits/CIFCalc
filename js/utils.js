@@ -62,11 +62,12 @@ export function computeContainer(container, items) {
     const cifTotal = fobTotal + oceanFreightAssigned + insuranceAmount;
 
     const tariffAmount = cifTotal * ((Number(item.tariff_rate) || 0) / 100);
-
-    // IVA SOLO sobre FOB + flete marítimo (nunca sobre CIF completo)
-    const vatAmount = (fobTotal + oceanFreightAssigned) * (vatRate / 100);
-
     const portFeeAmount = cifTotal * (portFeeRate / 100);
+
+    // IVA base = producto (FOB) + flete marítimo + seguro + arancel + tasa portuaria
+    // (flete terrestre, gastos de aduana, agente aduanal y operativos NO entran al IVA)
+    const vatAmount = (fobTotal + oceanFreightAssigned + insuranceAmount + tariffAmount + portFeeAmount) * (vatRate / 100);
+
     const customsBrokerAmount = customsBrokerFee * factor;
     const inlandAssigned = inlandFreight * factor;
     const customsAssigned = customsExpenses * factor;
@@ -74,7 +75,7 @@ export function computeContainer(container, items) {
 
     const otherExpenses = inlandAssigned + customsAssigned + opAssigned;
 
-    const landedTotal = cifTotal + tariffAmount + portFeeAmount + customsBrokerAmount + otherExpenses;
+    const landedTotal = cifTotal + tariffAmount + portFeeAmount + customsBrokerAmount + otherExpenses + vatAmount;
     const unitLanded = qty > 0 ? (landedTotal / qty) : 0;
 
     return {
