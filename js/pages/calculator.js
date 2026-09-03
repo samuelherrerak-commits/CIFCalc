@@ -47,7 +47,7 @@ const Calculator = {
       if (!tbody) return;
 
       if (items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="15" class="p-4 text-center text-slate-400">Sin productos. Agrega un SKU para calcular.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="18" class="p-4 text-center text-slate-400">Sin productos. Agrega un SKU para calcular.</td></tr>`;
         tfoot.innerHTML = '';
       } else {
         tbody.innerHTML = res.calculated.map(c => `
@@ -66,7 +66,10 @@ const Calculator = {
             <td class="p-2 text-purple-700 font-medium">$${fmtNum(c.vatAmount)}</td>
             <td class="p-2">$${fmtNum(c.otherExpenses)}</td>
             <td class="p-2 font-bold text-slate-900">$${fmtNum(c.landedTotal)}</td>
-            <td class="p-2 bg-blue-100 font-extrabold text-blue-900 text-sm">$${fmtNum(c.unitLanded)}</td>
+            <td class="p-2 bg-slate-50 font-semibold text-slate-700">$${fmtNum(c.costNoVat)}</td>
+            <td class="p-2 bg-blue-100 font-extrabold text-blue-900 text-sm">$${fmtNum(c.costWithVat)}</td>
+            <td class="p-2 text-emerald-700 font-semibold">$${fmtNum(c.salePriceOnCost)}</td>
+            <td class="p-2 font-bold text-emerald-900">$${fmtNum(c.salePriceOnCostVat)}</td>
           </tr>
         `).join('');
 
@@ -87,7 +90,10 @@ const Calculator = {
             <td class="p-2 text-purple-800">$${fmtNum(s.vat)}</td>
             <td class="p-2">$${fmtNum(s.other)}</td>
             <td class="p-2 font-black text-slate-900">$${fmtNum(s.landed)}</td>
+            <td class="p-2 bg-slate-200">-</td>
             <td class="p-2 bg-blue-200 text-blue-900">-</td>
+            <td class="p-2">-</td>
+            <td class="p-2">-</td>
           </tr>
         `;
       }
@@ -133,6 +139,7 @@ const Calculator = {
               <option value="__new__">+ Nuevo proveedor</option>
             </select>
           </td>
+          <td class="p-2"><input data-field="origin_country" data-idx="${index}" value="${esc(item.origin_country)}" class="w-20 p-1 border rounded bg-white text-xs"></td>
           <td class="p-2"><input data-field="sku" data-idx="${index}" value="${esc(item.sku)}" class="w-20 p-1 border rounded bg-white text-xs"></td>
           <td class="p-2"><input data-field="name" data-idx="${index}" value="${esc(item.name)}" class="w-32 p-1 border rounded bg-white text-xs"></td>
           <td class="p-2"><input data-field="qty" data-idx="${index}" type="number" value="${item.qty}" class="w-16 p-1 border rounded bg-white text-xs"></td>
@@ -144,6 +151,7 @@ const Calculator = {
           <td class="p-2"><input data-field="fob_unit" data-idx="${index}" type="number" step="0.01" value="${item.fob_unit}" class="w-20 p-1 border rounded bg-white text-xs"></td>
           <td class="p-2"><input data-field="hs_code" data-idx="${index}" value="${esc(item.hs_code)}" class="w-24 p-1 border rounded bg-white text-xs"></td>
           <td class="p-2"><input data-field="tariff_rate" data-idx="${index}" type="number" step="0.1" value="${item.tariff_rate}" class="w-16 p-1 border rounded bg-white text-xs"></td>
+          <td class="p-2"><input data-field="gain_margin" data-idx="${index}" type="number" step="0.1" value="${item.gain_margin}" class="w-16 p-1 border rounded bg-white text-xs"></td>
           <td class="p-2 text-center">
             <button data-remove="${index}" class="text-red-500 hover:text-red-700 font-bold px-2 py-1">✕</button>
           </td>
@@ -335,6 +343,7 @@ const Calculator = {
             <thead>
               <tr class="bg-slate-100 border-b border-slate-200 text-slate-700">
                 <th class="p-2">Proveedor</th>
+                <th class="p-2">País Origen</th>
                 <th class="p-2">SKU</th>
                 <th class="p-2">Nombre</th>
                 <th class="p-2">Cant.</th>
@@ -344,6 +353,7 @@ const Calculator = {
                 <th class="p-2">FOB Unit ($)</th>
                 <th class="p-2">Cód. Arancel</th>
                 <th class="p-2">% Arancel</th>
+                <th class="p-2">Margen %</th>
                 <th class="p-2 text-center">✕</th>
               </tr>
             </thead>
@@ -373,7 +383,10 @@ const Calculator = {
                 <th class="p-2 text-purple-300">IVA ($)</th>
                 <th class="p-2">Otros Gastos ($)</th>
                 <th class="p-2">Landed Total ($)</th>
-                <th class="p-2 bg-blue-900 text-white font-bold">Costo Unit. ($)</th>
+                <th class="p-2 bg-slate-700">Costo Unit. sin IVA ($)</th>
+                <th class="p-2 bg-blue-900 text-white font-bold">Costo Unit. + IVA ($)</th>
+                <th class="p-2 text-emerald-300">P. Venta / Costo Unit. ($)</th>
+                <th class="p-2 font-bold text-emerald-200">P. Venta / Costo + IVA ($)</th>
               </tr>
             </thead>
             <tbody id="results-tbody"></tbody>
@@ -492,6 +505,7 @@ const Calculator = {
       const item = Store.insert('items', {
         container_id: containerId,
         supplier_id: null,
+        origin_country: '',
         sku: 'SKU-' + (items.length + 1),
         name: 'Nuevo Producto',
         qty: 100,
@@ -499,7 +513,8 @@ const Calculator = {
         box_volume: 0.01,
         fob_unit: 10,
         hs_code: '',
-        tariff_rate: 0
+        tariff_rate: 0,
+        gain_margin: 0
       });
       items.push(item);
       refreshResults();

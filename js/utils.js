@@ -78,6 +78,19 @@ export function computeContainer(container, items) {
     const landedTotal = cifTotal + tariffAmount + portFeeAmount + customsBrokerAmount + otherExpenses + vatAmount;
     const unitLanded = qty > 0 ? (landedTotal / qty) : 0;
 
+    // Costo unitario sin IVA = todo el landed salvo el IVA, por unidad
+    const landedNoVat = landedTotal - vatAmount;
+    const costNoVat = qty > 0 ? (landedNoVat / qty) : 0;
+    const costWithVat = unitLanded;
+    const ivPerUnit = qty > 0 ? (vatAmount / qty) : 0;
+
+    // Precio de venta con margen sobre venta: costo ÷ (1 - margen/100)
+    // El margen es el % del precio final; con margen >= 100% se evita división por cero/negativos.
+    const gainMargin = Number(item.gain_margin) || 0;
+    const marginDenom = gainMargin < 100 ? (1 - gainMargin / 100) : 0;
+    const salePriceOnCost = costNoVat > 0 && marginDenom > 0 ? costNoVat / marginDenom : 0;
+    const salePriceOnCostVat = costWithVat > 0 && marginDenom > 0 ? costWithVat / marginDenom : 0;
+
     return {
       item,
       qty,
@@ -98,7 +111,14 @@ export function computeContainer(container, items) {
       opAssigned,
       otherExpenses,
       landedTotal,
-      unitLanded
+      unitLanded,
+      landedNoVat,
+      costNoVat,
+      costWithVat,
+      ivPerUnit,
+      gainMargin,
+      salePriceOnCost,
+      salePriceOnCostVat
     };
   });
 

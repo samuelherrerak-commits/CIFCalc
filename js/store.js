@@ -121,6 +121,7 @@ const Store = {
     return this.insert('items', {
       container_id: containerId,
       supplier_id: null,
+      origin_country: '',
       sku: '',
       name: '',
       qty: 0,
@@ -128,7 +129,8 @@ const Store = {
       box_volume: 0,
       fob_unit: 0,
       hs_code: '',
-      tariff_rate: 0
+      tariff_rate: 0,
+      gain_margin: 0
     });
   }
 };
