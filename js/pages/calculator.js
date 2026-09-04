@@ -3,6 +3,9 @@ import { fmtNum, fmtInt, esc, num, computeContainer } from '../utils.js';
 
 const Calculator = {
   async render(app, params) {
+    const destroy = new AbortController();
+    const { signal } = destroy;
+
     const containerId = params[0];
     if (!containerId) {
       app.innerHTML = '<div class="text-red-600">ID de contenedor inválido</div>';
@@ -108,6 +111,7 @@ const Calculator = {
 
     // Autosave con debounce
     let saveTimer = null;
+    let statusTimer = null;
     const scheduleSave = () => {
       clearTimeout(saveTimer);
       saveTimer = setTimeout(save, 600);
@@ -120,11 +124,14 @@ const Calculator = {
         statusEl.textContent = '✓ Guardado';
         statusEl.classList.remove('text-slate-400');
         statusEl.classList.add('text-emerald-600');
-        clearTimeout(saveTimer);
-        setTimeout(() => {
-          statusEl.classList.add('text-slate-400');
-          statusEl.classList.remove('text-emerald-600');
-          statusEl.textContent = 'Autoguardado';
+        clearTimeout(statusTimer);
+        statusTimer = setTimeout(() => {
+          const el = document.getElementById('save-status');
+          if (el) {
+            el.classList.add('text-slate-400');
+            el.classList.remove('text-emerald-600');
+            el.textContent = 'Autoguardado';
+          }
         }, 1500);
       }
     };
@@ -280,6 +287,7 @@ const Calculator = {
     // --- Render principal ---
     const companies = Store.getAll('companies');
     const suppliers = Store.getAll('suppliers');
+    const initialRes = computeContainer(container, items);
 
     app.innerHTML = `
       <div class="flex items-center justify-between gap-3">
@@ -379,16 +387,16 @@ const Calculator = {
         <div class="pt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
           <div class="col-span-2 space-y-1">
             <div class="flex justify-between text-xs font-semibold">
-              <span id="vol-text">${computeContainer(container, items).totalVolume.toFixed(2)} / ${Number(container.container_capacity) || 0} m³</span>
-              <span id="vol-occ" class="text-slate-600 text-xs font-semibold">${computeContainer(container, items).volumePercentage.toFixed(1)}% Ocupado</span>
+              <span id="vol-text">${initialRes.totalVolume.toFixed(2)} / ${Number(container.container_capacity) || 0} m³</span>
+              <span id="vol-occ" class="text-slate-600 text-xs font-semibold">${initialRes.volumePercentage.toFixed(1)}% Ocupado</span>
             </div>
             <div class="w-full bg-slate-200 h-3 rounded-full overflow-hidden">
-              <div id="vol-bar" class="h-full transition-all duration-300 bg-blue-600" style="width:${Math.min(computeContainer(container, items).volumePercentage, 100)}%"></div>
+              <div id="vol-bar" class="h-full transition-all duration-300 bg-blue-600" style="width:${Math.min(initialRes.volumePercentage, 100)}%"></div>
             </div>
           </div>
           <div class="text-right border-l pl-4 border-slate-300">
             <span class="block text-xs text-slate-500 font-medium">Contenedores Totales Requeridos</span>
-            <span id="vol-req" class="text-lg font-bold text-blue-900">${computeContainer(container, items).containersRequired.toFixed(2)} FCL</span>
+            <span id="vol-req" class="text-lg font-bold text-blue-900">${initialRes.containersRequired.toFixed(2)} FCL</span>
           </div>
         </div>
       </header>
@@ -640,11 +648,11 @@ const Calculator = {
     });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeSupplierModal();
-    });
+    }, { signal });
     ['sup-name', 'sup-country', 'sup-email', 'sup-phone'].forEach(id => {
       document.getElementById(id).addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); saveSupplier(); }
-      });
+      }, { signal });
     });
 
     // Exportar a Excel
@@ -738,6 +746,12 @@ const Calculator = {
     // Inicial
     refreshResults();
     refreshItemsTable();
+
+    return () => {
+      destroy.abort();
+      clearTimeout(saveTimer);
+      clearTimeout(statusTimer);
+    };
   }
 };
 

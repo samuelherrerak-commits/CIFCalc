@@ -15,7 +15,7 @@ try {
 const log = (msg) => console.log(`CIFCalc: ${msg}`);
 
 // ============================================
-// localStorage helpers (sin cambios)
+// localStorage helpers
 // ============================================
 const STORE_KEYS = {
   companies: 'cif_companies',
@@ -48,33 +48,108 @@ function uid() {
     });
 }
 
+function now() {
+  return new Date().toISOString();
+}
+
+// ============================================
+// Merge: combines local + remote, keeps newest
+// ============================================
+function mergeRecords(local, remote) {
+  const map = new Map();
+  for (const r of remote) map.set(r.id, r);
+  for (const r of local) {
+    const existing = map.get(r.id);
+    if (!existing) {
+      map.set(r.id, r);
+    } else {
+      const lt = new Date(r.updated_at || r.created_at || 0).getTime();
+      const rt = new Date(existing.updated_at || existing.created_at || 0).getTime();
+      map.set(r.id, lt >= rt ? r : existing);
+    }
+  }
+  return [...map.values()];
+}
+
+// ============================================
+// Retry queue for failed Supabase operations
+// ============================================
+const RETRY_KEY = 'cif_retry_queue';
+const MAX_RETRIES = 5;
+
+function getRetryQueue() {
+  try {
+    const raw = localStorage.getItem(RETRY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function pushRetry(operation) {
+  const queue = getRetryQueue();
+  operation.attempts = operation.attempts || 0;
+  queue.push(operation);
+  if (queue.length > 100) queue.splice(0, queue.length - 100);
+  localStorage.setItem(RETRY_KEY, JSON.stringify(queue));
+}
+
+async function processRetryQueue() {
+  if (!sb) return;
+  const queue = getRetryQueue();
+  if (queue.length === 0) return;
+  const remaining = [];
+  for (const op of queue) {
+    try {
+      op.attempts++;
+      if (op.type === 'upsert') {
+        const records = Array.isArray(op.record) ? op.record : [op.record];
+        const { error } = await sb.from(op.table).upsert(records, { onConflict: 'id' });
+        if (error) throw error;
+      } else if (op.type === 'delete') {
+        const { error } = await sb.from(op.table).delete().eq(op.column, op.value);
+        if (error) throw error;
+      }
+    } catch (e) {
+      console.warn(`CIFCalc: retry #${op.attempts} fallo para ${op.type} en ${op.table}:`, e.message);
+      if (op.attempts < MAX_RETRIES) remaining.push(op);
+    }
+  }
+  localStorage.setItem(RETRY_KEY, JSON.stringify(remaining));
+}
+
 // ============================================
 // Supabase sync helpers (background)
 // ============================================
 async function sbUpsert(table, record) {
   if (!sb) return;
   try {
-    await sb.from(table).upsert(record, { onConflict: 'id' });
+    const records = Array.isArray(record) ? record : [record];
+    const { error } = await sb.from(table).upsert(records, { onConflict: 'id' });
+    if (error) throw error;
   } catch (e) {
-    console.warn(`CIFCalc: sync upsert fallo en ${table}:`, e.message);
+    console.warn(`CIFCalc: sync upsert fallo en ${table}, encolando retry:`, e.message);
+    pushRetry({ type: 'upsert', table, record });
   }
 }
 
 async function sbDelete(table, id) {
   if (!sb) return;
   try {
-    await sb.from(table).delete().eq('id', id);
+    const { error } = await sb.from(table).delete().eq('id', id);
+    if (error) throw error;
   } catch (e) {
-    console.warn(`CIFCalc: sync delete fallo en ${table}:`, e.message);
+    console.warn(`CIFCalc: sync delete fallo en ${table}, encolando retry:`, e.message);
+    pushRetry({ type: 'delete', table, column: 'id', value: id });
   }
 }
 
 async function sbDeleteWhere(table, column, value) {
   if (!sb) return;
   try {
-    await sb.from(table).delete().eq(column, value);
+    const { error } = await sb.from(table).delete().eq(column, value);
+    if (error) throw error;
   } catch (e) {
-    console.warn(`CIFCalc: sync deleteWhere fallo en ${table}:`, e.message);
+    console.warn(`CIFCalc: sync deleteWhere fallo en ${table}, encolando retry:`, e.message);
+    pushRetry({ type: 'delete', table, column, value });
   }
 }
 
@@ -94,53 +169,86 @@ async function sbSelect(table, filters = {}) {
   }
 }
 
-// ============================================
-// Seed + Migración automática
-// ============================================
-let seedDone = false;
+// Atomic per-container item sync with generation counter
+const _syncGeneration = new Map();
 
-async function migrateLocalToCloud() {
+async function sbSyncContainerItems(containerId, newItems) {
+  if (!sb) return;
+  const gen = (_syncGeneration.get(containerId) || 0) + 1;
+  _syncGeneration.set(containerId, gen);
+  try {
+    await sb.from('items').delete().eq('container_id', containerId);
+    if (_syncGeneration.get(containerId) !== gen) return;
+    if (newItems.length) {
+      const { error } = await sb.from('items').upsert(newItems, { onConflict: 'id' });
+      if (error) throw error;
+    }
+  } catch (e) {
+    console.warn(`CIFCalc: sync container items fallo:`, e.message);
+    pushRetry({ type: 'upsert', table: 'items', record: newItems });
+  }
+}
+
+// ============================================
+// Bidirectional sync with cloud
+// ============================================
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items'];
+
+async function syncWithCloud() {
   if (!sb) return;
   try {
-    // Verificar si la BD ya tiene datos
-    const existing = await sbSelect('containers');
-    if (existing.length > 0) {
-      log('BD remota tiene datos, usando Supabase como fuente');
-      // Descargar datos de Supabase y copiar a localStorage
-      const remoteCompanies = await sbSelect('companies');
-      const remoteSuppliers = await sbSelect('suppliers');
-      const remoteContainers = await sbSelect('containers');
-      const remoteItems = await sbSelect('items');
-      if (remoteCompanies.length) writeAll(STORE_KEYS.companies, remoteCompanies);
-      if (remoteSuppliers.length) writeAll(STORE_KEYS.suppliers, remoteSuppliers);
-      if (remoteContainers.length) writeAll(STORE_KEYS.containers, remoteContainers);
-      if (remoteItems.length) writeAll(STORE_KEYS.items, remoteItems);
+    const remoteAll = {};
+    for (const entity of ENTITIES) {
+      remoteAll[entity] = await sbSelect(entity);
+    }
+
+    const hasRemoteData = ENTITIES.some(e => remoteAll[e].length > 0);
+
+    if (!hasRemoteData) {
+      const localAll = {};
+      for (const entity of ENTITIES) {
+        localAll[entity] = readAll(STORE_KEYS[entity]);
+      }
+      const hasLocalData = ENTITIES.some(e => localAll[e].length > 0);
+
+      if (hasLocalData) {
+        log('BD remota vacía, subiendo datos locales...');
+        for (const entity of ENTITIES) {
+          if (localAll[entity].length) await sbUpsert(entity, localAll[entity]);
+        }
+        log('Datos locales subidos a la nube');
+      } else {
+        log('Sin datos en ninguna fuente');
+      }
       localStorage.setItem('cif_cloud_synced', '1');
       return;
     }
 
-    // BD vacía, migrar datos locales a la nube
-    const localCompanies = readAll(STORE_KEYS.companies);
-    const localSuppliers = readAll(STORE_KEYS.suppliers);
-    const localContainers = readAll(STORE_KEYS.containers);
-    const localItems = readAll(STORE_KEYS.items);
+    log('BD remota tiene datos, mergeando...');
+    for (const entity of ENTITIES) {
+      const local = readAll(STORE_KEYS[entity]);
+      const remote = remoteAll[entity];
+      const merged = mergeRecords(local, remote);
+      writeAll(STORE_KEYS[entity], merged);
 
-    if (localCompanies.length || localSuppliers.length || localContainers.length || localItems.length) {
-      log('Migrando datos locales a la nube...');
-      if (localCompanies.length) await sb.from('companies').upsert(localCompanies, { onConflict: 'id' });
-      if (localSuppliers.length) await sb.from('suppliers').upsert(localSuppliers, { onConflict: 'id' });
-      if (localContainers.length) await sb.from('containers').upsert(localContainers, { onConflict: 'id' });
-      if (localItems.length) await sb.from('items').upsert(localItems, { onConflict: 'id' });
-      localStorage.setItem('cif_cloud_synced', '1');
-      log(`${localCompanies.length} compañías, ${localSuppliers.length} proveedores, ${localContainers.length} contenedores, ${localItems.length} items migrados a la nube`);
-    } else {
-      log('Sin datos locales, nada que migrar');
-      localStorage.setItem('cif_cloud_synced', '1');
+      const toUpload = merged.filter(m => {
+        const r = remote.find(x => x.id === m.id);
+        return !r || new Date(m.updated_at || m.created_at || 0) > new Date(r.updated_at || r.created_at || 0);
+      });
+      if (toUpload.length) await sbUpsert(entity, toUpload);
     }
+
+    localStorage.setItem('cif_cloud_synced', '1');
+    log('Sync completado');
   } catch (e) {
-    console.error('CIFCalc: Error en migración:', e.message);
+    console.error('CIFCalc: Error en sync:', e.message);
   }
 }
+
+// ============================================
+// Seed
+// ============================================
+let seedDone = false;
 
 function seed() {
   if (!localStorage.getItem(STORE_KEYS.companies)) writeAll(STORE_KEYS.companies, []);
@@ -148,19 +256,21 @@ function seed() {
   if (!localStorage.getItem(STORE_KEYS.containers)) writeAll(STORE_KEYS.containers, []);
   if (!localStorage.getItem(STORE_KEYS.items)) writeAll(STORE_KEYS.items, []);
 
-  // Migración a Supabase (solo una vez)
   if (!seedDone) {
     seedDone = true;
-    migrateLocalToCloud();
+    return syncWithCloud().then(() => processRetryQueue());
   }
+  return Promise.resolve();
 }
 
 // ============================================
-// Store API (sin cambios en firma ni comportamiento)
+// Store API
 // ============================================
 const Store = {
   uid,
   seed,
+  syncWithCloud,
+  processRetryQueue,
 
   getAll(key) { return readAll(STORE_KEYS[key]); },
 
@@ -170,21 +280,21 @@ const Store = {
 
   insert(entity, record) {
     const list = readAll(STORE_KEYS[entity]);
-    const rec = { ...record, id: record.id || uid(), created_at: new Date().toISOString() };
+    const ts = now();
+    const rec = { ...record, id: record.id || uid(), created_at: record.created_at || ts, updated_at: ts };
     list.push(rec);
     writeAll(STORE_KEYS[entity], list);
-    // Sync a Supabase en background
     sbUpsert(STORE_KEYS[entity], rec);
     return rec;
   },
 
   update(entity, record) {
     let list = readAll(STORE_KEYS[entity]);
-    list = list.map(x => (x.id === record.id ? { ...x, ...record } : x));
+    const ts = now();
+    list = list.map(x => (x.id === record.id ? { ...x, ...record, updated_at: ts } : x));
     writeAll(STORE_KEYS[entity], list);
-    // Sync a Supabase en background
-    sbUpsert(STORE_KEYS[entity], record);
-    return record;
+    sbUpsert(STORE_KEYS[entity], { ...record, updated_at: ts });
+    return { ...record, updated_at: ts };
   },
 
   upsert(entity, record) {
@@ -197,11 +307,9 @@ const Store = {
   remove(entity, id) {
     const list = readAll(STORE_KEYS[entity]);
     writeAll(STORE_KEYS[entity], list.filter(x => x.id !== id));
-    // Sync a Supabase en background
     sbDelete(STORE_KEYS[entity], id);
   },
 
-  // Containers con sus items (patrón crítico)
   saveContainerWithItems(container, items) {
     let c;
     if (container.id && readAll(STORE_KEYS.containers).some(x => x.id === container.id)) {
@@ -209,15 +317,12 @@ const Store = {
     } else {
       c = this.insert('containers', container);
     }
-    // Guardar items: eliminar items previos del contenedor y reinsertar
     const remaining = readAll(STORE_KEYS.items).filter(it => it.container_id !== c.id);
-    const newItems = items.map(it => ({ ...it, container_id: c.id, id: it.id || uid() }));
+    const ts = now();
+    const newItems = items.map(it => ({ ...it, container_id: c.id, id: it.id || uid(), updated_at: ts }));
     writeAll(STORE_KEYS.items, [...remaining, ...newItems]);
-    // Sync a Supabase en background
     sbUpsert('containers', c);
-    sbDeleteWhere('items', 'container_id', c.id).then(() => {
-      if (newItems.length) sb.from('items').upsert(newItems, { onConflict: 'id' });
-    });
+    sbSyncContainerItems(c.id, newItems);
     return { container: c, items: newItems };
   },
 
@@ -225,11 +330,21 @@ const Store = {
     return readAll(STORE_KEYS.items).filter(it => it.container_id === containerId);
   },
 
+  getItemsByContainerMap() {
+    const allItems = readAll(STORE_KEYS.items);
+    const map = new Map();
+    for (const item of allItems) {
+      const cid = item.container_id;
+      if (!map.has(cid)) map.set(cid, []);
+      map.get(cid).push(item);
+    }
+    return map;
+  },
+
   removeContainer(id) {
     this.remove('containers', id);
     const items = readAll(STORE_KEYS.items).filter(it => it.container_id !== id);
     writeAll(STORE_KEYS.items, items);
-    // Sync a Supabase en background
     sbDeleteWhere('items', 'container_id', id);
   },
 

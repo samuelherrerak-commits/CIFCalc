@@ -74,6 +74,7 @@ const Dashboard = {
     const companies = Store.getAll('companies');
     const suppliers = Store.getAll('suppliers');
     const containers = Store.getAll('containers');
+    const itemsByContainer = Store.getItemsByContainerMap();
 
     app.innerHTML = `
       <header class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
@@ -109,7 +110,7 @@ const Dashboard = {
             <tbody>
               ${containers.map(c => {
                 const company = companies.find(co => co.id === c.company_id);
-                const items = Store.getItemsByContainer(c.id);
+                const items = itemsByContainer.get(c.id) || [];
                 const res = computeContainer(c, items);
                 const occ = res.volumePercentage;
                 return `

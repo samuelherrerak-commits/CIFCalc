@@ -14,6 +14,8 @@ const pages = {
   calculator: Calculator
 };
 
+let currentCleanup = null;
+
 function parseHash() {
   const hash = window.location.hash || '#/';
   for (const route of routes) {
@@ -26,7 +28,13 @@ function parseHash() {
 }
 
 async function resolve() {
-  Store.seed();
+  await Store.seed();
+
+  if (currentCleanup) {
+    currentCleanup();
+    currentCleanup = null;
+  }
+
   const { handler, key, params } = parseHash();
   Nav.render(key);
   const app = document.getElementById('app');
@@ -34,7 +42,10 @@ async function resolve() {
 
   const page = pages[handler];
   try {
-    await page.render(app, params);
+    const cleanup = await page.render(app, params);
+    if (typeof cleanup === 'function') {
+      currentCleanup = cleanup;
+    }
   } catch (err) {
     console.error(err);
     app.innerHTML = `<div class="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg">
