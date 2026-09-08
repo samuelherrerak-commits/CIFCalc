@@ -36,6 +36,7 @@ create table if not exists containers (
   bl_number text not null default '',
   operation_date text not null default '',
   container_capacity numeric not null default 33,
+  container_max_weight numeric not null default 28200,
   insurance_rate numeric not null default 0,
   insurance_enabled boolean not null default true,
   port_fee_rate numeric not null default 0,

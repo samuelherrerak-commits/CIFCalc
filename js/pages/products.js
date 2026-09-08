@@ -36,7 +36,7 @@ const Products = {
       const tbody = document.getElementById('products-tbody');
       const list = filtered();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="14" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
+        ? `<tr><td colspan="13" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
         : list.map(p => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
             <td class="p-2 font-bold text-blue-800">${esc(p.sku_briggs)}</td>
@@ -48,7 +48,6 @@ const Products = {
             <td class="p-2 text-right">${fmtInt(p.units_per_box)}</td>
             <td class="p-2 text-right">${Number(p.box_volume) || 0}</td>
             <td class="p-2 text-right">${fmtNum(p.weight_kg)}</td>
-            <td class="p-2 text-right">${fmtNum(p.weight_lbs)}</td>
             <td class="p-2 text-right">$${fmtNum(p.fob_unit)}</td>
             <td class="p-2 text-right">${Number(p.tariff_rate) || 0}%</td>
             <td class="p-2 text-right">${Number(p.gain_margin) || 0}%</td>
@@ -87,7 +86,6 @@ const Products = {
       document.getElementById('f-upb').value = p.units_per_box != null ? p.units_per_box : 1;
       document.getElementById('f-vol').value = p.box_volume != null ? p.box_volume : 0;
       document.getElementById('f-kg').value = p.weight_kg != null ? p.weight_kg : 0;
-      document.getElementById('f-lbs').value = p.weight_lbs != null ? p.weight_lbs : 0;
       document.getElementById('f-hs').value = p.hs_code || '';
       document.getElementById('f-fob').value = p.fob_unit != null ? p.fob_unit : 0;
       document.getElementById('f-tariff').value = p.tariff_rate != null ? p.tariff_rate : 0;
@@ -116,6 +114,41 @@ const Products = {
         document.getElementById('f-briggs').focus();
         return;
       }
+      if (!document.getElementById('f-sku').value.trim()) {
+        alert('El SKU es obligatorio.');
+        document.getElementById('f-sku').focus();
+        return;
+      }
+      if (!document.getElementById('f-name').value.trim()) {
+        alert('El nombre del producto es obligatorio.');
+        document.getElementById('f-name').focus();
+        return;
+      }
+      if (!selectedSupplierId) {
+        alert('Debes seleccionar un proveedor (o crear uno nuevo).');
+        document.getElementById('f-sup').focus();
+        return;
+      }
+      if (!document.getElementById('f-country').value.trim()) {
+        alert('El país de origen es obligatorio.');
+        document.getElementById('f-country').focus();
+        return;
+      }
+      if (num(document.getElementById('f-upb')) <= 0) {
+        alert('Las unidades por caja son obligatorias (mayor a 0).');
+        document.getElementById('f-upb').focus();
+        return;
+      }
+      if (num(document.getElementById('f-vol')) <= 0) {
+        alert('El volumen de caja es obligatorio (mayor a 0).');
+        document.getElementById('f-vol').focus();
+        return;
+      }
+      if (num(document.getElementById('f-kg')) <= 0) {
+        alert('El peso en kg es obligatorio (mayor a 0).');
+        document.getElementById('f-kg').focus();
+        return;
+      }
       const data = {
         sku_briggs: skuBriggs,
         sku: document.getElementById('f-sku').value.trim(),
@@ -126,7 +159,6 @@ const Products = {
         units_per_box: num(document.getElementById('f-upb')),
         box_volume: num(document.getElementById('f-vol')),
         weight_kg: num(document.getElementById('f-kg')),
-        weight_lbs: num(document.getElementById('f-lbs')),
         hs_code: document.getElementById('f-hs').value.trim(),
         fob_unit: num(document.getElementById('f-fob')),
         tariff_rate: num(document.getElementById('f-tariff')),
@@ -211,7 +243,6 @@ const Products = {
               <th class="p-2 text-right">Unid/Caja</th>
               <th class="p-2 text-right">Vol. Caja (m³)</th>
               <th class="p-2 text-right">Peso (kg)</th>
-              <th class="p-2 text-right">Peso (lbs)</th>
               <th class="p-2 text-right">FOB Unit ($)</th>
               <th class="p-2 text-right">% Arancel</th>
               <th class="p-2 text-right">Margen %</th>
@@ -232,41 +263,41 @@ const Products = {
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-semibold text-slate-600 mb-1">SKU BRIGGS *</label>
-              <input id="f-briggs" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Denominación interna (única)">
+              <input id="f-briggs" type="text" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Denominación interna (única)">
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">SKU</label>
-              <input id="f-sku" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+              <label class="block text-xs font-semibold text-slate-600 mb-1">SKU *</label>
+              <input id="f-sku" type="text" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre *</label>
-              <input id="f-name" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+              <input id="f-name" type="text" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Proveedor</label>
-              <select id="f-sup" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Proveedor *</label>
+              <select id="f-sup" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">País Origen</label>
-              <input id="f-country" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+              <label class="block text-xs font-semibold text-slate-600 mb-1">País Origen *</label>
+              <input id="f-country" type="text" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Cantidad *</label>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Cantidad</label>
               <input id="f-qty" type="number" min="0" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
             </div>
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Unid/Caja</label>
-              <input id="f-upb" type="number" min="0" step="1" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Unid/Caja *</label>
+              <input id="f-upb" type="number" min="0" step="1" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Vol. Caja (m³)</label>
-              <input id="f-vol" type="number" min="0" step="0.001" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Vol. Caja (m³) *</label>
+              <input id="f-vol" type="number" min="0" step="0.001" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
             </div>
             <div>
               <label class="block text-xs font-semibold text-slate-600 mb-1">Cód. Arancel</label>
@@ -275,12 +306,8 @@ const Products = {
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Peso (kg)</label>
-              <input id="f-kg" type="number" min="0" step="0.01" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Peso (lbs)</label>
-              <input id="f-lbs" type="number" min="0" step="0.01" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Peso (kg) *</label>
+              <input id="f-kg" type="number" min="0" step="0.01" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
             </div>
             <div>
               <label class="block text-xs font-semibold text-slate-600 mb-1">FOB Unit ($)</label>

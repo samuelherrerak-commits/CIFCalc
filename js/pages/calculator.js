@@ -30,6 +30,11 @@ const Calculator = {
       return s ? s.name : '';
     };
 
+    const weightTotal = () => items.reduce((acc, it) => {
+      const boxes = Number(it.units_per_box) > 0 ? (Number(it.qty) / Number(it.units_per_box)) : 0;
+      return acc + boxes * (Number(it.weight_kg) || 0);
+    }, 0);
+
     // --- Helper de actualización de UI ---
     const refreshResults = () => {
       const res = computeContainer(container, items);
@@ -47,6 +52,22 @@ const Calculator = {
         occText.textContent = occ.toFixed(1) + '% Ocupado';
         occText.className = occ > 100 ? 'text-red-600 font-bold text-xs' : 'text-slate-600 text-xs font-semibold';
         reqText.textContent = res.containersRequired.toFixed(2) + ' FCL';
+      }
+
+      // Barra de peso
+      const wtBar = document.getElementById('wt-bar');
+      const wtText = document.getElementById('wt-text');
+      const wtOcc = document.getElementById('wt-occ');
+      const wtFcl = document.getElementById('wt-fcl');
+      if (wtBar && wtText) {
+        const maxWt = Number(container.container_max_weight) || 0;
+        const wtPct = maxWt > 0 ? (weightTotal() / maxWt) * 100 : 0;
+        wtBar.style.width = Math.min(wtPct, 100) + '%';
+        wtBar.className = `h-full transition-all duration-300 ${wtPct > 100 ? 'bg-red-500' : 'bg-blue-600'}`;
+        wtText.textContent = `${weightTotal().toFixed(1)} / ${maxWt} kg`;
+        wtOcc.textContent = wtPct.toFixed(1) + '% Carga';
+        wtOcc.className = wtPct > 100 ? 'text-red-600 font-bold text-xs' : 'text-slate-600 text-xs font-semibold';
+        if (wtFcl) wtFcl.textContent = (maxWt > 0 ? weightTotal() / maxWt : 0).toFixed(2) + ' FCL';
       }
 
       // Tabla de resultados
@@ -149,11 +170,10 @@ const Calculator = {
           <td class="p-2">${esc(item.name) || '—'}</td>
           <td class="p-2">${esc(supplierName(item.supplier_id)) || '—'}</td>
           <td class="p-2">${esc(item.origin_country) || '—'}</td>
-          <td class="p-2 text-right">${fmtInt(item.qty)}</td>
+          <td class="p-2 text-right"><input data-field="qty" data-idx="${index}" type="number" step="1" min="0" value="${item.qty}" class="w-20 p-1 border rounded bg-white text-xs text-right"></td>
           <td class="p-2 text-right">${fmtInt(item.units_per_box)}</td>
-          <td class="p-2 text-right">${Number(item.box_volume) || 0}</td>
-          <td class="p-2 text-right">${fmtNum(item.weight_kg)}</td>
-          <td class="p-2 text-right">${fmtNum(item.weight_lbs)}</td>
+          <td class="p-2 text-right"><input data-field="box_volume" data-idx="${index}" type="number" step="0.001" min="0" value="${Number(item.box_volume) || 0}" class="w-24 p-1 border rounded bg-white text-xs text-right"></td>
+          <td class="p-2 text-right"><input data-field="weight_kg" data-idx="${index}" type="number" step="0.01" min="0" value="${Number(item.weight_kg) || 0}" class="w-24 p-1 border rounded bg-white text-xs text-right"></td>
           <td class="p-2 bg-blue-50/50 font-extrabold text-blue-900 text-xs">
             ${Number(item.box_volume) > 0 ? fmtInt((Number(container.container_capacity) || 0) / Number(item.box_volume)) : 0}
           </td>
@@ -182,6 +202,7 @@ const Calculator = {
           const val = inp.type === 'number' ? num(inp) : inp.value.trim();
           items[idx] = { ...items[idx], [field]: val };
           refreshResults();
+          refreshItemsTable();
         });
       });
       tbody.querySelectorAll('[data-remove]').forEach(btn => {
@@ -226,12 +247,14 @@ const Calculator = {
           if (!p) return;
           pickerProduct = p;
           document.getElementById('pk-confirm-name').textContent = `${p.sku_briggs || '—'} — ${p.name || ''}`;
+          document.getElementById('pk-qty').value = p.qty != null ? p.qty : 100;
           document.getElementById('pk-fob').value = p.fob_unit != null ? p.fob_unit : 0;
           document.getElementById('pk-hs').value = p.hs_code || '';
           document.getElementById('pk-tariff').value = p.tariff_rate != null ? p.tariff_rate : 0;
           document.getElementById('pk-margin').value = p.gain_margin != null ? p.gain_margin : 0;
           document.getElementById('pk-confirm').classList.remove('hidden');
-          document.getElementById('pk-fob').focus();
+          document.getElementById('pk-qty').focus();
+          document.getElementById('pk-qty').select();
         });
       });
     };
@@ -254,7 +277,14 @@ const Calculator = {
 
     const confirmPick = () => {
       if (!pickerProduct) return;
+      const qty = num(document.getElementById('pk-qty'));
+      if (qty <= 0) {
+        alert('Indica una cantidad mayor a 0 para agregar el producto.');
+        document.getElementById('pk-qty').focus();
+        return;
+      }
       const item = Store.productFromMaster(containerId, pickerProduct, {
+        qty,
         fob_unit: num(document.getElementById('pk-fob')),
         hs_code: document.getElementById('pk-hs').value.trim(),
         tariff_rate: num(document.getElementById('pk-tariff')),
@@ -270,6 +300,9 @@ const Calculator = {
     const companies = Store.getAll('companies');
     const suppliers = Store.getAll('suppliers');
     const initialRes = computeContainer(container, items);
+    const initialWeight = weightTotal();
+    const initMaxWt = Number(container.container_max_weight) || 0;
+    const initWtPct = initMaxWt > 0 ? (initialWeight / initMaxWt) * 100 : 0;
 
     app.innerHTML = `
       <div class="flex items-center justify-between gap-3">
@@ -310,7 +343,7 @@ const Calculator = {
           </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-7 gap-4">
           <div>
             <label class="block text-xs font-semibold text-slate-600 mb-1">Nº Embarque / BL</label>
             <input id="f-bl" type="text" value="${esc(container.bl_number)}" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
@@ -322,6 +355,10 @@ const Calculator = {
           <div>
             <label class="block text-xs font-semibold text-slate-600 mb-1">Vol. Contenedor (m³)</label>
             <input id="f-capacity" type="number" step="0.1" value="${container.container_capacity}" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-bold text-slate-900">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-emerald-700 mb-1">Carga Máx. Peso (kg)</label>
+            <input id="f-max-wt" type="number" step="100" value="${Number(container.container_max_weight) || 0}" class="w-full p-2 border border-emerald-200 rounded-lg text-sm bg-emerald-50/30 focus:bg-white focus:ring-2 focus:ring-emerald-500 outline-none font-bold text-emerald-900">
           </div>
           <div class="flex items-end gap-2">
             <div class="flex-1">
@@ -381,6 +418,21 @@ const Calculator = {
             <span id="vol-req" class="text-lg font-bold text-blue-900">${initialRes.containersRequired.toFixed(2)} FCL</span>
           </div>
         </div>
+      <div class="pt-4 grid grid-cols-1 md:grid-cols-3 gap-4 items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
+          <div class="col-span-2 space-y-1">
+            <div class="flex justify-between text-xs font-semibold">
+              <span id="wt-text">${initialWeight.toFixed(1)} / ${initMaxWt} kg</span>
+              <span id="wt-occ" class="text-slate-600 text-xs font-semibold">${initWtPct.toFixed(1)}% Carga</span>
+            </div>
+            <div class="w-full bg-slate-200 h-3 rounded-full overflow-hidden">
+              <div id="wt-bar" class="h-full transition-all duration-300 bg-blue-600" style="width:${Math.min(initWtPct, 100)}%"></div>
+            </div>
+          </div>
+          <div class="text-right border-l pl-4 border-slate-300">
+            <span class="block text-xs text-slate-500 font-medium">FCL por Peso</span>
+            <span id="wt-fcl" class="text-lg font-bold text-emerald-900">${(initMaxWt > 0 ? initialWeight / initMaxWt : 0).toFixed(2)} FCL</span>
+          </div>
+        </div>
       </header>
 
       <!-- Tabla de productos -->
@@ -404,7 +456,6 @@ const Calculator = {
                 <th class="p-2">Unid/Caja</th>
                 <th class="p-2">Vol. Caja (m³)</th>
                 <th class="p-2">Peso (kg)</th>
-                <th class="p-2">Peso (lbs)</th>
                 <th class="p-2 bg-blue-50 text-blue-900 font-bold">Unid/Cont.</th>
                 <th class="p-2 bg-slate-50 text-slate-800">FOB Unit ($)</th>
                 <th class="p-2 bg-slate-50 text-slate-800">Cód. Arancel</th>
@@ -472,7 +523,11 @@ const Calculator = {
               <span id="pk-confirm-name" class="font-bold text-slate-800 text-sm truncate"></span>
               <button id="pk-cancel" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-600 font-semibold py-2 px-3 rounded-lg transition whitespace-nowrap">Cancelar</button>
             </div>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Cantidad *</label>
+                <input id="pk-qty" type="number" step="1" min="0" class="w-full p-1.5 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+              </div>
               <div>
                 <label class="block text-xs font-semibold text-slate-600 mb-1">FOB Unit ($)</label>
                 <input id="pk-fob" type="number" step="0.01" class="w-full p-1.5 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
@@ -508,6 +563,7 @@ const Calculator = {
     bind('f-bl', 'bl_number', false);
     bind('f-date', 'operation_date', false);
     bind('f-capacity', 'container_capacity', true);
+    bind('f-max-wt', 'container_max_weight', true);
     bind('f-insurance-rate', 'insurance_rate', true);
     bind('f-port-rate', 'port_fee_rate', true);
     bind('f-vat', 'vat_rate', true);
@@ -652,7 +708,6 @@ const Calculator = {
           'Unid/Caja': Number(it.units_per_box) || 0,
           'Vol. Caja (m³)': Number(it.box_volume) || 0,
           'Peso (kg)': Number(it.weight_kg) || 0,
-          'Peso (lbs)': Number(it.weight_lbs) || 0,
           'FOB Unit ($)': Number(it.fob_unit) || 0,
           'Cód. Arancel': it.hs_code || '',
           '% Arancel': Number(it.tariff_rate) || 0,
