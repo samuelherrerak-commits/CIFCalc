@@ -1,7 +1,8 @@
 const Nav = {
   render(active = '') {
     const links = [
-      { path: '#/', key: 'dashboard', label: 'Dashboard', icon: '📊' }
+      { path: '#/', key: 'dashboard', label: 'Dashboard', icon: '📊' },
+      { path: '#/productos', key: 'products', label: 'Productos', icon: '📦' }
     ];
 
     const nav = document.getElementById('navbar');

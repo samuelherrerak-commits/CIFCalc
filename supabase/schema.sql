@@ -1,5 +1,7 @@
--- CIFCalc — Esquema de Supabase
--- Ejecutar en el SQL Editor de Supabase Dashboard
+﻿-- CIFCalc — Esquema base de Supabase
+-- Ejecutar en el SQL Editor de Supabase Dashboard.
+-- IMPORTANTE: las migraciones de features se aplican DESPUÉS, en orden:
+--   migrations/migracion_productos.sql   (módulo Productos)
 
 -- ============================================
 -- 1. Tabla: companies
@@ -72,7 +74,7 @@ create table if not exists items (
 -- ============================================
 -- 5. Migración: agregar updated_at a tablas existentes
 -- ============================================
--- Ejecutar solo si las tablas ya existen SIN updated_at:
+-- Ejecutar si las tablas ya existían SIN la columna updated_at:
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'updated_at') THEN

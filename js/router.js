@@ -3,15 +3,18 @@ import Store from './store.js';
 
 import Dashboard from './pages/dashboard.js';
 import Calculator from './pages/calculator.js';
+import Products from './pages/products.js';
 
 const routes = [
   { pattern: /^#\/?$/, handler: 'dashboard', key: 'dashboard' },
-  { pattern: /^#\/contenedor\/(.+)$/, handler: 'calculator', key: 'calculator' }
+  { pattern: /^#\/contenedor\/(.+)$/, handler: 'calculator', key: 'calculator' },
+  { pattern: /^#\/productos\/?$/, handler: 'products', key: 'products' }
 ];
 
 const pages = {
   dashboard: Dashboard,
-  calculator: Calculator
+  calculator: Calculator,
+  products: Products
 };
 
 let currentCleanup = null;

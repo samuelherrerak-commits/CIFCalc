@@ -21,7 +21,8 @@ const STORE_KEYS = {
   companies: 'cif_companies',
   suppliers: 'cif_suppliers',
   containers: 'cif_containers',
-  items: 'cif_items'
+  items: 'cif_items',
+  products: 'cif_products'
 };
 
 function readAll(key) {
@@ -192,7 +193,7 @@ async function sbSyncContainerItems(containerId, newItems) {
 // ============================================
 // Bidirectional sync with cloud
 // ============================================
-const ENTITIES = ['companies', 'suppliers', 'containers', 'items'];
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products'];
 
 async function syncWithCloud() {
   if (!sb) return;
@@ -255,6 +256,7 @@ function seed() {
   if (!localStorage.getItem(STORE_KEYS.suppliers)) writeAll(STORE_KEYS.suppliers, []);
   if (!localStorage.getItem(STORE_KEYS.containers)) writeAll(STORE_KEYS.containers, []);
   if (!localStorage.getItem(STORE_KEYS.items)) writeAll(STORE_KEYS.items, []);
+  if (!localStorage.getItem(STORE_KEYS.products)) writeAll(STORE_KEYS.products, []);
 
   if (!seedDone) {
     seedDone = true;
@@ -370,18 +372,71 @@ const Store = {
   newItem(containerId) {
     return this.insert('items', {
       container_id: containerId,
+      product_id: null,
       supplier_id: null,
       origin_country: '',
       sku: '',
+      sku_briggs: '',
       name: '',
       qty: 0,
       units_per_box: 1,
       box_volume: 0,
+      weight_kg: 0,
+      weight_lbs: 0,
       fob_unit: 0,
       hs_code: '',
       tariff_rate: 0,
       gain_margin: 0
     });
+  },
+
+  productFromMaster(containerId, product, overrides = {}) {
+    return this.insert('items', {
+      container_id: containerId,
+      product_id: product.id,
+      supplier_id: product.supplier_id,
+      origin_country: product.origin_country,
+      sku: product.sku,
+      sku_briggs: product.sku_briggs,
+      name: product.name,
+      qty: Number(product.qty) || 0,
+      units_per_box: Number(product.units_per_box) || 1,
+      box_volume: Number(product.box_volume) || 0,
+      weight_kg: Number(product.weight_kg) || 0,
+      weight_lbs: Number(product.weight_lbs) || 0,
+      fob_unit: Number(overrides.fob_unit != null ? overrides.fob_unit : product.fob_unit) || 0,
+      hs_code: overrides.hs_code != null ? overrides.hs_code : (product.hs_code || ''),
+      tariff_rate: Number(overrides.tariff_rate != null ? overrides.tariff_rate : product.tariff_rate) || 0,
+      gain_margin: Number(overrides.gain_margin != null ? overrides.gain_margin : product.gain_margin) || 0
+    });
+  },
+
+  newProduct() {
+    return {
+      id: uid(),
+      sku_briggs: '',
+      sku: '',
+      name: '',
+      supplier_id: null,
+      origin_country: '',
+      qty: 100,
+      units_per_box: 1,
+      box_volume: 0,
+      weight_kg: 0,
+      weight_lbs: 0,
+      hs_code: '',
+      fob_unit: 0,
+      tariff_rate: 0,
+      gain_margin: 0
+    };
+  },
+
+  isSkuBriggsUnique(skuBriggs, excludeId = null) {
+    const normalized = String(skuBriggs || '').trim().toLowerCase();
+    if (!normalized) return true;
+    return !readAll(STORE_KEYS.products).some(p =>
+      p.id !== excludeId && String(p.sku_briggs || '').trim().toLowerCase() === normalized
+    );
   }
 };
 

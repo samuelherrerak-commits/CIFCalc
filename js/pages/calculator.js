@@ -24,8 +24,11 @@ const Calculator = {
     }
 
     let items = Store.getItemsByContainer(containerId);
-    let pendingSupplierItem = null;
-    let pendingSupplierId = null;
+
+    const supplierName = (id) => {
+      const s = Store.getById('suppliers', id);
+      return s ? s.name : '';
+    };
 
     // --- Helper de actualización de UI ---
     const refreshResults = () => {
@@ -136,30 +139,22 @@ const Calculator = {
       }
     };
 
-    // --- Re-render de items (tabla editable) ---
+    // --- Re-render de items (tabla con datos fijos y editables) ---
     const refreshItemsTable = () => {
-      const suppliers = Store.getAll('suppliers');
-
       const tbody = document.getElementById('items-tbody');
       tbody.innerHTML = items.map((item, index) => `
         <tr class="border-b border-slate-100 hover:bg-slate-50" data-idx="${index}">
-          <td class="p-2">
-            <div class="flex items-center gap-1">
-              <select data-field="supplier_id" data-idx="${index}" class="w-32 p-1 border rounded bg-white text-xs">
-                <option value="">— Proveedor —</option>
-                ${suppliers.map(s => `<option value="${s.id}" ${s.id === item.supplier_id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
-                <option value="__new__">+ Nuevo proveedor</option>
-              </select>
-              ${item.supplier_id ? `<button data-edit-supplier="${index}" title="Editar proveedor" class="text-blue-600 hover:text-blue-800 font-bold px-1">✎</button>` : ''}
-            </div>
-          </td>
-          <td class="p-2"><input data-field="origin_country" data-idx="${index}" value="${esc(item.origin_country)}" class="w-20 p-1 border rounded bg-white text-xs"></td>
-          <td class="p-2"><input data-field="sku" data-idx="${index}" value="${esc(item.sku)}" class="w-20 p-1 border rounded bg-white text-xs"></td>
-          <td class="p-2"><input data-field="name" data-idx="${index}" value="${esc(item.name)}" class="w-32 p-1 border rounded bg-white text-xs"></td>
-          <td class="p-2"><input data-field="qty" data-idx="${index}" type="number" value="${item.qty}" class="w-16 p-1 border rounded bg-white text-xs"></td>
-          <td class="p-2"><input data-field="units_per_box" data-idx="${index}" type="number" value="${item.units_per_box}" class="w-16 p-1 border rounded bg-white text-xs"></td>
-          <td class="p-2"><input data-field="box_volume" data-idx="${index}" type="number" step="0.001" value="${item.box_volume}" class="w-20 p-1 border rounded bg-white text-xs"></td>
-          <td class="p-2 bg-blue-50/50 font-extrabold text-blue-900 text-xs" id="uc-${index}">
+          <td class="p-2 font-bold text-blue-800">${esc(item.sku_briggs) || '—'}</td>
+          <td class="p-2">${esc(item.sku) || '—'}</td>
+          <td class="p-2">${esc(item.name) || '—'}</td>
+          <td class="p-2">${esc(supplierName(item.supplier_id)) || '—'}</td>
+          <td class="p-2">${esc(item.origin_country) || '—'}</td>
+          <td class="p-2 text-right">${fmtInt(item.qty)}</td>
+          <td class="p-2 text-right">${fmtInt(item.units_per_box)}</td>
+          <td class="p-2 text-right">${Number(item.box_volume) || 0}</td>
+          <td class="p-2 text-right">${fmtNum(item.weight_kg)}</td>
+          <td class="p-2 text-right">${fmtNum(item.weight_lbs)}</td>
+          <td class="p-2 bg-blue-50/50 font-extrabold text-blue-900 text-xs">
             ${Number(item.box_volume) > 0 ? fmtInt((Number(container.container_capacity) || 0) / Number(item.box_volume)) : 0}
           </td>
           <td class="p-2"><input data-field="fob_unit" data-idx="${index}" type="number" step="0.01" value="${item.fob_unit}" class="w-20 p-1 border rounded bg-white text-xs"></td>
@@ -172,41 +167,21 @@ const Calculator = {
         </tr>
       `).join('');
 
-      // Eventos de la tabla de items
+      // Eventos de la tabla de items (solo campos editables)
       tbody.querySelectorAll('input').forEach(inp => {
         inp.addEventListener('input', (e) => {
           const idx = Number(e.target.dataset.idx);
           const field = e.target.dataset.field;
           const val = inp.type === 'number' ? num(inp) : inp.value.trim();
           items[idx] = { ...items[idx], [field]: val };
-          // Actualiza la celda computada 'Unid/Cont.' de esa fila sin re-renderizarse
-          const uc = document.getElementById('uc-' + idx);
-          if (uc) {
-            const boxVol = Number(items[idx].box_volume) || 0;
-            const cap = Number(container.container_capacity) || 0;
-            uc.textContent = boxVol > 0 ? fmtInt(cap / boxVol) : 0;
-          }
           refreshResults();
         });
         inp.addEventListener('change', () => {
-          // Al salir del campo (Enter/Tab/blur) se confirma y persiste vía autosave
           const idx = Number(inp.dataset.idx);
           const field = inp.dataset.field;
           const val = inp.type === 'number' ? num(inp) : inp.value.trim();
           items[idx] = { ...items[idx], [field]: val };
           refreshResults();
-        });
-      });
-      tbody.querySelectorAll('select').forEach(sel => {
-        sel.addEventListener('change', (e) => {
-          const idx = Number(e.target.dataset.idx);
-          const field = e.target.dataset.field;
-          if (sel.value === '__new__') {
-            createNewSupplier(idx);
-          } else {
-            items[idx] = { ...items[idx], [field]: sel.value || null };
-            scheduleSave();
-          }
         });
       });
       tbody.querySelectorAll('[data-remove]').forEach(btn => {
@@ -217,69 +192,76 @@ const Calculator = {
           refreshItemsTable();
         });
       });
-      tbody.querySelectorAll('[data-edit-supplier]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          openEditSupplier(Number(e.target.dataset.editSupplier));
+    };
+
+    // --- Selector de productos desde el catálogo ---
+    let pickerProduct = null;
+    let pickerQuery = '';
+
+    const renderPickerList = () => {
+      const list = document.getElementById('pk-list');
+      const products = Store.getAll('products');
+      const q = pickerQuery.trim().toLowerCase();
+      const filtered = q ? products.filter(p => {
+        const sup = supplierName(p.supplier_id);
+        return [p.sku_briggs, p.sku, p.name, p.origin_country, sup]
+          .some(v => String(v || '').toLowerCase().includes(q));
+      }) : products;
+      list.innerHTML = filtered.length === 0
+        ? `<div class="p-4 text-center text-slate-400 text-sm">Sin productos. Regístralos primero en el módulo de Productos.</div>`
+        : filtered.map(p => `
+          <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-slate-100 hover:bg-slate-50">
+            <div class="min-w-0">
+              <div class="text-xs font-bold text-blue-800">${esc(p.sku_briggs) || '—'} <span class="text-slate-500 font-normal">${esc(p.sku) || ''}</span></div>
+              <div class="text-sm text-slate-800 truncate">${esc(p.name) || ''}</div>
+              <div class="text-xs text-slate-400">Proveedor: ${esc(supplierName(p.supplier_id)) || '—'} · País: ${esc(p.origin_country) || '—'} · Vol: ${Number(p.box_volume) || 0} m³ · Peso: ${fmtNum(p.weight_kg)} kg</div>
+            </div>
+            <button data-pick="${p.id}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg w-8 h-8 flex-shrink-0">+</button>
+          </div>
+        `).join('');
+
+      list.querySelectorAll('[data-pick]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const p = Store.getById('products', btn.dataset.pick);
+          if (!p) return;
+          pickerProduct = p;
+          document.getElementById('pk-confirm-name').textContent = `${p.sku_briggs || '—'} — ${p.name || ''}`;
+          document.getElementById('pk-fob').value = p.fob_unit != null ? p.fob_unit : 0;
+          document.getElementById('pk-hs').value = p.hs_code || '';
+          document.getElementById('pk-tariff').value = p.tariff_rate != null ? p.tariff_rate : 0;
+          document.getElementById('pk-margin').value = p.gain_margin != null ? p.gain_margin : 0;
+          document.getElementById('pk-confirm').classList.remove('hidden');
+          document.getElementById('pk-fob').focus();
         });
       });
     };
 
-    const createNewSupplier = (itemIdx) => {
-      pendingSupplierItem = itemIdx;
-      document.getElementById('supplier-modal').classList.remove('hidden');
-      document.getElementById('sup-name').focus();
+    const openProductPicker = () => {
+      pickerProduct = null;
+      pickerQuery = '';
+      document.getElementById('pk-search').value = '';
+      document.getElementById('pk-confirm').classList.add('hidden');
+      document.getElementById('product-picker').classList.remove('hidden');
+      renderPickerList();
+      document.getElementById('pk-search').focus();
     };
 
-    const openEditSupplier = (itemIdx) => {
-      const item = items[itemIdx];
-      const sup = Store.getById('suppliers', item.supplier_id);
-      if (!sup) return;
-      pendingSupplierItem = itemIdx;
-      pendingSupplierId = sup.id;
-      document.getElementById('sup-name').value = sup.name || '';
-      document.getElementById('sup-country').value = sup.country || '';
-      document.getElementById('sup-email').value = sup.contact_email || '';
-      document.getElementById('sup-phone').value = sup.contact_phone || '';
-      document.getElementById('supplier-modal').classList.remove('hidden');
-      document.getElementById('supplier-modal-title').textContent = 'Editar Proveedor';
-      document.getElementById('sup-name').focus();
+    const closePicker = () => {
+      const modal = document.getElementById('product-picker');
+      if (modal) modal.classList.add('hidden');
+      pickerProduct = null;
     };
 
-    const closeSupplierModal = () => {
-      document.getElementById('supplier-modal').classList.add('hidden');
-      pendingSupplierItem = null;
-      pendingSupplierId = null;
-      ['sup-name', 'sup-country', 'sup-email', 'sup-phone'].forEach(id => {
-        document.getElementById(id).value = '';
+    const confirmPick = () => {
+      if (!pickerProduct) return;
+      const item = Store.productFromMaster(containerId, pickerProduct, {
+        fob_unit: num(document.getElementById('pk-fob')),
+        hs_code: document.getElementById('pk-hs').value.trim(),
+        tariff_rate: num(document.getElementById('pk-tariff')),
+        gain_margin: num(document.getElementById('pk-margin'))
       });
-      refreshItemsTable();
-    };
-
-    const saveSupplier = () => {
-      const name = document.getElementById('sup-name').value.trim();
-      if (!name) { document.getElementById('sup-name').focus(); return; }
-      const country = document.getElementById('sup-country').value.trim();
-      const email = document.getElementById('sup-email').value.trim();
-      const phone = document.getElementById('sup-phone').value.trim();
-
-      let supplier;
-      if (pendingSupplierId) {
-        supplier = Store.update('suppliers', {
-          id: pendingSupplierId,
-          name,
-          country,
-          contact_email: email,
-          contact_phone: phone
-        });
-      } else {
-        supplier = Store.insert('suppliers', { name, country, contact_email: email, contact_phone: phone });
-      }
-      if (pendingSupplierItem != null && items[pendingSupplierItem]) {
-        items[pendingSupplierItem] = { ...items[pendingSupplierItem], supplier_id: supplier.id };
-      }
-      pendingSupplierItem = null;
-      pendingSupplierId = null;
-      closeSupplierModal();
+      items.push(item);
+      closePicker();
       refreshResults();
       refreshItemsTable();
     };
@@ -413,18 +395,21 @@ const Calculator = {
           <table class="w-full text-left border-collapse text-xs">
             <thead>
               <tr class="bg-slate-100 border-b border-slate-200 text-slate-700">
-                <th class="p-2">Proveedor</th>
-                <th class="p-2">País Origen</th>
+                <th class="p-2 text-blue-800 font-bold">SKU BRIGGS</th>
                 <th class="p-2">SKU</th>
                 <th class="p-2">Nombre</th>
+                <th class="p-2">Proveedor</th>
+                <th class="p-2">País Origen</th>
                 <th class="p-2">Cant.</th>
                 <th class="p-2">Unid/Caja</th>
                 <th class="p-2">Vol. Caja (m³)</th>
+                <th class="p-2">Peso (kg)</th>
+                <th class="p-2">Peso (lbs)</th>
                 <th class="p-2 bg-blue-50 text-blue-900 font-bold">Unid/Cont.</th>
-                <th class="p-2">FOB Unit ($)</th>
-                <th class="p-2">Cód. Arancel</th>
-                <th class="p-2">% Arancel</th>
-                <th class="p-2">Margen %</th>
+                <th class="p-2 bg-slate-50 text-slate-800">FOB Unit ($)</th>
+                <th class="p-2 bg-slate-50 text-slate-800">Cód. Arancel</th>
+                <th class="p-2 bg-slate-50 text-slate-800">% Arancel</th>
+                <th class="p-2 bg-slate-50 text-slate-800">Margen %</th>
                 <th class="p-2 text-center">✕</th>
               </tr>
             </thead>
@@ -472,36 +457,42 @@ const Calculator = {
         <button id="btn-status" class="text-sm font-bold py-2.5 px-6 rounded-lg shadow-sm transition hidden"></button>
       </div>
 
-      <!-- Modal Proveedor -->
-      <div id="supplier-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-5 space-y-4">
+      <!-- Modal Selector de Productos -->
+      <div id="product-picker" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-5 space-y-4 max-h-[90vh] flex flex-col">
           <div class="flex justify-between items-center">
-            <h3 id="supplier-modal-title" class="text-lg font-bold text-slate-800">Nuevo Proveedor</h3>
-            <button id="sup-close" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
+            <h3 class="text-lg font-bold text-slate-800">Agregar Producto</h3>
+            <button id="pk-close" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
           </div>
-          <div class="space-y-3">
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre *</label>
-              <input id="sup-name" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Nombre del proveedor">
+          <input id="pk-search" type="text" placeholder="Buscar por SKU BRIGGS, SKU, nombre, proveedor, país…"
+                 class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+          <div id="pk-list" class="flex-1 overflow-y-auto border border-slate-200 rounded-lg min-h-0"></div>
+          <div id="pk-confirm" class="hidden bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+            <div class="flex justify-between items-center gap-2">
+              <span id="pk-confirm-name" class="font-bold text-slate-800 text-sm truncate"></span>
+              <button id="pk-cancel" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-600 font-semibold py-2 px-3 rounded-lg transition whitespace-nowrap">Cancelar</button>
             </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">País</label>
-              <input id="sup-country" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="País de origen">
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Email</label>
-                <input id="sup-email" type="email" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="correo@ejemplo.com">
+                <label class="block text-xs font-semibold text-slate-600 mb-1">FOB Unit ($)</label>
+                <input id="pk-fob" type="number" step="0.01" class="w-full p-1.5 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">Teléfono</label>
-                <input id="sup-phone" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="+52...">
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Cód. Arancel</label>
+                <input id="pk-hs" type="text" class="w-full p-1.5 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">% Arancel</label>
+                <input id="pk-tariff" type="number" step="0.1" class="w-full p-1.5 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Margen %</label>
+                <input id="pk-margin" type="number" step="0.1" class="w-full p-1.5 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
               </div>
             </div>
-          </div>
-          <div class="flex justify-end gap-2 pt-1">
-            <button id="sup-cancel" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-2 px-4 rounded-lg transition">Cancelar</button>
-            <button id="sup-save" class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition">Guardar</button>
+            <div class="flex justify-end">
+              <button id="pk-confirm-add" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-4 rounded-lg transition">+ Agregar a este contenedor</button>
+            </div>
           </div>
         </div>
       </div>
@@ -607,25 +598,7 @@ const Calculator = {
     renderStatus();
 
     // Agregar / resetear
-    document.getElementById('btn-add-item').addEventListener('click', () => {
-      const item = Store.insert('items', {
-        container_id: containerId,
-        supplier_id: null,
-        origin_country: '',
-        sku: 'SKU-' + (items.length + 1),
-        name: 'Nuevo Producto',
-        qty: 100,
-        units_per_box: 1,
-        box_volume: 0.01,
-        fob_unit: 10,
-        hs_code: '',
-        tariff_rate: 0,
-        gain_margin: 0
-      });
-      items.push(item);
-      refreshResults();
-      refreshItemsTable();
-    });
+    document.getElementById('btn-add-item').addEventListener('click', openProductPicker);
 
     document.getElementById('btn-reset').addEventListener('click', () => {
       if (!confirm('¿Restablecer todos los productos de este contenedor?')) return;
@@ -640,20 +613,20 @@ const Calculator = {
       window.location.hash = '#/';
     });
 
-    // Modal proveedor
-    document.getElementById('sup-save').addEventListener('click', saveSupplier);    document.getElementById('sup-cancel').addEventListener('click', closeSupplierModal);
-    document.getElementById('sup-close').addEventListener('click', closeSupplierModal);
-    document.getElementById('supplier-modal').addEventListener('click', (e) => {
-      if (e.target.id === 'supplier-modal') closeSupplierModal();
+    // Modal selector de productos
+    document.getElementById('pk-search').addEventListener('input', (e) => {
+      pickerQuery = e.target.value;
+      renderPickerList();
+    });
+    document.getElementById('pk-confirm-add').addEventListener('click', confirmPick);
+    document.getElementById('pk-cancel').addEventListener('click', closePicker);
+    document.getElementById('pk-close').addEventListener('click', closePicker);
+    document.getElementById('product-picker').addEventListener('click', (e) => {
+      if (e.target.id === 'product-picker') closePicker();
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeSupplierModal();
+      if (e.key === 'Escape') closePicker();
     }, { signal });
-    ['sup-name', 'sup-country', 'sup-email', 'sup-phone'].forEach(id => {
-      document.getElementById(id).addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); saveSupplier(); }
-      }, { signal });
-    });
 
     // Exportar a Excel
     const exportExcel = () => {
@@ -670,13 +643,16 @@ const Calculator = {
       const products = items.map(it => {
         const sup = suppliers.find(x => x.id === it.supplier_id);
         return {
-          'Proveedor': sup ? (sup.name || '') : '',
-          'País Origen': it.origin_country || '',
+          'SKU BRIGGS': it.sku_briggs || '',
           'SKU': it.sku || '',
           'Nombre': it.name || '',
+          'Proveedor': sup ? (sup.name || '') : '',
+          'País Origen': it.origin_country || '',
           'Cantidad': Number(it.qty) || 0,
           'Unid/Caja': Number(it.units_per_box) || 0,
           'Vol. Caja (m³)': Number(it.box_volume) || 0,
+          'Peso (kg)': Number(it.weight_kg) || 0,
+          'Peso (lbs)': Number(it.weight_lbs) || 0,
           'FOB Unit ($)': Number(it.fob_unit) || 0,
           'Cód. Arancel': it.hs_code || '',
           '% Arancel': Number(it.tariff_rate) || 0,
