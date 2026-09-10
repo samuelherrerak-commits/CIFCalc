@@ -9,10 +9,10 @@ try {
     sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
 } catch (e) {
-  console.warn('CIFCalc: No se pudo conectar a Supabase, usando localStorage.', e.message);
+  console.warn('Maestro de Costo: No se pudo conectar a Supabase, usando localStorage.', e.message);
 }
 
-const log = (msg) => console.log(`CIFCalc: ${msg}`);
+const log = (msg) => console.log(`Maestro de Costo: ${msg}`);
 
 // ============================================
 // localStorage helpers
@@ -110,7 +110,7 @@ async function processRetryQueue() {
         if (error) throw error;
       }
     } catch (e) {
-      console.warn(`CIFCalc: retry #${op.attempts} fallo para ${op.type} en ${op.table}:`, e.message);
+      console.warn(`Maestro de Costo: retry #${op.attempts} fallo para ${op.type} en ${op.table}:`, e.message);
       if (op.attempts < MAX_RETRIES) remaining.push(op);
     }
   }
@@ -127,7 +127,7 @@ async function sbUpsert(table, record) {
     const { error } = await sb.from(table).upsert(records, { onConflict: 'id' });
     if (error) throw error;
   } catch (e) {
-    console.warn(`CIFCalc: sync upsert fallo en ${table}, encolando retry:`, e.message);
+    console.warn(`Maestro de Costo: sync upsert fallo en ${table}, encolando retry:`, e.message);
     pushRetry({ type: 'upsert', table, record });
   }
 }
@@ -138,7 +138,7 @@ async function sbDelete(table, id) {
     const { error } = await sb.from(table).delete().eq('id', id);
     if (error) throw error;
   } catch (e) {
-    console.warn(`CIFCalc: sync delete fallo en ${table}, encolando retry:`, e.message);
+    console.warn(`Maestro de Costo: sync delete fallo en ${table}, encolando retry:`, e.message);
     pushRetry({ type: 'delete', table, column: 'id', value: id });
   }
 }
@@ -149,7 +149,7 @@ async function sbDeleteWhere(table, column, value) {
     const { error } = await sb.from(table).delete().eq(column, value);
     if (error) throw error;
   } catch (e) {
-    console.warn(`CIFCalc: sync deleteWhere fallo en ${table}, encolando retry:`, e.message);
+    console.warn(`Maestro de Costo: sync deleteWhere fallo en ${table}, encolando retry:`, e.message);
     pushRetry({ type: 'delete', table, column, value });
   }
 }
@@ -165,7 +165,7 @@ async function sbSelect(table, filters = {}) {
     if (error) throw error;
     return data || [];
   } catch (e) {
-    console.warn(`CIFCalc: sync select fallo en ${table}:`, e.message);
+    console.warn(`Maestro de Costo: sync select fallo en ${table}:`, e.message);
     return [];
   }
 }
@@ -185,7 +185,7 @@ async function sbSyncContainerItems(containerId, newItems) {
       if (error) throw error;
     }
   } catch (e) {
-    console.warn(`CIFCalc: sync container items fallo:`, e.message);
+    console.warn(`Maestro de Costo: sync container items fallo:`, e.message);
     pushRetry({ type: 'upsert', table: 'items', record: newItems });
   }
 }
@@ -242,7 +242,7 @@ async function syncWithCloud() {
     localStorage.setItem('cif_cloud_synced', '1');
     log('Sync completado');
   } catch (e) {
-    console.error('CIFCalc: Error en sync:', e.message);
+    console.error('Maestro de Costo: Error en sync:', e.message);
   }
 }
 
@@ -418,14 +418,12 @@ const Store = {
       name: '',
       supplier_id: null,
       origin_country: '',
-      qty: 100,
       units_per_box: 1,
       box_volume: 0,
       weight_kg: 0,
       hs_code: '',
       fob_unit: 0,
-      tariff_rate: 0,
-      gain_margin: 0
+      tariff_rate: 0
     };
   },
 

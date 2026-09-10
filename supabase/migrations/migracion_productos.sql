@@ -1,4 +1,4 @@
--- CIFCalc — Migración: Módulo Productos (catálogo maestro)
+-- Maestro de Costo — Migración: Módulo Productos (catálogo maestro)
 -- Archivo idempotente: puede ejecutarse varias veces sin errores.
 -- Se aplica DESPUÉS del esquema base (schema.sql), tanto en bases nuevas
 -- como en bases existentes que ya tengan las tablas originales.

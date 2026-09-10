@@ -1,4 +1,4 @@
--- CIFCalc — Migración: Peso solo en kg (se elimina lbs)
+-- Maestro de Costo — Migración: Peso solo en kg (se elimina lbs)
 -- Archivo idempotente: puede ejecutarse varias veces sin errores.
 -- Elimina la columna weight_lbs de products e items (ya no se usa).
 

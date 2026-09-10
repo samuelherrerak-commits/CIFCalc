@@ -11,7 +11,7 @@ const Nav = {
         <div class="max-w-7xl mx-auto px-4 md:px-8 h-14 flex items-center justify-between">
           <a href="#/" class="flex items-center gap-2 font-bold text-lg">
             <span class="text-2xl">🚚</span>
-            <span class="hidden sm:inline">CIFCalc</span>
+            <span class="hidden sm:inline">Maestro de Costo</span>
           </a>
           <ul class="flex gap-1">
             ${links.map(l => `

@@ -79,7 +79,7 @@ const Dashboard = {
     app.innerHTML = `
       <header class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
         <div>
-          <h1 class="text-2xl font-bold text-slate-900">CIFCalc — Dashboard de Embarques</h1>
+          <h1 class="text-2xl font-bold text-slate-900">Maestro de Costo — Dashboard de Embarques</h1>
           <p class="text-sm text-slate-500">Administra tus contenedores y embarques de importación</p>
         </div>
         <button id="new-container" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition">

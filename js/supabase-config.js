@@ -1,4 +1,4 @@
-// CIFCalc — Configuración de Supabase
+// Maestro de Costo — Configuración de Supabase
 // Edita estas credenciales si creas un nuevo proyecto
 
 export const SUPABASE_URL = 'https://vejbpctlurbojbvsxquq.supabase.co';

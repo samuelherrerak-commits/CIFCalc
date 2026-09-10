@@ -76,15 +76,21 @@ const Calculator = {
       if (!tbody) return;
 
       if (items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="19" class="p-4 text-center text-slate-400">Sin productos. Agrega un SKU para calcular.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="21" class="p-4 text-center text-slate-400">Sin productos. Agrega un SKU para calcular.</td></tr>`;
         tfoot.innerHTML = '';
       } else {
-        tbody.innerHTML = res.calculated.map(c => `
+        const wtTot = weightTotal();
+        tbody.innerHTML = res.calculated.map(c => {
+          const wtItem = c.boxes * (Number(c.item.weight_kg) || 0);
+          const wtFactor = wtTot > 0 ? wtItem / wtTot : 0;
+          return `
           <tr class="border-b border-slate-200 hover:bg-slate-50">
             <td class="p-2 font-bold text-slate-700">${esc(c.item.sku) || '—'}</td>
             <td class="p-2">${c.volTotal.toFixed(3)} m³</td>
             <td class="p-2">${(c.factor * 100).toFixed(2)}%</td>
-            <td class="p-2 font-bold text-blue-800 bg-slate-50">${fmtInt(c.unitsPerContainer)}</td>
+            <td class="p-2">${wtItem.toFixed(2)} kg</td>
+            <td class="p-2">${(wtFactor * 100).toFixed(2)}%</td>
+            <td class="p-2 font-bold text-blue-800 bg-slate-50">${fmtInt(c.qty)}</td>
             <td class="p-2">$${fmtNum(c.fobTotal)}</td>
             <td class="p-2">$${fmtNum(c.oceanFreightAssigned)}</td>
             <td class="p-2 text-blue-700 font-medium">$${fmtNum(c.insuranceAmount)}</td>
@@ -101,7 +107,8 @@ const Calculator = {
             <td class="p-2 text-emerald-700 font-semibold">$${fmtNum(c.salePriceOnCost)}</td>
             <td class="p-2 font-bold text-emerald-900">$${fmtNum(c.salePriceOnCostVat)}</td>
           </tr>
-        `).join('');
+          `;
+        }).join('');
 
         const s = res.summary;
         tfoot.innerHTML = `
@@ -109,7 +116,9 @@ const Calculator = {
             <td class="p-2">TOTALES</td>
             <td class="p-2">${res.totalVolume.toFixed(3)} m³</td>
             <td class="p-2">100.00%</td>
-            <td class="p-2 bg-slate-200">-</td>
+            <td class="p-2">${wtTot.toFixed(2)} kg</td>
+            <td class="p-2">100.00%</td>
+            <td class="p-2 bg-slate-200">${fmtInt(s.totalQty)}</td>
             <td class="p-2">$${fmtNum(s.fob)}</td>
             <td class="p-2">$${fmtNum(Number(container.ocean_freight) || 0)}</td>
             <td class="p-2 text-blue-800">$${fmtNum(s.insurance)}</td>
@@ -247,14 +256,13 @@ const Calculator = {
           if (!p) return;
           pickerProduct = p;
           document.getElementById('pk-confirm-name').textContent = `${p.sku_briggs || '—'} — ${p.name || ''}`;
-          document.getElementById('pk-qty').value = p.qty != null ? p.qty : 100;
+          document.getElementById('pk-qty').value = '';
           document.getElementById('pk-fob').value = p.fob_unit != null ? p.fob_unit : 0;
           document.getElementById('pk-hs').value = p.hs_code || '';
           document.getElementById('pk-tariff').value = p.tariff_rate != null ? p.tariff_rate : 0;
-          document.getElementById('pk-margin').value = p.gain_margin != null ? p.gain_margin : 0;
+          document.getElementById('pk-margin').value = '';
           document.getElementById('pk-confirm').classList.remove('hidden');
           document.getElementById('pk-qty').focus();
-          document.getElementById('pk-qty').select();
         });
       });
     };
@@ -324,7 +332,7 @@ const Calculator = {
       <header class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-4">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
           <div>
-            <h1 class="text-2xl font-bold text-slate-900">CIFCalc — Calculadora CIF</h1>
+            <h1 class="text-2xl font-bold text-slate-900">Maestro de Costo — Calculadora CIF</h1>
             <p class="text-sm text-slate-500" id="save-status">Autoguardado</p>
           </div>
           <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6">
@@ -479,7 +487,9 @@ const Calculator = {
                 <th class="p-2">SKU</th>
                 <th class="p-2">Vol. Total (m³)</th>
                 <th class="p-2">% Prorrateo</th>
-                <th class="p-2 bg-slate-700">Unid/Cont.</th>
+                <th class="p-2">Peso Total (kg)</th>
+                <th class="p-2">% Prorrateo Peso</th>
+                <th class="p-2 bg-slate-700">Cantidad</th>
                 <th class="p-2">FOB Total ($)</th>
                 <th class="p-2">Flete Mar. ($)</th>
                 <th class="p-2 text-blue-300">Seguro ($)</th>
@@ -715,33 +725,41 @@ const Calculator = {
         };
       });
 
-      const results = res.calculated.map(c => ({
-        'SKU': c.item.sku || '',
-        'Vol. Total (m³)': c.volTotal,
-        '% Prorrateo': c.factor * 100,
-        'Unid/Cont.': c.unitsPerContainer,
-        'FOB Total ($)': c.fobTotal,
-        'Flete Mar. ($)': c.oceanFreightAssigned,
-        'Seguro ($)': c.insuranceAmount,
-        'CIF Total ($)': c.cifTotal,
-        'Arancel ($)': c.tariffAmount,
-        'Tasa Port. ($)': c.portFeeAmount,
-        'Ag. Aduanal ($)': c.customsBrokerAmount,
-        'IVA ($)': c.vatAmount,
-        'IVA Unit. ($)': c.ivPerUnit,
-        'Otros Gastos ($)': c.otherExpenses,
-        'Landed Total ($)': c.landedTotal,
-        'Costo Unit. sin IVA ($)': c.costNoVat,
-        'Costo Unit. + IVA ($)': c.costWithVat,
-        'P. Venta / Costo ($)': c.salePriceOnCost,
-        'P. Venta / Costo + IVA ($)': c.salePriceOnCostVat
-      }));
+      const wtTot = weightTotal();
+      const results = res.calculated.map(c => {
+        const wtItem = c.boxes * (Number(c.item.weight_kg) || 0);
+        return {
+          'SKU': c.item.sku || '',
+          'Vol. Total (m³)': c.volTotal,
+          '% Prorrateo': c.factor * 100,
+          'Peso Total (kg)': wtItem,
+          '% Prorrateo Peso': wtTot > 0 ? (wtItem / wtTot) * 100 : 0,
+          'Cantidad': c.qty,
+          'FOB Total ($)': c.fobTotal,
+          'Flete Mar. ($)': c.oceanFreightAssigned,
+          'Seguro ($)': c.insuranceAmount,
+          'CIF Total ($)': c.cifTotal,
+          'Arancel ($)': c.tariffAmount,
+          'Tasa Port. ($)': c.portFeeAmount,
+          'Ag. Aduanal ($)': c.customsBrokerAmount,
+          'IVA ($)': c.vatAmount,
+          'IVA Unit. ($)': c.ivPerUnit,
+          'Otros Gastos ($)': c.otherExpenses,
+          'Landed Total ($)': c.landedTotal,
+          'Costo Unit. sin IVA ($)': c.costNoVat,
+          'Costo Unit. + IVA ($)': c.costWithVat,
+          'P. Venta / Costo ($)': c.salePriceOnCost,
+          'P. Venta / Costo + IVA ($)': c.salePriceOnCostVat
+        };
+      });
 
       const summary = [
         { 'Concepto': 'Nº Embarque / BL', 'Valor': container.bl_number || '' },
         { 'Concepto': 'Fecha de Operación', 'Valor': container.operation_date || '' },
         { 'Concepto': 'Compañía', 'Valor': companyName },
         { 'Concepto': 'Vol. Contenedor (m³)', 'Valor': container.container_capacity },
+        { 'Concepto': 'Carga Máx. Peso (kg)', 'Valor': container.container_max_weight },
+        { 'Concepto': 'Peso Total Cargado (kg)', 'Valor': wtTot },
         { 'Concepto': 'Tasa Seguro (%)', 'Valor': container.insurance_rate },
         { 'Concepto': 'Tasa Portuaria (%)', 'Valor': container.port_fee_rate },
         { 'Concepto': 'Tasa IVA Importación (%)', 'Valor': container.vat_rate },
@@ -767,7 +785,7 @@ const Calculator = {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(products), 'Productos');
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(results), 'Resultados');
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), 'Resumen');
-      const fname = `CIFCalc_${(container.bl_number || 'contenedor').replace(/[^\w\-]+/g, '_')}.xlsx`;
+      const fname = `MAESTRO_DE_COSTO_${(container.bl_number || 'contenedor').replace(/[^\w\-]+/g, '_')}.xlsx`;
       XLSX.writeFile(wb, fname);
     };
 

@@ -1,4 +1,4 @@
-# CIFCalc — Migración a Supabase
+# Maestro de Costo — Migración a Supabase
 
 ## Credenciales actuales
 
@@ -32,7 +32,7 @@ No se borra nada del localStorage en ningún momento.
 
 1. Abrir la app en el navegador
 2. Abrir consola del navegador (F12)
-3. Buscar mensajes como `CIFCalc: datos migrados a la nube` o `CIFCalc: conectado a Supabase`
+3. Buscar mensajes como `Maestro de Costo: BD remota vacía…` o `Maestro de Costo: Sync completado`
 4. Ir a Supabase Dashboard → Table Editor → verificar que los datos aparecen
 
 ## Archivos modificados

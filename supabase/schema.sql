@@ -1,4 +1,4 @@
-﻿-- CIFCalc — Esquema base de Supabase
+﻿-- Maestro de Costo — Esquema base de Supabase
 -- Ejecutar en el SQL Editor de Supabase Dashboard.
 -- IMPORTANTE: las migraciones de features se aplican DESPUÉS, en orden:
 --   migrations/migracion_productos.sql   (módulo Productos)
