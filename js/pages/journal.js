@@ -3,7 +3,7 @@ import { fmtNum, esc, num } from '../utils.js';
 import { validateJournalBalance } from '../accounting.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 
-const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre' };
+const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', sales_module: 'Venta', expense_module: 'Gasto' };
 const STATUS_LABEL = { draft: 'Borrador', posted: 'Contabilizado' };
 const STATUS_STYLE = { draft: 'bg-amber-100 text-amber-700', posted: 'bg-emerald-100 text-emerald-700' };
 
@@ -34,7 +34,7 @@ const Journal = {
       const tbody = document.getElementById('journal-tbody');
       const list = sortedEntries();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin pólizas. Crea una con "+ Nueva Póliza".</td></tr>`
+        ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin asientos. Crea uno con "+ Nuevo Asiento".</td></tr>`
         : list.map(e => {
           const t = totalsFor(e.id);
           return `
@@ -105,7 +105,7 @@ const Journal = {
       document.getElementById('f-desc').value = e.description || '';
       document.getElementById('f-date').disabled = readOnly;
       document.getElementById('f-desc').disabled = readOnly;
-      document.getElementById('journal-modal-title').textContent = id ? (readOnly ? 'Póliza Contabilizada (solo lectura)' : 'Editar Póliza') : 'Nueva Póliza';
+      document.getElementById('journal-modal-title').textContent = id ? (readOnly ? 'Asiento Contabilizado (solo lectura)' : 'Editar Asiento') : 'Nuevo Asiento';
       document.getElementById('btn-add-line').classList.toggle('hidden', readOnly);
       document.getElementById('entry-save').classList.toggle('hidden', readOnly);
       document.getElementById('entry-post').classList.toggle('hidden', readOnly);
@@ -142,7 +142,7 @@ const Journal = {
       if (!entry.entry_date) { alert('La fecha es obligatoria.'); return; }
       if (!entry.description) { alert('La descripción es obligatoria.'); return; }
       const check = validateJournalBalance(lines);
-      if (!check.balanced) { alert(check.reason || 'La póliza no está balanceada.'); return; }
+      if (!check.balanced) { alert(check.reason || 'El asiento no está balanceado.'); return; }
       const { entry: saved } = Store.saveJournalEntryWithLines(entry, lines);
       const result = Store.postJournalEntry(saved.id);
       if (!result.ok) { alert(result.error); return; }
@@ -152,7 +152,7 @@ const Journal = {
     };
 
     const removeEntry = (id) => {
-      if (!confirm('¿Eliminar esta póliza?')) return;
+      if (!confirm('¿Eliminar este asiento?')) return;
       const result = Store.removeJournalEntry(id);
       if (!result.ok) { alert(result.error); return; }
       entries = Store.getAll('journal_entries');
@@ -170,7 +170,7 @@ const Journal = {
       <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
         <div class="flex justify-between items-center px-4 py-3 border-b border-slate-200">
           <h2 class="font-bold text-slate-800">Diario General</h2>
-          <button id="btn-new-entry" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition">+ Nueva Póliza</button>
+          <button id="btn-new-entry" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition">+ Nuevo Asiento</button>
         </div>
         <table class="w-full text-left border-collapse text-xs">
           <thead>
@@ -187,11 +187,11 @@ const Journal = {
         </table>
       </div>
 
-      <!-- Modal Póliza -->
+      <!-- Modal Asiento -->
       <div id="journal-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
           <div class="flex justify-between items-center">
-            <h3 id="journal-modal-title" class="text-lg font-bold text-slate-800">Nueva Póliza</h3>
+            <h3 id="journal-modal-title" class="text-lg font-bold text-slate-800">Nuevo Asiento</h3>
             <button id="journal-close" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -28,7 +28,10 @@ const STORE_KEYS = {
   accounts: 'cif_accounts',
   journal_entries: 'cif_journal_entries',
   journal_lines: 'cif_journal_lines',
-  accounting_settings: 'cif_accounting_settings'
+  accounting_settings: 'cif_accounting_settings',
+  expense_categories: 'cif_expense_categories',
+  sale_concepts: 'cif_sale_concepts',
+  module_settings: 'cif_module_settings'
 };
 
 function readAll(key) {
@@ -219,7 +222,7 @@ async function sbSyncJournalLines(entryId, newLines) {
 // ============================================
 // Bidirectional sync with cloud
 // ============================================
-const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'journal_entries', 'journal_lines', 'accounting_settings'];
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings'];
 
 async function syncWithCloud() {
   if (!sb) return;
@@ -287,6 +290,9 @@ function seed() {
   if (!localStorage.getItem(STORE_KEYS.journal_entries)) writeAll(STORE_KEYS.journal_entries, []);
   if (!localStorage.getItem(STORE_KEYS.journal_lines)) writeAll(STORE_KEYS.journal_lines, []);
   if (!localStorage.getItem(STORE_KEYS.accounting_settings)) writeAll(STORE_KEYS.accounting_settings, []);
+  if (!localStorage.getItem(STORE_KEYS.expense_categories)) writeAll(STORE_KEYS.expense_categories, []);
+  if (!localStorage.getItem(STORE_KEYS.sale_concepts)) writeAll(STORE_KEYS.sale_concepts, []);
+  if (!localStorage.getItem(STORE_KEYS.module_settings)) writeAll(STORE_KEYS.module_settings, []);
 
   if (!seedDone) {
     seedDone = true;
@@ -366,7 +372,7 @@ const Store = {
     return { container: c, items: newItems };
   },
 
-  // Genera automáticamente la póliza contable de cierre de un contenedor.
+  // Genera automáticamente el asiento contable de cierre de un contenedor.
   // Nunca lanza: un error aquí no debe romper el guardado del contenedor.
   generateClosingEntryForContainer(container, items) {
     try {
@@ -379,7 +385,7 @@ const Store = {
 
       const mapping = this.getAccountMapping();
       if (!isClosingMappingComplete(mapping)) {
-        console.warn('Maestro de Costo: no se generó la póliza de cierre — falta configurar el mapeo contable en Contabilidad > Cuentas.');
+        console.warn('Maestro de Costo: no se generó el asiento de cierre — falta configurar el mapeo contable en Contabilidad > Cuentas.');
         return;
       }
 
@@ -387,7 +393,7 @@ const Store = {
       const check = validateJournalBalance(lines);
       const status = check.balanced ? 'posted' : 'draft';
       if (status === 'draft') {
-        console.warn('Maestro de Costo: póliza de cierre generada como borrador (no balanceó). Revísala en el Diario.');
+        console.warn('Maestro de Costo: asiento de cierre generado como borrador (no balanceó). Revísala en el Diario.');
       }
 
       this.saveJournalEntryWithLines({
@@ -398,7 +404,7 @@ const Store = {
         status
       }, lines);
     } catch (e) {
-      console.error('Maestro de Costo: error generando póliza de cierre (el contenedor se guardó igual).', e);
+      console.error('Maestro de Costo: error generando asiento de cierre (el contenedor se guardó igual).', e);
     }
   },
 
@@ -510,7 +516,7 @@ const Store = {
   },
 
   // ============================================
-  // Contabilidad (plan de cuentas + pólizas)
+  // Contabilidad (plan de cuentas + asientos)
   // ============================================
   isAccountCodeUnique(code, excludeId = null) {
     const normalized = String(code || '').trim();
@@ -541,11 +547,11 @@ const Store = {
     return { entry: e, lines: newLines };
   },
 
-  // Marca una póliza como contabilizada (inmutable). Vuelve a validar el balance en el Store,
+  // Marca un asiento como contabilizado (inmutable). Vuelve a validar el balance en el Store,
   // sin confiar en el estado de la UI. Idempotente si ya estaba posted.
   postJournalEntry(entryId) {
     const entry = this.getById('journal_entries', entryId);
-    if (!entry) return { ok: false, error: 'La póliza no existe.' };
+    if (!entry) return { ok: false, error: 'El asiento no existe.' };
     if (entry.status === 'posted') return { ok: true, entry };
     const lines = this.getJournalLinesByEntry(entryId);
     const check = validateJournalBalance(lines);
@@ -556,7 +562,7 @@ const Store = {
   removeJournalEntry(id) {
     const entry = this.getById('journal_entries', id);
     if (entry && entry.status === 'posted') {
-      return { ok: false, error: 'No se puede eliminar una póliza contabilizada.' };
+      return { ok: false, error: 'No se puede eliminar un asiento contabilizado.' };
     }
     this.remove('journal_entries', id);
     const remaining = readAll(STORE_KEYS.journal_lines).filter(l => l.entry_id !== id);
@@ -572,6 +578,16 @@ const Store = {
 
   saveAccountMapping(map) {
     return this.upsert('accounting_settings', { ...map, id: 'default' });
+  },
+
+  // Configuración de los módulos de Ventas/Gastos (tasa de IVA + cuenta de IVA), una fila por módulo
+  // con id fijo ('sales_module' / 'expense_module'), mismo patrón de fila única que getAccountMapping.
+  getModuleSettings(moduleId) {
+    return this.getById('module_settings', moduleId);
+  },
+
+  saveModuleSettings(moduleId, data) {
+    return this.upsert('module_settings', { ...data, id: moduleId });
   }
 };
 
