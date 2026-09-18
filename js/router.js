@@ -4,17 +4,26 @@ import Store from './store.js';
 import Dashboard from './pages/dashboard.js';
 import Calculator from './pages/calculator.js';
 import Products from './pages/products.js';
+import Accounts from './pages/accounts.js';
+import Journal from './pages/journal.js';
+import Ledger from './pages/ledger.js';
 
 const routes = [
   { pattern: /^#\/?$/, handler: 'dashboard', key: 'dashboard' },
   { pattern: /^#\/contenedor\/(.+)$/, handler: 'calculator', key: 'calculator' },
-  { pattern: /^#\/productos\/?$/, handler: 'products', key: 'products' }
+  { pattern: /^#\/productos\/?$/, handler: 'products', key: 'products' },
+  { pattern: /^#\/contabilidad\/cuentas\/?$/, handler: 'accounts', key: 'accounts' },
+  { pattern: /^#\/contabilidad\/diario\/?$/, handler: 'journal', key: 'journal' },
+  { pattern: /^#\/contabilidad\/mayor\/?$/, handler: 'ledger', key: 'ledger' }
 ];
 
 const pages = {
   dashboard: Dashboard,
   calculator: Calculator,
-  products: Products
+  products: Products,
+  accounts: Accounts,
+  journal: Journal,
+  ledger: Ledger
 };
 
 let currentCleanup = null;

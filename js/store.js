@@ -1,4 +1,6 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase-config.js';
+import { computeContainer } from './utils.js';
+import { validateJournalBalance, buildContainerClosingLines, isClosingMappingComplete } from './accounting.js';
 
 // ============================================
 // Supabase client (singleton)
@@ -22,7 +24,11 @@ const STORE_KEYS = {
   suppliers: 'cif_suppliers',
   containers: 'cif_containers',
   items: 'cif_items',
-  products: 'cif_products'
+  products: 'cif_products',
+  accounts: 'cif_accounts',
+  journal_entries: 'cif_journal_entries',
+  journal_lines: 'cif_journal_lines',
+  accounting_settings: 'cif_accounting_settings'
 };
 
 function readAll(key) {
@@ -190,10 +196,30 @@ async function sbSyncContainerItems(containerId, newItems) {
   }
 }
 
+// Atomic per-journal-entry line sync with generation counter (mismo patrón que sbSyncContainerItems)
+const _journalSyncGeneration = new Map();
+
+async function sbSyncJournalLines(entryId, newLines) {
+  if (!sb) return;
+  const gen = (_journalSyncGeneration.get(entryId) || 0) + 1;
+  _journalSyncGeneration.set(entryId, gen);
+  try {
+    await sb.from('journal_lines').delete().eq('entry_id', entryId);
+    if (_journalSyncGeneration.get(entryId) !== gen) return;
+    if (newLines.length) {
+      const { error } = await sb.from('journal_lines').upsert(newLines, { onConflict: 'id' });
+      if (error) throw error;
+    }
+  } catch (e) {
+    console.warn(`Maestro de Costo: sync journal lines fallo:`, e.message);
+    pushRetry({ type: 'upsert', table: 'journal_lines', record: newLines });
+  }
+}
+
 // ============================================
 // Bidirectional sync with cloud
 // ============================================
-const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products'];
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'journal_entries', 'journal_lines', 'accounting_settings'];
 
 async function syncWithCloud() {
   if (!sb) return;
@@ -257,6 +283,10 @@ function seed() {
   if (!localStorage.getItem(STORE_KEYS.containers)) writeAll(STORE_KEYS.containers, []);
   if (!localStorage.getItem(STORE_KEYS.items)) writeAll(STORE_KEYS.items, []);
   if (!localStorage.getItem(STORE_KEYS.products)) writeAll(STORE_KEYS.products, []);
+  if (!localStorage.getItem(STORE_KEYS.accounts)) writeAll(STORE_KEYS.accounts, []);
+  if (!localStorage.getItem(STORE_KEYS.journal_entries)) writeAll(STORE_KEYS.journal_entries, []);
+  if (!localStorage.getItem(STORE_KEYS.journal_lines)) writeAll(STORE_KEYS.journal_lines, []);
+  if (!localStorage.getItem(STORE_KEYS.accounting_settings)) writeAll(STORE_KEYS.accounting_settings, []);
 
   if (!seedDone) {
     seedDone = true;
@@ -286,7 +316,7 @@ const Store = {
     const rec = { ...record, id: record.id || uid(), created_at: record.created_at || ts, updated_at: ts };
     list.push(rec);
     writeAll(STORE_KEYS[entity], list);
-    sbUpsert(STORE_KEYS[entity], rec);
+    sbUpsert(entity, rec);
     return rec;
   },
 
@@ -295,7 +325,7 @@ const Store = {
     const ts = now();
     list = list.map(x => (x.id === record.id ? { ...x, ...record, updated_at: ts } : x));
     writeAll(STORE_KEYS[entity], list);
-    sbUpsert(STORE_KEYS[entity], { ...record, updated_at: ts });
+    sbUpsert(entity, { ...record, updated_at: ts });
     return { ...record, updated_at: ts };
   },
 
@@ -309,10 +339,13 @@ const Store = {
   remove(entity, id) {
     const list = readAll(STORE_KEYS[entity]);
     writeAll(STORE_KEYS[entity], list.filter(x => x.id !== id));
-    sbDelete(STORE_KEYS[entity], id);
+    sbDelete(entity, id);
   },
 
   saveContainerWithItems(container, items) {
+    const prev = container.id ? readAll(STORE_KEYS.containers).find(x => x.id === container.id) : null;
+    const prevStatus = prev ? prev.status : null;
+
     let c;
     if (container.id && readAll(STORE_KEYS.containers).some(x => x.id === container.id)) {
       c = this.update('containers', container);
@@ -325,7 +358,48 @@ const Store = {
     writeAll(STORE_KEYS.items, [...remaining, ...newItems]);
     sbUpsert('containers', c);
     sbSyncContainerItems(c.id, newItems);
+
+    if (prevStatus !== 'closed' && c.status === 'closed') {
+      this.generateClosingEntryForContainer(c, newItems);
+    }
+
     return { container: c, items: newItems };
+  },
+
+  // Genera automáticamente la póliza contable de cierre de un contenedor.
+  // Nunca lanza: un error aquí no debe romper el guardado del contenedor.
+  generateClosingEntryForContainer(container, items) {
+    try {
+      const already = readAll(STORE_KEYS.journal_entries)
+        .some(e => e.source === 'container_close' && e.source_ref === container.id);
+      if (already) return;
+
+      const { summary } = computeContainer(container, items);
+      if (!summary.landed || summary.landed <= 0) return;
+
+      const mapping = this.getAccountMapping();
+      if (!isClosingMappingComplete(mapping)) {
+        console.warn('Maestro de Costo: no se generó la póliza de cierre — falta configurar el mapeo contable en Contabilidad > Cuentas.');
+        return;
+      }
+
+      const lines = buildContainerClosingLines(container, summary, mapping);
+      const check = validateJournalBalance(lines);
+      const status = check.balanced ? 'posted' : 'draft';
+      if (status === 'draft') {
+        console.warn('Maestro de Costo: póliza de cierre generada como borrador (no balanceó). Revísala en el Diario.');
+      }
+
+      this.saveJournalEntryWithLines({
+        entry_date: container.operation_date,
+        description: `Cierre de contenedor ${container.bl_number || container.id}`,
+        source: 'container_close',
+        source_ref: container.id,
+        status
+      }, lines);
+    } catch (e) {
+      console.error('Maestro de Costo: error generando póliza de cierre (el contenedor se guardó igual).', e);
+    }
   },
 
   getItemsByContainer(containerId) {
@@ -433,6 +507,71 @@ const Store = {
     return !readAll(STORE_KEYS.products).some(p =>
       p.id !== excludeId && String(p.sku_briggs || '').trim().toLowerCase() === normalized
     );
+  },
+
+  // ============================================
+  // Contabilidad (plan de cuentas + pólizas)
+  // ============================================
+  isAccountCodeUnique(code, excludeId = null) {
+    const normalized = String(code || '').trim();
+    if (!normalized) return true;
+    return !readAll(STORE_KEYS.accounts).some(a =>
+      a.id !== excludeId && String(a.code || '').trim() === normalized
+    );
+  },
+
+  getJournalLinesByEntry(entryId) {
+    return readAll(STORE_KEYS.journal_lines).filter(l => l.entry_id === entryId);
+  },
+
+  // Upsert de la cabecera + reemplazo atómico de sus líneas, análogo a saveContainerWithItems.
+  saveJournalEntryWithLines(entry, lines) {
+    let e;
+    if (entry.id && readAll(STORE_KEYS.journal_entries).some(x => x.id === entry.id)) {
+      e = this.update('journal_entries', entry);
+    } else {
+      e = this.insert('journal_entries', entry);
+    }
+    const remaining = readAll(STORE_KEYS.journal_lines).filter(l => l.entry_id !== e.id);
+    const ts = now();
+    const newLines = lines.map((l, i) => ({ ...l, entry_id: e.id, id: l.id || uid(), line_order: i, updated_at: ts }));
+    writeAll(STORE_KEYS.journal_lines, [...remaining, ...newLines]);
+    sbUpsert('journal_entries', e);
+    sbSyncJournalLines(e.id, newLines);
+    return { entry: e, lines: newLines };
+  },
+
+  // Marca una póliza como contabilizada (inmutable). Vuelve a validar el balance en el Store,
+  // sin confiar en el estado de la UI. Idempotente si ya estaba posted.
+  postJournalEntry(entryId) {
+    const entry = this.getById('journal_entries', entryId);
+    if (!entry) return { ok: false, error: 'La póliza no existe.' };
+    if (entry.status === 'posted') return { ok: true, entry };
+    const lines = this.getJournalLinesByEntry(entryId);
+    const check = validateJournalBalance(lines);
+    if (!check.balanced) return { ok: false, error: check.reason };
+    return { ok: true, entry: this.update('journal_entries', { id: entryId, status: 'posted' }) };
+  },
+
+  removeJournalEntry(id) {
+    const entry = this.getById('journal_entries', id);
+    if (entry && entry.status === 'posted') {
+      return { ok: false, error: 'No se puede eliminar una póliza contabilizada.' };
+    }
+    this.remove('journal_entries', id);
+    const remaining = readAll(STORE_KEYS.journal_lines).filter(l => l.entry_id !== id);
+    writeAll(STORE_KEYS.journal_lines, remaining);
+    sbDeleteWhere('journal_lines', 'entry_id', id);
+    return { ok: true };
+  },
+
+  // Fila única de configuración (id fijo 'default'), excepción documentada al uso normal de uuid.
+  getAccountMapping() {
+    return this.getById('accounting_settings', 'default');
+  },
+
+  saveAccountMapping(map) {
+    return this.upsert('accounting_settings', { ...map, id: 'default' });
   }
 };
 

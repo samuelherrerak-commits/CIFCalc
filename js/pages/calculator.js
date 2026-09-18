@@ -648,6 +648,22 @@ const Calculator = {
         }
         btn.classList.remove('hidden');
       }
+      renderLockState();
+    };
+
+    // Al completar un contenedor se genera automáticamente su póliza contable (Store.saveContainerWithItems).
+    // Bloqueamos los montos aquí para que no se pueda desincronizar esa póliza editando el costeo después.
+    const LOCKABLE_FIELD_IDS = [
+      'f-bl', 'f-date', 'f-capacity', 'f-max-wt',
+      'f-insurance-on', 'f-insurance-rate', 'f-port-rate', 'f-vat',
+      'f-ocean', 'f-inland', 'f-customs', 'f-broker', 'f-op', 'sel-company'
+    ];
+    const renderLockState = () => {
+      const locked = container.status === 'closed';
+      for (const id of LOCKABLE_FIELD_IDS) {
+        const el = document.getElementById(id);
+        if (el) el.disabled = locked;
+      }
     };
 
     document.getElementById('btn-status').addEventListener('click', () => {
