@@ -78,7 +78,7 @@ const Ledger = {
         `;
       }).filter(Boolean);
 
-      document.getElementById('trial-tbody').innerHTML = rows.join('') || `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin pólizas contabilizadas todavía.</td></tr>`;
+      document.getElementById('trial-tbody').innerHTML = rows.join('') || `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin asientos contabilizados todavía.</td></tr>`;
       document.getElementById('trial-total-debit').textContent = `$${fmtNum(totalDebit)}`;
       document.getElementById('trial-total-credit').textContent = `$${fmtNum(totalCredit)}`;
     };
@@ -105,7 +105,7 @@ const Ledger = {
           <thead>
             <tr class="bg-slate-100 border-b border-slate-200 text-slate-700">
               <th class="p-2">Fecha</th>
-              <th class="p-2">Póliza / Concepto</th>
+              <th class="p-2">Asiento / Concepto</th>
               <th class="p-2 text-right">Debe</th>
               <th class="p-2 text-right">Haber</th>
               <th class="p-2 text-right">Saldo</th>
@@ -118,7 +118,7 @@ const Ledger = {
       <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
         <div class="px-4 py-3 border-b border-slate-200">
           <h2 class="font-bold text-slate-800">Balance de Comprobación</h2>
-          <p class="text-xs text-slate-500">Solo pólizas contabilizadas (estado "Contabilizado")</p>
+          <p class="text-xs text-slate-500">Solo asientos contabilizados (estado "Contabilizado")</p>
         </div>
         <table class="w-full text-left border-collapse text-xs">
           <thead>

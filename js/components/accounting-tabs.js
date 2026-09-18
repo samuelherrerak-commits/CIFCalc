@@ -3,6 +3,8 @@ const AccountingTabs = {
   render(active) {
     const tabs = [
       { path: '#/contabilidad/cuentas', key: 'accounts', label: 'Cuentas' },
+      { path: '#/contabilidad/ventas', key: 'sales', label: 'Ventas' },
+      { path: '#/contabilidad/gastos', key: 'expenses', label: 'Gastos' },
       { path: '#/contabilidad/diario', key: 'journal', label: 'Diario' },
       { path: '#/contabilidad/mayor', key: 'ledger', label: 'Mayor' }
     ];

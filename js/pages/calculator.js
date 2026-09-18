@@ -651,8 +651,8 @@ const Calculator = {
       renderLockState();
     };
 
-    // Al completar un contenedor se genera automáticamente su póliza contable (Store.saveContainerWithItems).
-    // Bloqueamos los montos aquí para que no se pueda desincronizar esa póliza editando el costeo después.
+    // Al completar un contenedor se genera automáticamente su asiento contable (Store.saveContainerWithItems).
+    // Bloqueamos los montos aquí para que no se pueda desincronizar ese asiento editando el costeo después.
     const LOCKABLE_FIELD_IDS = [
       'f-bl', 'f-date', 'f-capacity', 'f-max-wt',
       'f-insurance-on', 'f-insurance-rate', 'f-port-rate', 'f-vat',

@@ -1,4 +1,4 @@
-// Motor de partida doble: validación de balance y construcción de pólizas automáticas.
+// Motor de partida doble: validación de balance y construcción de asientos automáticos.
 // Módulo puro, sin dependencia de Store, para poder probarlo y reutilizarlo desde la UI y desde el hook automático.
 
 export const ACCOUNT_TYPES = [
@@ -106,7 +106,7 @@ export function validateJournalBalance(lines) {
   };
 }
 
-// Construye las líneas de la póliza de cierre de un contenedor a partir del resumen de computeContainer()
+// Construye las líneas del asiento de cierre de un contenedor a partir del resumen de computeContainer()
 // y el mapeo configurable de cuentas. No depende de Store ni de IDs de cuenta hardcodeados.
 export function buildContainerClosingLines(container, summary, mapping) {
   const lines = [];
@@ -127,7 +127,7 @@ export function buildContainerClosingLines(container, summary, mapping) {
   debit(map.vat_account_id, summary.vat, 'IVA acreditable de importación');
 
   // El crédito se fuerza a ser exactamente la suma de los débitos ya redondeados,
-  // para blindar la póliza contra desajustes de centavos por redondeo independiente.
+  // para blindar el asiento contra desajustes de centavos por redondeo independiente.
   const totalDebit = round2(lines.reduce((s, l) => s + l.debit, 0));
   if (map.payable_account_id && totalDebit > 0) {
     lines.push({ account_id: map.payable_account_id, debit: 0, credit: totalDebit, memo: 'Total por pagar — costeo de importación' });
@@ -138,4 +138,47 @@ export function buildContainerClosingLines(container, summary, mapping) {
 export function isClosingMappingComplete(mapping) {
   if (!mapping) return false;
   return CLOSING_MAPPING_FIELDS.every(f => mapping[f.key]);
+}
+
+// Separa un monto total (con IVA incluido) en neto + IVA, dada una tasa en porcentaje.
+export function splitVat(total, vatRate) {
+  const net = round2(Number(total) / (1 + (Number(vatRate) || 0) / 100));
+  return { net, vat: round2(Number(total) - net) };
+}
+
+// Construye las líneas de un asiento de venta: Banco (Debe) contra Ingreso [+ IVA por Pagar] (Haber).
+// sale = { total, bank_account_id, include_vat, memo }; concept = { name, revenue_account_id };
+// moduleSettings = { vat_rate, vat_account_id } — vat_account_id es la cuenta de IVA por Pagar.
+export function buildSaleLines(sale, concept, moduleSettings) {
+  const total = round2(sale.total);
+  const lines = [{ account_id: sale.bank_account_id, debit: total, credit: 0, memo: sale.memo || 'Cobro de venta' }];
+  if (sale.include_vat) {
+    const { net, vat } = splitVat(total, moduleSettings.vat_rate);
+    lines.push({ account_id: concept.revenue_account_id, debit: 0, credit: net, memo: concept.name });
+    if (moduleSettings.vat_account_id && vat > 0) {
+      lines.push({ account_id: moduleSettings.vat_account_id, debit: 0, credit: vat, memo: 'IVA por pagar' });
+    }
+  } else {
+    lines.push({ account_id: concept.revenue_account_id, debit: 0, credit: total, memo: concept.name });
+  }
+  return lines;
+}
+
+// Construye las líneas de un asiento de gasto: Gasto [+ IVA Acreditable] (Debe) contra Banco (Haber).
+// expense = { total, bank_account_id, include_vat, memo }; category = { name, account_id };
+// moduleSettings = { vat_rate, vat_account_id } — vat_account_id es la cuenta de IVA Acreditable.
+export function buildExpenseLines(expense, category, moduleSettings) {
+  const total = round2(expense.total);
+  const lines = [];
+  if (expense.include_vat) {
+    const { net, vat } = splitVat(total, moduleSettings.vat_rate);
+    lines.push({ account_id: category.account_id, debit: net, credit: 0, memo: expense.memo || category.name });
+    if (moduleSettings.vat_account_id && vat > 0) {
+      lines.push({ account_id: moduleSettings.vat_account_id, debit: vat, credit: 0, memo: 'IVA acreditable' });
+    }
+  } else {
+    lines.push({ account_id: category.account_id, debit: total, credit: 0, memo: expense.memo || category.name });
+  }
+  lines.push({ account_id: expense.bank_account_id, debit: 0, credit: total, memo: expense.memo || category.name });
+  return lines;
 }

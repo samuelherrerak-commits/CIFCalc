@@ -53,6 +53,7 @@ const Accounts = {
       document.getElementById('f-name').value = a.name || '';
       document.getElementById('f-type').value = a.type || 'activo_circulante';
       document.getElementById('f-active').checked = a.is_active !== false;
+      document.getElementById('f-bank').checked = a.is_bank_account === true;
       document.getElementById('f-nature-preview').textContent = natureForType(a.type || 'activo_circulante');
       document.getElementById('account-modal-title').textContent = id ? 'Editar Cuenta' : 'Nueva Cuenta';
       document.getElementById('account-modal').classList.remove('hidden');
@@ -71,7 +72,11 @@ const Accounts = {
       if (!code) { alert('El código es obligatorio.'); document.getElementById('f-code').focus(); return; }
       if (!Store.isAccountCodeUnique(code, editingId)) { alert('Ya existe una cuenta con ese código.'); document.getElementById('f-code').focus(); return; }
       if (!name) { alert('El nombre es obligatorio.'); document.getElementById('f-name').focus(); return; }
-      const data = { code, name, type, nature: natureForType(type), is_active: document.getElementById('f-active').checked };
+      const data = {
+        code, name, type, nature: natureForType(type),
+        is_active: document.getElementById('f-active').checked,
+        is_bank_account: document.getElementById('f-bank').checked
+      };
       if (editingId) {
         Store.update('accounts', { ...data, id: editingId });
       } else {
@@ -85,7 +90,7 @@ const Accounts = {
 
     const removeAccount = (id) => {
       if (hasMovements(id)) {
-        if (!confirm('Esta cuenta ya tiene movimientos contables. No se puede eliminar, pero puedes desactivarla para que no aparezca en nuevas pólizas. ¿Desactivarla?')) return;
+        if (!confirm('Esta cuenta ya tiene movimientos contables. No se puede eliminar, pero puedes desactivarla para que no aparezca en nuevos asientos. ¿Desactivarla?')) return;
         Store.update('accounts', { id, is_active: false });
       } else {
         if (!confirm('¿Eliminar esta cuenta del catálogo?')) return;
@@ -105,7 +110,7 @@ const Accounts = {
       }
       if (!confirm(`Se crearán ${toCreate.length} cuenta(s) sugerida(s). ¿Continuar?`)) return;
       for (const s of toCreate) {
-        Store.insert('accounts', { code: s.code, name: s.name, type: s.type, nature: natureForType(s.type), is_active: true });
+        Store.insert('accounts', { code: s.code, name: s.name, type: s.type, nature: natureForType(s.type), is_active: true, is_bank_account: s.code === '1001' });
       }
       accounts = Store.getAll('accounts');
       renderTable();
@@ -181,7 +186,7 @@ const Accounts = {
       <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
         <div>
           <h2 class="font-bold text-slate-800">Mapeo Contable — Cierre de Contenedores</h2>
-          <p class="text-xs text-slate-500">Define a qué cuenta va cada concepto del Maestro de Costo cuando completas un contenedor. Si falta algún campo, la póliza se genera como borrador para que la revises.</p>
+          <p class="text-xs text-slate-500">Define a qué cuenta va cada concepto del Maestro de Costo cuando completas un contenedor. Si falta algún campo, no se genera el asiento automático hasta que completes el mapeo.</p>
         </div>
         <div id="mapping-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
         <div class="flex items-center gap-3">
@@ -219,6 +224,9 @@ const Accounts = {
           </div>
           <label class="flex items-center gap-2 text-sm text-slate-600">
             <input id="f-active" type="checkbox" class="accent-blue-600 w-4 h-4"> Cuenta activa
+          </label>
+          <label class="flex items-center gap-2 text-sm text-slate-600">
+            <input id="f-bank" type="checkbox" class="accent-blue-600 w-4 h-4"> Es cuenta de banco/caja (aparece como destino de pago en Ventas y Gastos)
           </label>
           <div class="flex justify-end gap-2 pt-1">
             <button id="acc-cancel" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-2 px-4 rounded-lg transition">Cancelar</button>
