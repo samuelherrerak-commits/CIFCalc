@@ -79,13 +79,58 @@ const DROPPED_FIELDS = {
   products: ['weight_lbs']
 };
 
+// Defaults por tabla para columnas NOT NULL. PostgREST arma el 'columns'
+// con la unión de claves del array; si una fila no trae una columna listada
+// (registros legacy), se inserta como null y viola NOT NULL. Rellenar con el
+// default correcto hace el batch válido.
+const TABLE_DEFAULTS = {
+  companies: { name: '', tax_id: '', created_at: '', updated_at: '' },
+  suppliers: { name: '', country: '', contact_email: '', contact_phone: '', created_at: '', updated_at: '' },
+  containers: {
+    company_id: null,
+    bl_number: '',
+    operation_date: '',
+    container_capacity: 0, container_max_weight: 0,
+    insurance_rate: 0, insurance_enabled: true,
+    port_fee_rate: 0, vat_rate: 0,
+    ocean_freight: 0, inland_freight: 0,
+    customs_expenses: 0, customs_broker_fee: 0, op_expenses: 0,
+    status: 'draft', created_at: '', updated_at: ''
+  },
+  items: {
+    container_id: null,
+    supplier_id: null,
+    origin_country: '',
+    sku: '', name: '', hs_code: '',
+    qty: 0, units_per_box: 1, box_volume: 0,
+    fob_unit: 0, tariff_rate: 0, gain_margin: 0,
+    product_id: null, sku_briggs: '', weight_kg: 0,
+    created_at: '', updated_at: ''
+  },
+  products: {
+    sku_briggs: '', sku: '', name: '',
+    supplier_id: null, origin_country: '',
+    units_per_box: 1, box_volume: 0, weight_kg: 0,
+    hs_code: '', fob_unit: 0, tariff_rate: 0,
+    created_at: '', updated_at: ''
+  }
+};
+
 function normalizeEntityRows(entity, rows) {
+  if (!Array.isArray(rows)) rows = rows ? [rows] : [];
   const dropped = DROPPED_FIELDS[entity];
-  if (!dropped) return rows;
+  const defaults = TABLE_DEFAULTS[entity];
   return rows.map(r => {
     if (!r || typeof r !== 'object') return r;
     const clean = { ...r };
-    for (const k of dropped) delete clean[k];
+    if (dropped) for (const k of dropped) delete clean[k];
+    if (defaults) {
+      for (const k of Object.keys(defaults)) {
+        if (clean[k] === undefined) {
+          clean[k] = (k === 'created_at' || k === 'updated_at') ? now() : defaults[k];
+        }
+      }
+    }
     return clean;
   });
 }
@@ -160,6 +205,20 @@ function exitSheetsMode() {
 const RETRY_KEY = 'cif_retry_queue';
 const MAX_RETRIES = 5;
 
+// Errores de constraint/schema nunca se resuelven reintentando (not-null, FK,
+// duplicados, esquema). Solo se re-intentan fallos transitorios de red/Bd.
+function isRetryableError(e) {
+  const msg = String((e && (e.message || e.details || '')) || '');
+  if (e && e.code) {
+    const c = String(e.code);
+    if (c.startsWith('235') || c === '22P02' || c === 'PGRST301' ||
+        /^PGRST\d{3}/.test(c) || /^42P\d{2}$/.test(c) || c === '28P01') return false;
+  }
+  if (/foreign key|not-null|null value|violates|duplicate key|schema cache|undefined table|PGRST|invalid input/gi.test(msg)) return false;
+  if (/failed to fetch|networkerror|timeout|timed out|abort|5\d\d|429/gi.test(msg)) return true;
+  return true;
+}
+
 function getRetryQueue() {
   try {
     const raw = localStorage.getItem(RETRY_KEY);
@@ -213,8 +272,13 @@ async function processRetryQueue() {
         }
       }
     } catch (e) {
-      console.warn(`Maestro de Costo: retry #${op.attempts} fallo para ${op.type} en ${op.table} (${op.target || 'supabase'}):`, e.message);
-      if (op.attempts < MAX_RETRIES) remaining.push(op);
+      const retryable = isRetryableError(e);
+      if (retryable && op.attempts < MAX_RETRIES) {
+        remaining.push(op);
+        console.warn(`Maestro de Costo: retry #${op.attempts} fallo para ${op.type} en ${op.table} (${op.target || 'supabase'}):`, e.message);
+      } else if (!retryable) {
+        console.warn(`Maestro de Costo: op ${op.type} en ${op.table} descartada (error no re-intentable):`, e.message);
+      }
     }
   }
   localStorage.setItem(RETRY_KEY, JSON.stringify(remaining));
@@ -242,8 +306,12 @@ async function sbUpsert(table, record) {
     const { error } = await sb.from(table).upsert(records, { onConflict: 'id' });
     if (error) throw error;
   } catch (e) {
-    console.warn(`Maestro de Costo: sync upsert fallo en ${table}, encolando retry:`, e.message);
-    pushRetry({ type: 'upsert', table, record: normalizeEntityRows(table, Array.isArray(record) ? record : [record]), target: 'supabase' });
+    if (isRetryableError(e)) {
+      console.warn(`Maestro de Costo: sync upsert fallo en ${table}, encolando retry:`, e.message);
+      pushRetry({ type: 'upsert', table, record: normalizeEntityRows(table, Array.isArray(record) ? record : [record]), target: 'supabase' });
+    } else {
+      console.warn(`Maestro de Costo: sync upsert en ${table} descartado (error no re-intentable):`, e.message);
+    }
   }
 }
 
@@ -253,8 +321,12 @@ async function sbDelete(table, id) {
     const { error } = await sb.from(table).delete().eq('id', id);
     if (error) throw error;
   } catch (e) {
-    console.warn(`Maestro de Costo: sync delete fallo en ${table}, encolando retry:`, e.message);
-    pushRetry({ type: 'delete', table, column: 'id', value: id, target: 'supabase' });
+    if (isRetryableError(e)) {
+      console.warn(`Maestro de Costo: sync delete fallo en ${table}, encolando retry:`, e.message);
+      pushRetry({ type: 'delete', table, column: 'id', value: id, target: 'supabase' });
+    } else {
+      console.warn(`Maestro de Costo: sync delete en ${table} descartado (error no re-intentable):`, e.message);
+    }
   }
 }
 
@@ -264,8 +336,12 @@ async function sbDeleteWhere(table, column, value) {
     const { error } = await sb.from(table).delete().eq(column, value);
     if (error) throw error;
   } catch (e) {
-    console.warn(`Maestro de Costo: sync deleteWhere fallo en ${table}, encolando retry:`, e.message);
-    pushRetry({ type: 'deleteWhere', table, column, value, target: 'supabase' });
+    if (isRetryableError(e)) {
+      console.warn(`Maestro de Costo: sync deleteWhere fallo en ${table}, encolando retry:`, e.message);
+      pushRetry({ type: 'deleteWhere', table, column, value, target: 'supabase' });
+    } else {
+      console.warn(`Maestro de Costo: sync deleteWhere en ${table} descartado (error no re-intentable):`, e.message);
+    }
   }
 }
 
@@ -281,8 +357,12 @@ async function sbSyncContainerItems(containerId, newItems) {
       if (error) throw error;
     }
   } catch (e) {
-    console.warn(`Maestro de Costo: sync container items fallo:`, e.message);
-    pushRetry({ type: 'upsert', table: 'items', record: normalizeEntityRows('items', newItems), target: 'supabase' });
+    if (isRetryableError(e)) {
+      console.warn(`Maestro de Costo: sync container items fallo, encolando retry:`, e.message);
+      pushRetry({ type: 'upsert', table: 'items', record: normalizeEntityRows('items', newItems), target: 'supabase' });
+    } else {
+      console.warn(`Maestro de Costo: sync container items descartado (error no re-intentable):`, e.message);
+    }
   }
 }
 
@@ -319,8 +399,12 @@ async function sbSyncJournalLines(entryId, newLines) {
       if (error) throw error;
     }
   } catch (e) {
-    console.warn(`Maestro de Costo: sync journal lines fallo:`, e.message);
-    pushRetry({ type: 'upsert', table: 'journal_lines', record: newLines });
+    if (isRetryableError(e)) {
+      console.warn(`Maestro de Costo: sync journal lines fallo:`, e.message);
+      pushRetry({ type: 'upsert', table: 'journal_lines', record: newLines });
+    } else {
+      console.warn(`Maestro de Costo: sync journal lines descartado (error no re-intentable):`, e.message);
+    }
   }
 }
 
@@ -375,12 +459,14 @@ async function getRemoteTable(table) {
 
 function cloudUpsert(table, record) {
   const records = normalizeEntityRows(table, Array.isArray(record) ? record : [record]);
+  let p = Promise.resolve();
   if (sb && backendMode === 'supabase') {
-    sbUpsert(table, records);
+    p = sbUpsert(table, records);
   } else {
     pushRetry({ type: 'upsert', table, record: records, target: 'supabase' });
   }
   sheetsUpsertSafe(table, records);
+  return p;
 }
 
 function cloudDelete(table, id) {
@@ -457,8 +543,9 @@ async function syncWithCloud() {
 
       if (hasLocalData) {
         log('BD remota vacía, subiendo datos locales (Supabase + respaldo Sheets)...');
+        // Subir en orden (padres antes que hijos) y esperar cada entidad para no romper FKs.
         for (const entity of ENTITIES) {
-          if (localAll[entity].length) cloudUpsert(entity, localAll[entity]);
+          if (localAll[entity].length) await cloudUpsert(entity, localAll[entity]);
         }
         log('Datos locales subidos a la nube');
       } else {
@@ -480,7 +567,16 @@ async function syncWithCloud() {
         const r = remote.find(x => x.id === m.id);
         return !r || new Date(m.updated_at || m.created_at || 0) > new Date(r.updated_at || r.created_at || 0);
       });
-      if (toUpload.length) cloudUpsert(entity, toUpload);
+
+      // Items: solo subir los cuyo contenedor ya está en el consenso (nunca FKs colgados).
+      if (entity === 'items' && toUpload.length) {
+        const okIds = new Set(readAll(STORE_KEYS.containers).map(c => c.id));
+        const orphanCount = toUpload.filter(m => m.container_id != null && !okIds.has(m.container_id)).length;
+        if (orphanCount) log(`Sync: ${orphanCount} item(s) sin contenedor en la nube, se mantienen locales.`);
+        toUpload = toUpload.filter(m => m.container_id == null || okIds.has(m.container_id));
+      }
+
+      if (toUpload.length) await cloudUpsert(entity, toUpload);
     }
 
     localStorage.setItem('cif_cloud_synced', '1');
@@ -548,9 +644,15 @@ function seed() {
 
   if (!seedDone) {
     seedDone = true;
-    return syncWithCloud()
-      .then(() => mirrorAllToSheets())
-      .then(() => processRetryQueue());
+    // El render no espera a Sheets ni a la cola de reintentos: se difieren
+    // unos cientos de ms para no bloquear el primer pintado.
+    return syncWithCloud().then(() => {
+      setTimeout(() => {
+        mirrorAllToSheets();
+        processRetryQueue();
+      }, 300);
+      return Promise.resolve();
+    });
   }
   return Promise.resolve();
 }
@@ -603,7 +705,7 @@ const Store = {
     cloudDelete(entity, id);
   },
 
-  saveContainerWithItems(container, items) {
+  async saveContainerWithItems(container, items) {
     const prev = container.id ? readAll(STORE_KEYS.containers).find(x => x.id === container.id) : null;
     const prevStatus = prev ? prev.status : null;
 
@@ -617,8 +719,9 @@ const Store = {
     const ts = now();
     const newItems = items.map(it => ({ ...it, container_id: c.id, id: it.id || uid(), updated_at: ts }));
     writeAll(STORE_KEYS.items, [...remaining, ...newItems]);
-    cloudUpsert('containers', c);
-    cloudSyncContainerItems(c.id, newItems);
+    // Esperar el upsert del contenedor antes de los items para no romper el FK.
+    await cloudUpsert('containers', c);
+    await cloudSyncContainerItems(c.id, newItems);
 
     if (prevStatus !== 'closed' && c.status === 'closed') {
       this.generateClosingEntryForContainer(c, newItems);

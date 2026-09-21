@@ -15,4 +15,4 @@ syncBadge();
 
 setInterval(() => {
   Store.syncWithCloud().then(() => Store.processRetryQueue());
-}, 30000);
+}, 60000);
