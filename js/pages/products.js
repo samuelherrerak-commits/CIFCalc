@@ -1,5 +1,5 @@
 import Store from '../store.js';
-import { fmtNum, fmtInt, esc, num } from '../utils.js';
+import { fmtNum, fmtInt, esc, num, ensureXlsx } from '../utils.js';
 
 const Products = {
   async render(app) {
@@ -477,8 +477,14 @@ const Products = {
     };
 
     const handleExcelFile = async (file) => {
+      try {
+        await ensureXlsx();
+      } catch (e) {
+        alert(e.message);
+        return;
+      }
       if (!window.XLSX) {
-        alert('No se pudo cargar la librería de Excel. Intenta recargar la página.');
+        alert('La librería de Excel no está disponible. Revisa tu conexión.');
         return;
       }
       const buffer = await file.arrayBuffer();
