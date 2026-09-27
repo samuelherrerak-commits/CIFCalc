@@ -22,6 +22,23 @@ export function num(el) {
   return isNaN(v) ? 0 : v;
 }
 
+// XLSX se carga a demanda para no bloquear el arranque de la app.
+const XLSX_CDN = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+let xlsxLoadPromise = null;
+export function ensureXlsx() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!xlsxLoadPromise) {
+    xlsxLoadPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = XLSX_CDN;
+      s.onload = () => resolve(window.XLSX);
+      s.onerror = () => { xlsxLoadPromise = null; reject(new Error('No se pudo cargar la librería de exportación.')); };
+      document.head.appendChild(s);
+    });
+  }
+  return xlsxLoadPromise;
+}
+
 // Motor de cálculo compartido (reglas confirmadas del spec)
 export function computeContainer(container, items) {
   const capacity = Number(container?.container_capacity) || 0;

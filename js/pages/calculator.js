@@ -1,22 +1,5 @@
 import Store from '../store.js';
-import { fmtNum, fmtInt, esc, num, computeContainer } from '../utils.js';
-
-// XLSX se carga a demanda para no bloquear el arranque de la app.
-const XLSX_CDN = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-let xlsxLoadPromise = null;
-function ensureXlsx() {
-  if (window.XLSX) return Promise.resolve(window.XLSX);
-  if (!xlsxLoadPromise) {
-    xlsxLoadPromise = new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = XLSX_CDN;
-      s.onload = () => resolve(window.XLSX);
-      s.onerror = () => { xlsxLoadPromise = null; reject(new Error('No se pudo cargar la librería de exportación.')); };
-      document.head.appendChild(s);
-    });
-  }
-  return xlsxLoadPromise;
-}
+import { fmtNum, fmtInt, esc, num, computeContainer, ensureXlsx } from '../utils.js';
 
 const Calculator = {
   async render(app, params) {

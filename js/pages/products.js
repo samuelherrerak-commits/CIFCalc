@@ -1,5 +1,5 @@
 import Store from '../store.js';
-import { fmtNum, fmtInt, esc, num } from '../utils.js';
+import { fmtNum, fmtInt, esc, num, ensureXlsx } from '../utils.js';
 
 const Products = {
   async render(app) {
@@ -12,6 +12,7 @@ const Products = {
     let editingId = null;
     let selectedSupplierId = null;
     let importCandidates = [];
+    let excelCandidates = [];
 
     const supplierName = (id) => {
       const s = suppliers.find(x => x.id === id);
@@ -36,7 +37,7 @@ const Products = {
     const renderImportBtn = () => {
       const btn = document.getElementById('btn-import');
       const n = buildImportCandidates().length;
-      btn.textContent = n > 0 ? `Importar (${n})` : 'Importar';
+      btn.textContent = n > 0 ? `Importar de Contenedores (${n})` : 'Importar de Contenedores';
     };
 
     const uniqueBriggsName = (sku) => {
@@ -89,13 +90,17 @@ const Products = {
       const tbody = document.getElementById('products-tbody');
       const list = filtered();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="11" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
+        ? `<tr><td colspan="15" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
         : list.map(p => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
             <td class="p-2 font-bold text-blue-800">${esc(p.sku_briggs)}</td>
             <td class="p-2">${esc(p.sku)}</td>
             <td class="p-2">${esc(p.name)}</td>
             <td class="p-2">${esc(supplierName(p.supplier_id)) || '<span class="text-slate-400">—</span>'}</td>
+            <td class="p-2">${esc(p.brand) || '<span class="text-slate-400">—</span>'}</td>
+            <td class="p-2">${esc(p.category) || '<span class="text-slate-400">—</span>'}</td>
+            <td class="p-2">${esc(p.collection) || '<span class="text-slate-400">—</span>'}</td>
+            <td class="p-2">${esc(p.color) || '<span class="text-slate-400">—</span>'}</td>
             <td class="p-2">${esc(p.origin_country)}</td>
             <td class="p-2 text-right">${fmtInt(p.units_per_box)}</td>
             <td class="p-2 text-right">${Number(p.box_volume) || 0}</td>
@@ -133,6 +138,10 @@ const Products = {
       document.getElementById('f-sku').value = p.sku || '';
       document.getElementById('f-name').value = p.name || '';
       document.getElementById('f-country').value = p.origin_country || '';
+      document.getElementById('f-brand').value = p.brand || '';
+      document.getElementById('f-category').value = p.category || '';
+      document.getElementById('f-collection').value = p.collection || '';
+      document.getElementById('f-color').value = p.color || '';
       document.getElementById('f-upb').value = p.units_per_box != null ? p.units_per_box : 1;
       document.getElementById('f-vol').value = p.box_volume != null ? p.box_volume : 0;
       document.getElementById('f-kg').value = p.weight_kg != null ? p.weight_kg : 0;
@@ -204,6 +213,10 @@ const Products = {
         name: document.getElementById('f-name').value.trim(),
         supplier_id: selectedSupplierId,
         origin_country: document.getElementById('f-country').value.trim(),
+        brand: document.getElementById('f-brand').value.trim(),
+        category: document.getElementById('f-category').value.trim(),
+        collection: document.getElementById('f-collection').value.trim(),
+        color: document.getElementById('f-color').value.trim(),
         units_per_box: num(document.getElementById('f-upb')),
         box_volume: num(document.getElementById('f-vol')),
         weight_kg: num(document.getElementById('f-kg')),
@@ -336,6 +349,216 @@ const Products = {
       alert(`Importados ${created} producto${created === 1 ? '' : 's'} en el catálogo y vinculados ${linked} ${linked === 1 ? 'item' : 'items'} de contenedores.`);
     };
 
+    // --- Importar desde Excel (Maestro de Códigos) ---
+    const normalizeHeader = (s) => String(s || '')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase().trim();
+
+    const findColumn = (headerRow, candidates) => {
+      const normalized = headerRow.map(normalizeHeader);
+      for (const candidate of candidates) {
+        const idx = normalized.findIndex(h => h.includes(candidate));
+        if (idx !== -1) return idx;
+      }
+      return -1;
+    };
+
+    const uniqueBriggsExact = (code, usedInBatch) => {
+      const base = String(code || '').trim();
+      let candidate = base;
+      let n = 2;
+      while (!Store.isSkuBriggsUnique(candidate) || usedInBatch.has(candidate.toLowerCase())) {
+        candidate = `${base}-${n++}`;
+      }
+      usedInBatch.add(candidate.toLowerCase());
+      return candidate;
+    };
+
+    const buildExcelCandidatesFromRows = (rows) => {
+      if (!rows || rows.length === 0) return [];
+      const header = rows[0].map(h => (h == null ? '' : h));
+      const col = {
+        proveedor: findColumn(header, ['proveedor']),
+        marca: findColumn(header, ['marca']),
+        colGenerador: findColumn(header, ['coleccion (generador)', 'coleccion generador']),
+        colCatalogo: findColumn(header, ['coleccion (catalogo)', 'coleccion catalogo']),
+        origen: findColumn(header, ['codigo origen']),
+        descripcion: findColumn(header, ['descripcion']),
+        categoria: findColumn(header, ['categoria']),
+        color: findColumn(header, ['color']),
+        briggs: findColumn(header, ['codigo de producto generado'])
+      };
+      if (col.proveedor === -1 || col.briggs === -1) {
+        alert('No se reconocen las columnas "Proveedor" y/o "CÓDIGO DE PRODUCTO GENERADO" en la hoja. Revisa el archivo.');
+        return [];
+      }
+
+      const usedInBatch = new Set();
+      const candidates = [];
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i] || [];
+        const proveedor = row[col.proveedor];
+        const briggsRaw = col.briggs !== -1 ? row[col.briggs] : null;
+        // Descarta filas separadoras de bloque (proveedor vacío/0) y filas sin código generado
+        if (!proveedor || proveedor === 0 || String(proveedor).trim() === '') continue;
+        if (!briggsRaw || String(briggsRaw).trim() === '') continue;
+
+        const sku_briggs = uniqueBriggsExact(String(briggsRaw).trim(), usedInBatch);
+        candidates.push({
+          sku_briggs,
+          sku: col.origen !== -1 ? String(row[col.origen] || '').trim() : '',
+          name: col.descripcion !== -1 ? String(row[col.descripcion] || '').trim() : '',
+          supplier_name: String(proveedor).trim(),
+          brand: col.marca !== -1 ? String(row[col.marca] || '').trim() : '',
+          category: col.categoria !== -1 ? String(row[col.categoria] || '').trim() : '',
+          collection: (col.colGenerador !== -1 && row[col.colGenerador]) ? String(row[col.colGenerador]).trim()
+            : (col.colCatalogo !== -1 ? String(row[col.colCatalogo] || '').trim() : ''),
+          color: col.color !== -1 ? String(row[col.color] || '').trim() : '',
+          origin_country: '',
+          units_per_box: 1,
+          box_volume: 0,
+          weight_kg: 0,
+          fob_unit: 0,
+          tariff_rate: 0,
+          hs_code: ''
+        });
+      }
+      return candidates;
+    };
+
+    const renderExcelImportRows = () => {
+      const tbody = document.getElementById('excel-import-tbody');
+      const countEl = document.getElementById('excel-import-count');
+      const okBtn = document.getElementById('excel-import-ok');
+      if (excelCandidates.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="15" class="p-4 text-center text-slate-400">No se detectaron productos válidos en el archivo.</td></tr>';
+        countEl.textContent = '0 productos';
+        okBtn.disabled = true;
+        okBtn.textContent = 'Importar';
+        return;
+      }
+      tbody.innerHTML = excelCandidates.map((c, i) => `
+        <tr class="border-b border-slate-100">
+          <td class="p-2"><input data-ck="${i}" type="checkbox" checked class="accent-emerald-600 w-4 h-4"></td>
+          <td class="p-2"><input data-briggs="${i}" value="${esc(c.sku_briggs)}" class="w-32 p-1 border rounded bg-white text-xs font-bold text-blue-800"></td>
+          <td class="p-2 font-mono text-xs">${esc(c.sku)}</td>
+          <td class="p-2"><input data-name="${i}" value="${esc(c.name)}" class="w-48 p-1 border rounded bg-white text-xs"></td>
+          <td class="p-2 text-xs">${esc(c.supplier_name)}</td>
+          <td class="p-2 text-xs">${esc(c.brand)}</td>
+          <td class="p-2 text-xs">${esc(c.category)}</td>
+          <td class="p-2 text-xs">${esc(c.collection)}</td>
+          <td class="p-2 text-xs">${esc(c.color)}</td>
+          <td class="p-2"><input data-country="${i}" value="${esc(c.origin_country)}" class="w-20 p-1 border rounded bg-white text-xs"></td>
+          <td class="p-2 text-right"><input data-upb="${i}" type="number" min="0" step="1" value="${c.units_per_box}" class="w-16 p-1 border rounded bg-white text-xs text-right"></td>
+          <td class="p-2 text-right"><input data-vol="${i}" type="number" min="0" step="0.001" value="${c.box_volume}" class="w-20 p-1 border rounded bg-white text-xs text-right"></td>
+          <td class="p-2 text-right"><input data-kg="${i}" type="number" min="0" step="0.01" value="${c.weight_kg}" class="w-20 p-1 border rounded bg-white text-xs text-right"></td>
+          <td class="p-2 text-right"><input data-fob="${i}" type="number" min="0" step="0.01" value="${c.fob_unit}" class="w-20 p-1 border rounded bg-white text-xs text-right"></td>
+          <td class="p-2 text-right"><input data-tariff="${i}" type="number" min="0" step="0.1" value="${c.tariff_rate}" class="w-16 p-1 border rounded bg-white text-xs text-right"></td>
+        </tr>
+      `).join('');
+      countEl.textContent = `${excelCandidates.length} producto${excelCandidates.length === 1 ? '' : 's'}`;
+      okBtn.disabled = false;
+      okBtn.textContent = `Importar (${excelCandidates.length})`;
+      tbody.addEventListener('change', (e) => {
+        if (e.target.matches('[data-ck]')) {
+          const checked = tbody.querySelectorAll('input[data-ck]:checked').length;
+          okBtn.disabled = checked === 0;
+          okBtn.textContent = `Importar (${checked})`;
+        }
+      });
+    };
+
+    const openExcelImport = () => {
+      document.getElementById('excel-file-input').click();
+    };
+
+    const closeExcelImport = () => {
+      document.getElementById('excel-import-modal').classList.add('hidden');
+    };
+
+    const handleExcelFile = async (file) => {
+      try {
+        await ensureXlsx();
+      } catch (e) {
+        alert(e.message);
+        return;
+      }
+      if (!window.XLSX) {
+        alert('La librería de Excel no está disponible. Revisa tu conexión.');
+        return;
+      }
+      const buffer = await file.arrayBuffer();
+      const wb = window.XLSX.read(buffer, { type: 'array' });
+      const sheetName = wb.SheetNames.includes('Maestro') ? 'Maestro' : wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+      excelCandidates = buildExcelCandidatesFromRows(rows);
+      renderExcelImportRows();
+      document.getElementById('excel-import-modal').classList.remove('hidden');
+    };
+
+    const runExcelImport = () => {
+      const tbody = document.getElementById('excel-import-tbody');
+      const rows = excelCandidates.map((c, i) => {
+        const ck = tbody.querySelector(`input[data-ck="${i}"]`);
+        if (!ck || !ck.checked) return null;
+        return {
+          ...c,
+          sku_briggs: tbody.querySelector(`input[data-briggs="${i}"]`).value.trim(),
+          name: tbody.querySelector(`input[data-name="${i}"]`).value.trim(),
+          origin_country: tbody.querySelector(`input[data-country="${i}"]`).value.trim(),
+          units_per_box: num(tbody.querySelector(`input[data-upb="${i}"]`)),
+          box_volume: num(tbody.querySelector(`input[data-vol="${i}"]`)),
+          weight_kg: num(tbody.querySelector(`input[data-kg="${i}"]`)),
+          fob_unit: num(tbody.querySelector(`input[data-fob="${i}"]`)),
+          tariff_rate: num(tbody.querySelector(`input[data-tariff="${i}"]`))
+        };
+      }).filter(Boolean);
+
+      if (rows.length === 0) {
+        alert('Selecciona al menos un producto para importar.');
+        return;
+      }
+
+      let createdProducts = 0;
+      let createdSuppliers = 0;
+      for (const c of rows) {
+        if (!c.sku_briggs) continue;
+        if (!Store.isSkuBriggsUnique(c.sku_briggs)) continue; // ya se resolvió al construir el lote, pero se revalida por seguridad
+
+        let supplier = suppliers.find(s => s.name.trim().toLowerCase() === c.supplier_name.trim().toLowerCase());
+        if (!supplier && c.supplier_name) {
+          supplier = Store.insert('suppliers', { name: c.supplier_name, country: '', contact_email: '', contact_phone: '' });
+          suppliers = Store.getAll('suppliers');
+          createdSuppliers++;
+        }
+
+        Store.insert('products', {
+          sku_briggs: c.sku_briggs,
+          sku: c.sku,
+          name: c.name || c.sku,
+          supplier_id: supplier ? supplier.id : null,
+          origin_country: c.origin_country,
+          brand: c.brand,
+          category: c.category,
+          collection: c.collection,
+          color: c.color,
+          units_per_box: c.units_per_box,
+          box_volume: c.box_volume,
+          weight_kg: c.weight_kg,
+          hs_code: c.hs_code,
+          fob_unit: c.fob_unit,
+          tariff_rate: c.tariff_rate
+        });
+        createdProducts++;
+      }
+      products = Store.getAll('products');
+      renderCount();
+      renderTable();
+      closeExcelImport();
+      alert(`Importados ${createdProducts} producto${createdProducts === 1 ? '' : 's'} (${createdSuppliers} proveedor${createdSuppliers === 1 ? '' : 'es'} nuevo${createdSuppliers === 1 ? '' : 's'} creado${createdSuppliers === 1 ? '' : 's'}).`);
+    };
+
     const openSupplierForm = () => {
       document.getElementById('f-sup-name').value = '';
       document.getElementById('f-sup-country').value = '';
@@ -374,7 +597,9 @@ const Products = {
         <div class="flex items-center gap-2">
           <input id="products-search" type="text" placeholder="Buscar por SKU, SKU BRIGGS, nombre, proveedor…"
                  class="w-72 p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-          <button id="btn-import" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar</button>
+          <button id="btn-import" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar de Contenedores</button>
+          <button id="btn-import-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar Excel</button>
+          <input id="excel-file-input" type="file" accept=".xlsx,.xls" class="hidden">
           <button id="btn-new-product" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">
             + Nuevo Producto
           </button>
@@ -392,6 +617,10 @@ const Products = {
               <th class="p-2">SKU</th>
               <th class="p-2">Nombre</th>
               <th class="p-2">Proveedor</th>
+              <th class="p-2">Marca</th>
+              <th class="p-2">Categoría</th>
+              <th class="p-2">Colección</th>
+              <th class="p-2">Color</th>
               <th class="p-2">País</th>
               <th class="p-2 text-right">Unid/Caja</th>
               <th class="p-2 text-right">Vol. Caja (m³)</th>
@@ -435,6 +664,24 @@ const Products = {
           <div>
             <label class="block text-xs font-semibold text-slate-600 mb-1">País Origen *</label>
             <input id="f-country" type="text" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Marca</label>
+              <input id="f-brand" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Categoría</label>
+              <input id="f-category" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Colección</label>
+              <input id="f-collection" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 mb-1">Color</label>
+              <input id="f-color" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+            </div>
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div>
@@ -508,6 +755,47 @@ const Products = {
         </div>
       </div>
 
+      <!-- Modal Importar desde Excel (Maestro de Códigos) -->
+      <div id="excel-import-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-6xl p-5 space-y-4 max-h-[90vh] flex flex-col">
+          <div class="flex justify-between items-center">
+            <h3 class="text-lg font-bold text-slate-800">Importar desde Excel (Maestro de Códigos)</h3>
+            <button id="excel-import-close" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
+          </div>
+          <p class="text-xs text-slate-500">
+            Se detectaron <span id="excel-import-count" class="font-bold text-slate-700"></span>. El archivo no trae país, peso, volumen ni FOB — se cargan con valores por defecto que puedes editar aquí antes de importar, o después en cada ficha.
+          </p>
+          <div class="overflow-y-auto border border-slate-200 rounded-lg">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-100 border-b border-slate-200 text-slate-700">
+                  <th class="p-2"></th>
+                  <th class="p-2">SKU BRIGGS</th>
+                  <th class="p-2">SKU Origen</th>
+                  <th class="p-2">Nombre</th>
+                  <th class="p-2">Proveedor</th>
+                  <th class="p-2">Marca</th>
+                  <th class="p-2">Categoría</th>
+                  <th class="p-2">Colección</th>
+                  <th class="p-2">Color</th>
+                  <th class="p-2">País</th>
+                  <th class="p-2 text-right">Unid/Caja</th>
+                  <th class="p-2 text-right">Vol. (m³)</th>
+                  <th class="p-2 text-right">Peso (kg)</th>
+                  <th class="p-2 text-right">FOB $</th>
+                  <th class="p-2 text-right">% Arancel</th>
+                </tr>
+              </thead>
+              <tbody id="excel-import-tbody"></tbody>
+            </table>
+          </div>
+          <div class="flex justify-end gap-2 pt-1">
+            <button id="excel-import-cancel" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-2 px-4 rounded-lg transition">Cancelar</button>
+            <button id="excel-import-ok" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition">Importar</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Modal Proveedor -->
       <div id="supplier-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-5 space-y-4">
@@ -564,6 +852,20 @@ const Products = {
       if (e.target.id === 'import-modal') closeImport();
     });
 
+    // Botón importar Excel
+    document.getElementById('btn-import-excel').addEventListener('click', openExcelImport);
+    document.getElementById('excel-file-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (file) handleExcelFile(file);
+    });
+    document.getElementById('excel-import-ok').addEventListener('click', runExcelImport);
+    document.getElementById('excel-import-cancel').addEventListener('click', closeExcelImport);
+    document.getElementById('excel-import-close').addEventListener('click', closeExcelImport);
+    document.getElementById('excel-import-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'excel-import-modal') closeExcelImport();
+    });
+
     // Modal producto
     document.getElementById('prod-save').addEventListener('click', saveProduct);
     document.getElementById('prod-cancel').addEventListener('click', closeForm);
@@ -605,6 +907,8 @@ const Products = {
           closeSupplierForm();
         } else if (!document.getElementById('import-modal').classList.contains('hidden')) {
           closeImport();
+        } else if (!document.getElementById('excel-import-modal').classList.contains('hidden')) {
+          closeExcelImport();
         } else if (!document.getElementById('product-modal').classList.contains('hidden')) {
           closeForm();
         }
