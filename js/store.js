@@ -860,6 +860,7 @@ const Store = {
       collection: '',
       category: '',
       color: '',
+      photo_url: '',
       units_per_box: 1,
       box_volume: 0,
       weight_kg: 0,

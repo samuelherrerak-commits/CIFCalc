@@ -1,5 +1,6 @@
 import Store from '../store.js';
-import { fmtNum, fmtInt, esc, num, ensureXlsx } from '../utils.js';
+import { fmtNum, fmtInt, esc, num, ensureXlsx, ensureJSZip } from '../utils.js';
+import { uploadImage } from '../sheets.js';
 
 const Products = {
   async render(app) {
@@ -90,9 +91,10 @@ const Products = {
       const tbody = document.getElementById('products-tbody');
       const list = filtered();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="15" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
+        ? `<tr><td colspan="16" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
         : list.map(p => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
+            <td class="p-2">${p.photo_url ? `<img src="${esc(p.photo_url)}" class="w-8 h-8 object-cover rounded border border-slate-200" alt="">` : '<span class="text-slate-300">—</span>'}</td>
             <td class="p-2 font-bold text-blue-800">${esc(p.sku_briggs)}</td>
             <td class="p-2">${esc(p.sku)}</td>
             <td class="p-2">${esc(p.name)}</td>
@@ -142,6 +144,7 @@ const Products = {
       document.getElementById('f-category').value = p.category || '';
       document.getElementById('f-collection').value = p.collection || '';
       document.getElementById('f-color').value = p.color || '';
+      document.getElementById('f-photo').value = p.photo_url || '';
       document.getElementById('f-upb').value = p.units_per_box != null ? p.units_per_box : 1;
       document.getElementById('f-vol').value = p.box_volume != null ? p.box_volume : 0;
       document.getElementById('f-kg').value = p.weight_kg != null ? p.weight_kg : 0;
@@ -217,6 +220,7 @@ const Products = {
         category: document.getElementById('f-category').value.trim(),
         collection: document.getElementById('f-collection').value.trim(),
         color: document.getElementById('f-color').value.trim(),
+        photo_url: document.getElementById('f-photo').value.trim(),
         units_per_box: num(document.getElementById('f-upb')),
         box_volume: num(document.getElementById('f-vol')),
         weight_kg: num(document.getElementById('f-kg')),
@@ -374,7 +378,53 @@ const Products = {
       return candidate;
     };
 
-    const buildExcelCandidatesFromRows = (rows) => {
+    // Las fotos del Maestro de Códigos son imágenes flotantes ancladas a celdas, no datos
+    // de celda: SheetJS no las lee. El .xlsx es un ZIP, así que se extraen directamente
+    // de xl/drawings/drawing1.xml (posición) + xl/media/* (contenido) usando JSZip.
+    const extractImagesFromXlsx = async (zip) => {
+      const drawingFile = zip.file('xl/drawings/drawing1.xml');
+      const relsFile = zip.file('xl/drawings/_rels/drawing1.xml.rels');
+      if (!drawingFile || !relsFile) return {};
+
+      const [drawingXml, relsXml] = await Promise.all([drawingFile.async('text'), relsFile.async('text')]);
+      const parser = new DOMParser();
+
+      const relsDoc = parser.parseFromString(relsXml, 'application/xml');
+      const relMap = {};
+      Array.from(relsDoc.getElementsByTagName('Relationship')).forEach(r => {
+        const id = r.getAttribute('Id');
+        const target = r.getAttribute('Target') || '';
+        relMap[id] = target.replace(/^\.\.\//, 'xl/');
+      });
+
+      const drawingDoc = parser.parseFromString(drawingXml, 'application/xml');
+      const anchors = Array.from(drawingDoc.getElementsByTagName('xdr:twoCellAnchor'));
+      const rowToPath = {};
+      for (const anchor of anchors) {
+        const fromEl = anchor.getElementsByTagName('xdr:from')[0];
+        const rowEl = fromEl ? fromEl.getElementsByTagName('xdr:row')[0] : null;
+        const blipEl = anchor.getElementsByTagName('a:blip')[0];
+        if (!rowEl || !blipEl) continue;
+        const fromRow = parseInt(rowEl.textContent, 10);
+        const rId = blipEl.getAttribute('r:embed');
+        const path = rId && relMap[rId];
+        if (Number.isInteger(fromRow) && path) rowToPath[fromRow] = path;
+      }
+
+      const images = {};
+      for (const [row, path] of Object.entries(rowToPath)) {
+        const mediaFile = zip.file(path);
+        if (!mediaFile) continue;
+        const base64 = await mediaFile.async('base64');
+        const ext = path.split('.').pop().toLowerCase();
+        const mimeType = ext === 'png' ? 'image/png' : (ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : '');
+        if (!mimeType) continue;
+        images[row] = { base64, mimeType, filename: path.split('/').pop() };
+      }
+      return images;
+    };
+
+    const buildExcelCandidatesFromRows = (rows, images) => {
       if (!rows || rows.length === 0) return [];
       const header = rows[0].map(h => (h == null ? '' : h));
       const col = {
@@ -414,6 +464,7 @@ const Products = {
           collection: (col.colGenerador !== -1 && row[col.colGenerador]) ? String(row[col.colGenerador]).trim()
             : (col.colCatalogo !== -1 ? String(row[col.colCatalogo] || '').trim() : ''),
           color: col.color !== -1 ? String(row[col.color] || '').trim() : '',
+          photo: (images && images[i]) || null,
           origin_country: '',
           units_per_box: 1,
           box_volume: 0,
@@ -431,7 +482,7 @@ const Products = {
       const countEl = document.getElementById('excel-import-count');
       const okBtn = document.getElementById('excel-import-ok');
       if (excelCandidates.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="15" class="p-4 text-center text-slate-400">No se detectaron productos válidos en el archivo.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="16" class="p-4 text-center text-slate-400">No se detectaron productos válidos en el archivo.</td></tr>';
         countEl.textContent = '0 productos';
         okBtn.disabled = true;
         okBtn.textContent = 'Importar';
@@ -440,6 +491,7 @@ const Products = {
       tbody.innerHTML = excelCandidates.map((c, i) => `
         <tr class="border-b border-slate-100">
           <td class="p-2"><input data-ck="${i}" type="checkbox" checked class="accent-emerald-600 w-4 h-4"></td>
+          <td class="p-2">${c.photo ? `<img src="data:${c.photo.mimeType};base64,${c.photo.base64}" class="w-8 h-8 object-cover rounded border border-slate-200" alt="">` : '<span class="text-slate-300">—</span>'}</td>
           <td class="p-2"><input data-briggs="${i}" value="${esc(c.sku_briggs)}" class="w-32 p-1 border rounded bg-white text-xs font-bold text-blue-800"></td>
           <td class="p-2 font-mono text-xs">${esc(c.sku)}</td>
           <td class="p-2"><input data-name="${i}" value="${esc(c.name)}" class="w-48 p-1 border rounded bg-white text-xs"></td>
@@ -459,6 +511,12 @@ const Products = {
       countEl.textContent = `${excelCandidates.length} producto${excelCandidates.length === 1 ? '' : 's'}`;
       okBtn.disabled = false;
       okBtn.textContent = `Importar (${excelCandidates.length})`;
+      const withPhoto = excelCandidates.filter(c => c.photo).length;
+      const photoStatusEl = document.getElementById('excel-photo-status');
+      photoStatusEl.classList.remove('hidden');
+      photoStatusEl.textContent = withPhoto > 0
+        ? `${withPhoto} de ${excelCandidates.length} productos traen foto — se subirán a Google Drive al importar.`
+        : 'No se detectaron fotos en el archivo (o el navegador no pudo leerlas).';
       tbody.addEventListener('change', (e) => {
         if (e.target.matches('[data-ck]')) {
           const checked = tbody.querySelectorAll('input[data-ck]:checked').length;
@@ -492,12 +550,23 @@ const Products = {
       const sheetName = wb.SheetNames.includes('Maestro') ? 'Maestro' : wb.SheetNames[0];
       const ws = wb.Sheets[sheetName];
       const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
-      excelCandidates = buildExcelCandidatesFromRows(rows);
+
+      // Las fotos son un extra: si JSZip falla o el archivo no trae dibujos, se importa igual sin fotos.
+      let images = {};
+      try {
+        await ensureJSZip();
+        const zip = await window.JSZip.loadAsync(buffer);
+        images = await extractImagesFromXlsx(zip);
+      } catch (e) {
+        console.warn('Maestro de Costo: no se pudieron leer las fotos del Excel.', e);
+      }
+
+      excelCandidates = buildExcelCandidatesFromRows(rows, images);
       renderExcelImportRows();
       document.getElementById('excel-import-modal').classList.remove('hidden');
     };
 
-    const runExcelImport = () => {
+    const runExcelImport = async () => {
       const tbody = document.getElementById('excel-import-tbody');
       const rows = excelCandidates.map((c, i) => {
         const ck = tbody.querySelector(`input[data-ck="${i}"]`);
@@ -518,6 +587,34 @@ const Products = {
       if (rows.length === 0) {
         alert('Selecciona al menos un producto para importar.');
         return;
+      }
+
+      // Fase 1: subir fotos a Drive, una por una (no en paralelo, para no saturar el Apps Script).
+      // Si una falla, el producto se importa igual sin foto — nunca bloquea la importación.
+      const rowsWithPhoto = rows.filter(c => c.photo);
+      let uploadFailures = 0;
+      if (rowsWithPhoto.length > 0) {
+        document.getElementById('excel-import-ok').disabled = true;
+        document.getElementById('excel-import-cancel').disabled = true;
+        const progressWrap = document.getElementById('excel-upload-progress');
+        const progressBar = document.getElementById('excel-upload-progress-bar');
+        const progressText = document.getElementById('excel-upload-progress-text');
+        progressWrap.classList.remove('hidden');
+        let done = 0;
+        for (const c of rowsWithPhoto) {
+          progressText.textContent = `Subiendo fotos… ${done + 1}/${rowsWithPhoto.length} (${c.sku_briggs})`;
+          try {
+            c.photo_url = await uploadImage(c.photo.filename, c.photo.mimeType, c.photo.base64);
+          } catch (e) {
+            console.warn('Maestro de Costo: no se pudo subir la foto de', c.sku_briggs, e);
+            uploadFailures++;
+          }
+          done++;
+          progressBar.style.width = `${Math.round((done / rowsWithPhoto.length) * 100)}%`;
+        }
+        progressWrap.classList.add('hidden');
+        document.getElementById('excel-import-ok').disabled = false;
+        document.getElementById('excel-import-cancel').disabled = false;
       }
 
       let createdProducts = 0;
@@ -543,6 +640,7 @@ const Products = {
           category: c.category,
           collection: c.collection,
           color: c.color,
+          photo_url: c.photo_url || '',
           units_per_box: c.units_per_box,
           box_volume: c.box_volume,
           weight_kg: c.weight_kg,
@@ -556,7 +654,12 @@ const Products = {
       renderCount();
       renderTable();
       closeExcelImport();
-      alert(`Importados ${createdProducts} producto${createdProducts === 1 ? '' : 's'} (${createdSuppliers} proveedor${createdSuppliers === 1 ? '' : 'es'} nuevo${createdSuppliers === 1 ? '' : 's'} creado${createdSuppliers === 1 ? '' : 's'}).`);
+      const photoNote = rowsWithPhoto.length > 0
+        ? (uploadFailures > 0
+          ? ` ${rowsWithPhoto.length - uploadFailures} de ${rowsWithPhoto.length} fotos subidas (${uploadFailures} fallaron — revisa tu configuración de Apps Script/Drive).`
+          : ` ${rowsWithPhoto.length} foto${rowsWithPhoto.length === 1 ? '' : 's'} subida${rowsWithPhoto.length === 1 ? '' : 's'} a Drive.`)
+        : '';
+      alert(`Importados ${createdProducts} producto${createdProducts === 1 ? '' : 's'} (${createdSuppliers} proveedor${createdSuppliers === 1 ? '' : 'es'} nuevo${createdSuppliers === 1 ? '' : 's'} creado${createdSuppliers === 1 ? '' : 's'}).${photoNote}`);
     };
 
     const openSupplierForm = () => {
@@ -613,6 +716,7 @@ const Products = {
         <table class="w-full text-left border-collapse text-xs">
           <thead>
             <tr class="bg-slate-100 border-b border-slate-200 text-slate-700">
+              <th class="p-2">Foto</th>
               <th class="p-2">SKU BRIGGS</th>
               <th class="p-2">SKU</th>
               <th class="p-2">Nombre</th>
@@ -682,6 +786,10 @@ const Products = {
               <label class="block text-xs font-semibold text-slate-600 mb-1">Color</label>
               <input id="f-color" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
             </div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Foto (enlace de Google Drive)</label>
+            <input id="f-photo" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="https://drive.google.com/uc?export=view&id=...">
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div>
@@ -765,11 +873,19 @@ const Products = {
           <p class="text-xs text-slate-500">
             Se detectaron <span id="excel-import-count" class="font-bold text-slate-700"></span>. El archivo no trae país, peso, volumen ni FOB — se cargan con valores por defecto que puedes editar aquí antes de importar, o después en cada ficha.
           </p>
+          <p id="excel-photo-status" class="text-xs text-slate-500 hidden"></p>
+          <div id="excel-upload-progress" class="hidden">
+            <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+              <div id="excel-upload-progress-bar" class="h-full bg-emerald-500 transition-all duration-150" style="width:0%"></div>
+            </div>
+            <p id="excel-upload-progress-text" class="text-xs text-slate-500 mt-1"></p>
+          </div>
           <div class="overflow-y-auto border border-slate-200 rounded-lg">
             <table class="w-full text-left border-collapse text-xs">
               <thead>
                 <tr class="bg-slate-100 border-b border-slate-200 text-slate-700">
                   <th class="p-2"></th>
+                  <th class="p-2">Foto</th>
                   <th class="p-2">SKU BRIGGS</th>
                   <th class="p-2">SKU Origen</th>
                   <th class="p-2">Nombre</th>

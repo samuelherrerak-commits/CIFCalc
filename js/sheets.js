@@ -86,3 +86,11 @@ export async function remove(table, id) {
 export async function removeWhere(table, column, value) {
   await request('POST', null, { action: 'deleteWhere', table, column, value, pt: SHEETS_TOKEN });
 }
+
+// Sube una imagen a Google Drive vía el Apps Script (acción 'uploadImage', ver
+// supabase/migrations/README de fotos o el mensaje de configuración del importador de Excel).
+// Devuelve la URL directa de la imagen (drive.google.com/uc?export=view&id=...).
+export async function uploadImage(filename, mimeType, dataBase64) {
+  const json = await request('POST', null, { action: 'uploadImage', filename, mimeType, dataBase64, pt: SHEETS_TOKEN });
+  return json.url;
+}
