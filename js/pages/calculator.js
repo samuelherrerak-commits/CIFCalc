@@ -1,6 +1,23 @@
 import Store from '../store.js';
 import { fmtNum, fmtInt, esc, num, computeContainer } from '../utils.js';
 
+// XLSX se carga a demanda para no bloquear el arranque de la app.
+const XLSX_CDN = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+let xlsxLoadPromise = null;
+function ensureXlsx() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  if (!xlsxLoadPromise) {
+    xlsxLoadPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = XLSX_CDN;
+      s.onload = () => resolve(window.XLSX);
+      s.onerror = () => { xlsxLoadPromise = null; reject(new Error('No se pudo cargar la librería de exportación.')); };
+      document.head.appendChild(s);
+    });
+  }
+  return xlsxLoadPromise;
+}
+
 const Calculator = {
   async render(app, params) {
     const destroy = new AbortController();
@@ -150,8 +167,8 @@ const Calculator = {
       saveTimer = setTimeout(save, 600);
     };
 
-    const save = () => {
-      Store.saveContainerWithItems(container, items);
+    const save = async () => {
+      await Store.saveContainerWithItems(container, items);
       const statusEl = document.getElementById('save-status');
       if (statusEl) {
         statusEl.textContent = '✓ Guardado';
@@ -711,7 +728,12 @@ const Calculator = {
     }, { signal });
 
     // Exportar a Excel
-    const exportExcel = () => {
+    const exportExcel = async () => {
+      try {
+        await ensureXlsx();
+      } catch (e) {
+        alert(e.message); return;
+      }
       if (!window.XLSX) { alert('La librería de exportación no está disponible. Revisa tu conexión.'); return; }
       const res = computeContainer(container, items);
       const cs = companies.find(co => co.id === container.company_id);

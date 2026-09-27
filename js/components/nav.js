@@ -15,6 +15,7 @@ const Nav = {
           <a href="#/" class="flex items-center gap-2 font-bold text-lg">
             <span class="text-2xl">🚚</span>
             <span class="hidden sm:inline">Maestro de Costo</span>
+            <span id="nav-respaldo" class="hidden text-[10px] bg-amber-500 text-white font-bold px-2 py-0.5 rounded-full">Respaldo Sheets</span>
           </a>
           <ul class="flex gap-1">
             ${links.map(l => `
