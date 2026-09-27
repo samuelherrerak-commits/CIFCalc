@@ -39,6 +39,24 @@ export function ensureXlsx() {
   return xlsxLoadPromise;
 }
 
+// JSZip se carga a demanda, solo cuando el importador de Excel necesita leer imágenes
+// embebidas del .xlsx (SheetJS no expone imágenes en modo lectura).
+const JSZIP_CDN = 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js';
+let jszipLoadPromise = null;
+export function ensureJSZip() {
+  if (window.JSZip) return Promise.resolve(window.JSZip);
+  if (!jszipLoadPromise) {
+    jszipLoadPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = JSZIP_CDN;
+      s.onload = () => resolve(window.JSZip);
+      s.onerror = () => { jszipLoadPromise = null; reject(new Error('No se pudo cargar la librería de lectura de fotos.')); };
+      document.head.appendChild(s);
+    });
+  }
+  return jszipLoadPromise;
+}
+
 // Motor de cálculo compartido (reglas confirmadas del spec)
 export function computeContainer(container, items) {
   const capacity = Number(container?.container_capacity) || 0;
