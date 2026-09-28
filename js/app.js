@@ -4,7 +4,7 @@ import Store from './store.js';
 function syncBadge() {
   const el = document.getElementById('nav-respaldo');
   if (!el) return;
-  const active = Store.getBackend() === 'sheets';
+  const active = Store.getBackend() === 'supabase';
   el.classList.toggle('hidden', !active);
 }
 
