@@ -227,24 +227,47 @@ const Calculator = {
     // --- Selector de productos desde el catálogo ---
     let pickerProduct = null;
     let pickerQuery = '';
+    let pickerCategory = '';
+    let pickerCollection = '';
+
+    const renderPickerFilters = () => {
+      const allProducts = Store.getAll('products');
+      const categories = [...new Set(allProducts.map(p => p.category).filter(Boolean))].sort();
+      const collections = [...new Set(allProducts.map(p => p.collection).filter(Boolean))].sort();
+
+      const catSel = document.getElementById('pk-filter-category');
+      catSel.innerHTML = `<option value="">Todas las categorías</option>` +
+        categories.map(c => `<option value="${esc(c)}" ${c === pickerCategory ? 'selected' : ''}>${esc(c)}</option>`).join('');
+
+      const colSel = document.getElementById('pk-filter-collection');
+      colSel.innerHTML = `<option value="">Todas las colecciones</option>` +
+        collections.map(c => `<option value="${esc(c)}" ${c === pickerCollection ? 'selected' : ''}>${esc(c)}</option>`).join('');
+    };
 
     const renderPickerList = () => {
       const list = document.getElementById('pk-list');
       const products = Store.getAll('products');
       const q = pickerQuery.trim().toLowerCase();
-      const filtered = q ? products.filter(p => {
+      const filtered = products.filter(p => {
+        if (pickerCategory && p.category !== pickerCategory) return false;
+        if (pickerCollection && p.collection !== pickerCollection) return false;
+        if (!q) return true;
         const sup = supplierName(p.supplier_id);
         return [p.sku_briggs, p.sku, p.name, p.origin_country, sup]
           .some(v => String(v || '').toLowerCase().includes(q));
-      }) : products;
+      });
       list.innerHTML = filtered.length === 0
-        ? `<div class="p-4 text-center text-slate-400 text-sm">Sin productos. Regístralos primero en el módulo de Productos.</div>`
+        ? `<div class="p-4 text-center text-slate-400 text-sm">Sin productos que coincidan. Ajusta la búsqueda o los filtros.</div>`
         : filtered.map(p => `
           <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-slate-100 hover:bg-slate-50">
-            <div class="min-w-0">
-              <div class="text-xs font-bold text-blue-800">${esc(p.sku_briggs) || '—'} <span class="text-slate-500 font-normal">${esc(p.sku) || ''}</span></div>
-              <div class="text-sm text-slate-800 truncate">${esc(p.name) || ''}</div>
-              <div class="text-xs text-slate-400">Proveedor: ${esc(supplierName(p.supplier_id)) || '—'} · País: ${esc(p.origin_country) || '—'} · Vol: ${Number(p.box_volume) || 0} m³ · Peso: ${fmtNum(p.weight_kg)} kg</div>
+            <div class="flex items-center gap-3 min-w-0">
+              ${p.photo_url ? `<img src="${esc(p.photo_url)}" class="w-10 h-10 object-cover rounded border border-slate-200 flex-shrink-0" alt="">` : '<div class="w-10 h-10 rounded border border-slate-200 bg-slate-50 flex-shrink-0"></div>'}
+              <div class="min-w-0">
+                <div class="text-xs font-bold text-blue-800">${esc(p.sku_briggs) || '—'} <span class="text-slate-500 font-normal">${esc(p.sku) || ''}</span></div>
+                <div class="text-sm text-slate-800 truncate">${esc(p.name) || ''}</div>
+                <div class="text-xs text-slate-400">Proveedor: ${esc(supplierName(p.supplier_id)) || '—'} · País: ${esc(p.origin_country) || '—'} · Vol: ${Number(p.box_volume) || 0} m³ · Peso: ${fmtNum(p.weight_kg)} kg</div>
+                ${(p.category || p.collection) ? `<div class="text-xs text-slate-400">${esc(p.category) || ''}${p.category && p.collection ? ' · ' : ''}${esc(p.collection) || ''}</div>` : ''}
+              </div>
             </div>
             <button data-pick="${p.id}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg w-8 h-8 flex-shrink-0">+</button>
           </div>
@@ -270,9 +293,12 @@ const Calculator = {
     const openProductPicker = () => {
       pickerProduct = null;
       pickerQuery = '';
+      pickerCategory = '';
+      pickerCollection = '';
       document.getElementById('pk-search').value = '';
       document.getElementById('pk-confirm').classList.add('hidden');
       document.getElementById('product-picker').classList.remove('hidden');
+      renderPickerFilters();
       renderPickerList();
       document.getElementById('pk-search').focus();
     };
@@ -527,6 +553,10 @@ const Calculator = {
           </div>
           <input id="pk-search" type="text" placeholder="Buscar por SKU BRIGGS, SKU, nombre, proveedor, país…"
                  class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+          <div class="grid grid-cols-2 gap-2">
+            <select id="pk-filter-category" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
+            <select id="pk-filter-collection" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
+          </div>
           <div id="pk-list" class="flex-1 overflow-y-auto border border-slate-200 rounded-lg min-h-0"></div>
           <div id="pk-confirm" class="hidden bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
             <div class="flex justify-between items-center gap-2">
@@ -698,6 +728,14 @@ const Calculator = {
     // Modal selector de productos
     document.getElementById('pk-search').addEventListener('input', (e) => {
       pickerQuery = e.target.value;
+      renderPickerList();
+    });
+    document.getElementById('pk-filter-category').addEventListener('change', (e) => {
+      pickerCategory = e.target.value;
+      renderPickerList();
+    });
+    document.getElementById('pk-filter-collection').addEventListener('change', (e) => {
+      pickerCollection = e.target.value;
       renderPickerList();
     });
     document.getElementById('pk-confirm-add').addEventListener('click', confirmPick);
