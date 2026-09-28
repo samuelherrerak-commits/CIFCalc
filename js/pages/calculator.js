@@ -261,7 +261,7 @@ const Calculator = {
         : filtered.map(p => `
           <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-slate-100 hover:bg-slate-50">
             <div class="flex items-center gap-3 min-w-0">
-              ${p.photo_url ? `<img src="${esc(p.photo_url)}" class="w-10 h-10 object-cover rounded border border-slate-200 flex-shrink-0" alt="">` : '<div class="w-10 h-10 rounded border border-slate-200 bg-slate-50 flex-shrink-0"></div>'}
+              ${p.foto_url ? `<img src="${esc(p.foto_url)}" class="w-10 h-10 object-cover rounded border border-slate-200 flex-shrink-0" alt="">` : '<div class="w-10 h-10 rounded border border-slate-200 bg-slate-50 flex-shrink-0"></div>'}
               <div class="min-w-0">
                 <div class="text-xs font-bold text-blue-800">${esc(p.sku_briggs) || '—'} <span class="text-slate-500 font-normal">${esc(p.sku) || ''}</span></div>
                 <div class="text-sm text-slate-800 truncate">${esc(p.name) || ''}</div>

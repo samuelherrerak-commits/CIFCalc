@@ -87,10 +87,13 @@ export async function removeWhere(table, column, value) {
   await request('POST', null, { action: 'deleteWhere', table, column, value, pt: SHEETS_TOKEN });
 }
 
-// Sube una imagen a Google Drive vía el Apps Script (acción 'uploadImage', ver
-// supabase/migrations/README de fotos o el mensaje de configuración del importador de Excel).
-// Devuelve la URL directa de la imagen (drive.google.com/uc?export=view&id=...).
-export async function uploadImage(filename, mimeType, dataBase64) {
-  const json = await request('POST', null, { action: 'uploadImage', filename, mimeType, dataBase64, pt: SHEETS_TOKEN });
-  return json.url;
+// Sube la foto de un producto ya existente (por id) a Google Drive vía el Apps Script
+// (acción 'uploadFoto'). La fila del producto debe existir ya en la hoja "products" —
+// el script la busca por id y escribe ahí mismo foto_url/foto_file_id/updated_at.
+// Devuelve { id, updated_at, foto_url, foto_file_id }.
+export async function uploadFoto(id, filename, mimeType, dataBase64) {
+  const json = await request('POST', null, {
+    action: 'uploadFoto', table: 'products', id, filename, mimeType, data: dataBase64, pt: SHEETS_TOKEN
+  });
+  return { id: json.id, updated_at: json.updated_at, foto_url: json.foto_url, foto_file_id: json.foto_file_id };
 }
