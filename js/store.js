@@ -597,7 +597,7 @@ async function syncWithCloud() {
       merged = normalizeEntityRows(entity, merged);
       writeAll(STORE_KEYS[entity], merged);
 
-      const toUpload = merged.filter(m => {
+      let toUpload = merged.filter(m => {
         const r = remote.find(x => x.id === m.id);
         return !r || new Date(m.updated_at || m.created_at || 0) > new Date(r.updated_at || r.created_at || 0);
       });
