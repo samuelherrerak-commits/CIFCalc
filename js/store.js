@@ -164,11 +164,13 @@ function mergeRecords(local, remote) {
 }
 
 // ============================================
-// Backend activo (Supabase primario / Sheets respaldo)
+// Backend activo (Google Sheets primario / Supabase respaldo)
+// Solo aplica a las tablas con respaldo en Sheets (SHEET_TABLES); las
+// entidades de contabilidad/ventas/gastos no tienen alternativa y siempre
+// usan Supabase directo, sin importar este modo.
 // ============================================
-const DOWN_KEY = 'cif_supabase_down';
 const MODE_KEY = 'cif_backend_mode';
-let backendMode = localStorage.getItem(MODE_KEY) === 'sheets' ? 'sheets' : 'supabase';
+let backendMode = localStorage.getItem(MODE_KEY) === 'supabase' ? 'supabase' : 'sheets';
 let probeCount = 0;
 
 function getBackend() {
@@ -181,20 +183,20 @@ function notifyBackend() {
   } catch (e) { /* noop */ }
 }
 
-function enterSheetsMode() {
-  if (backendMode !== 'sheets') {
-    backendMode = 'sheets';
-    localStorage.setItem(MODE_KEY, 'sheets');
-    log('Supabase no responde, activando respaldo en Google Sheets.');
+function enterSupabaseMode() {
+  if (backendMode !== 'supabase') {
+    backendMode = 'supabase';
+    localStorage.setItem(MODE_KEY, 'supabase');
+    log('Google Sheets no responde, activando respaldo en Supabase.');
     notifyBackend();
   }
 }
 
-function exitSheetsMode() {
-  if (backendMode !== 'supabase') {
-    backendMode = 'supabase';
+function exitSupabaseMode() {
+  if (backendMode !== 'sheets') {
+    backendMode = 'sheets';
     localStorage.removeItem(MODE_KEY);
-    log('Supabase responde de nuevo, recuperando modo primario.');
+    log('Google Sheets responde de nuevo, recuperando modo primario.');
     notifyBackend();
   }
 }
@@ -412,118 +414,150 @@ async function sbSyncJournalLines(entryId, newLines) {
 // Adaptador cloud: doble escritura + failover de lectura
 // ============================================
 async function getRemoteTable(table) {
-  // Sin Supabase disponible → modo respaldo directo.
-  if (!sb) {
-    enterSheetsMode();
-    if (!SHEET_TABLES.includes(table)) return [];
-    try {
-      return await Sheets.select(table);
-    } catch (e) {
-      console.warn(`Maestro de Costo: respaldo Sheets (${table}) falló:`, e.message);
-      return [];
-    }
+  // Contabilidad/ventas/gastos: sin respaldo en Sheets, siempre Supabase directo.
+  if (!SHEETS_URL || !SHEET_TABLES.includes(table)) {
+    const data = await sbSelectAll(table);
+    return data === null ? [] : data;
   }
 
-  if (backendMode === 'sheets') {
+  // Ya estamos en modo respaldo (Sheets caído la última vez que se probó).
+  if (backendMode === 'supabase') {
     probeCount++;
     if (probeCount % 5 === 1) {
-      const probe = await sbSelectAll('companies');
-      if (probe !== null) {
-        exitSheetsMode();
-        const data = await sbSelectAll(table);
-        return data === null ? [] : data;
+      try {
+        await Sheets.select('companies');
+        exitSupabaseMode();
+        return await Sheets.select(table);
+      } catch (e) {
+        // Sheets sigue sin responder, se queda en modo respaldo.
       }
     }
-    if (!SHEET_TABLES.includes(table)) return [];
-    try {
-      return await Sheets.select(table);
-    } catch (e) {
-      console.warn(`Maestro de Costo: respaldo Sheets (${table}) falló:`, e.message);
-      return [];
-    }
+    const data = await sbSelectAll(table);
+    return data === null ? [] : data;
   }
 
-  const data = await sbSelectAll(table);
-  if (data === null) {
-    enterSheetsMode();
-    if (!SHEET_TABLES.includes(table)) return [];
-    try {
-      return await Sheets.select(table);
-    } catch (e) {
-      console.warn(`Maestro de Costo: respaldo Sheets (${table}) falló:`, e.message);
-      return [];
-    }
+  // Modo normal: Sheets es la fuente primaria.
+  try {
+    return await Sheets.select(table);
+  } catch (e) {
+    console.warn(`Maestro de Costo: Sheets (${table}) falló, usando respaldo Supabase:`, e.message);
+    enterSupabaseMode();
+    const data = await sbSelectAll(table);
+    return data === null ? [] : data;
   }
-  return data;
 }
 
 function cloudUpsert(table, record) {
   const records = normalizeEntityRows(table, Array.isArray(record) ? record : [record]);
-  let p = Promise.resolve();
-  if (sb && backendMode === 'supabase') {
-    p = sbUpsert(table, records);
-  } else {
-    pushRetry({ type: 'upsert', table, record: records, target: 'supabase' });
+  const sheetsCapable = SHEETS_URL && SHEET_TABLES.includes(table);
+
+  // Contabilidad/ventas/gastos: sin respaldo en Sheets, solo Supabase.
+  if (!sheetsCapable) {
+    return sb ? sbUpsert(table, records) : Promise.resolve();
   }
-  sheetsUpsertSafe(table, records);
+
+  let p = Promise.resolve();
+  if (backendMode === 'sheets') {
+    p = sheetsUpsert(table, records);
+  } else {
+    pushRetry({ type: 'upsert', table, record: records, target: 'sheets' });
+  }
+  sbUpsertSafe(table, records);
   return p;
 }
 
 function cloudDelete(table, id) {
-  if (sb && backendMode === 'supabase') {
-    sbDelete(table, id);
-  } else {
-    pushRetry({ type: 'delete', table, column: 'id', value: id, target: 'supabase' });
+  const sheetsCapable = SHEETS_URL && SHEET_TABLES.includes(table);
+
+  if (!sheetsCapable) {
+    if (sb) sbDelete(table, id);
+    return;
   }
-  sheetsDeleteSafe(table, id);
+
+  if (backendMode === 'sheets') {
+    sheetsDelete(table, id);
+  } else {
+    pushRetry({ type: 'delete', table, column: 'id', value: id, target: 'sheets' });
+  }
+  sbDeleteSafe(table, id);
 }
 
 function cloudDeleteWhere(table, column, value) {
-  if (sb && backendMode === 'supabase') {
-    sbDeleteWhere(table, column, value);
-  } else {
-    pushRetry({ type: 'deleteWhere', table, column, value, target: 'supabase' });
+  const sheetsCapable = SHEETS_URL && SHEET_TABLES.includes(table);
+
+  if (!sheetsCapable) {
+    if (sb) sbDeleteWhere(table, column, value);
+    return;
   }
-  sheetsDeleteWhereSafe(table, column, value);
+
+  if (backendMode === 'sheets') {
+    sheetsDeleteWhere(table, column, value);
+  } else {
+    pushRetry({ type: 'deleteWhere', table, column, value, target: 'sheets' });
+  }
+  sbDeleteWhereSafe(table, column, value);
 }
 
 async function cloudSyncContainerItems(containerId, newItems) {
   const cleanItems = normalizeEntityRows('items', newItems);
-  if (sb && backendMode === 'supabase') {
-    await sbSyncContainerItems(containerId, cleanItems);
+  if (backendMode === 'sheets') {
+    await sheetsMirrorItems(containerId, cleanItems);
   } else {
-    pushRetry({ type: 'deleteWhere', table: 'items', column: 'container_id', value: containerId, target: 'supabase' });
-    if (cleanItems.length) pushRetry({ type: 'upsert', table: 'items', record: cleanItems, target: 'supabase' });
+    pushRetry({ type: 'deleteWhere', table: 'items', column: 'container_id', value: containerId, target: 'sheets' });
+    if (cleanItems.length) pushRetry({ type: 'upsert', table: 'items', record: cleanItems, target: 'sheets' });
   }
-  await sheetsMirrorItems(containerId, cleanItems);
+  sbSyncContainerItems(containerId, cleanItems);
 }
 
-function sheetsUpsertSafe(table, records) {
-  if (!SHEETS_URL || !SHEET_TABLES.includes(table)) return;
-  Sheets.upsert(table, records).catch(e => {
-    console.warn(`Maestro de Costo: respaldo Sheets (${table}) falló, encolando:`, e.message);
+// ---- Sheets: escritura primaria (awaited, con retry propio si falla) ----
+async function sheetsUpsert(table, records) {
+  if (!SHEETS_URL) return;
+  try {
+    await Sheets.upsert(table, records);
+  } catch (e) {
+    console.warn(`Maestro de Costo: Sheets upsert falló en ${table}, encolando retry:`, e.message);
     pushRetry({ type: 'upsert', table, record: records, target: 'sheets' });
-  });
+  }
 }
 
-function sheetsDeleteSafe(table, id) {
-  if (!SHEETS_URL || !SHEET_TABLES.includes(table)) return;
-  Sheets.remove(table, id).catch(e => {
-    console.warn(`Maestro de Costo: respaldo Sheets (${table}) eliminar falló, encolando:`, e.message);
+async function sheetsDelete(table, id) {
+  if (!SHEETS_URL) return;
+  try {
+    await Sheets.remove(table, id);
+  } catch (e) {
+    console.warn(`Maestro de Costo: Sheets delete falló en ${table}, encolando retry:`, e.message);
     pushRetry({ type: 'delete', table, column: 'id', value: id, target: 'sheets' });
-  });
+  }
 }
 
-function sheetsDeleteWhereSafe(table, column, value) {
-  if (!SHEETS_URL || !SHEET_TABLES.includes(table)) return;
-  Sheets.removeWhere(table, column, value).catch(e => {
-    console.warn(`Maestro de Costo: respaldo Sheets (${table}) deleteWhere falló, encolando:`, e.message);
+async function sheetsDeleteWhere(table, column, value) {
+  if (!SHEETS_URL) return;
+  try {
+    await Sheets.removeWhere(table, column, value);
+  } catch (e) {
+    console.warn(`Maestro de Costo: Sheets deleteWhere falló en ${table}, encolando retry:`, e.message);
     pushRetry({ type: 'deleteWhere', table, column, value, target: 'sheets' });
-  });
+  }
+}
+
+// ---- Supabase: espejo best-effort (nunca bloquea la escritura primaria) ----
+function sbUpsertSafe(table, records) {
+  if (!sb) return;
+  sbUpsert(table, records);
+}
+
+function sbDeleteSafe(table, id) {
+  if (!sb) return;
+  sbDelete(table, id);
+}
+
+function sbDeleteWhereSafe(table, column, value) {
+  if (!sb) return;
+  sbDeleteWhere(table, column, value);
 }
 
 // ============================================
-// Sync bidireccional con la nube (Supabase → Sheets)
+// Sync bidireccional con la nube (Sheets primario, Supabase respaldo)
 // ============================================
 async function syncWithCloud() {
   if (!sb && !SHEETS_URL) return;
@@ -542,7 +576,7 @@ async function syncWithCloud() {
       const hasLocalData = ENTITIES.some(e => localAll[e].length > 0);
 
       if (hasLocalData) {
-        log('BD remota vacía, subiendo datos locales (Supabase + respaldo Sheets)...');
+        log('BD remota vacía, subiendo datos locales (Sheets + respaldo Supabase)...');
         // Subir en orden (padres antes que hijos) y esperar cada entidad para no romper FKs.
         for (const entity of ENTITIES) {
           if (localAll[entity].length) await cloudUpsert(entity, localAll[entity]);
