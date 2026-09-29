@@ -94,7 +94,7 @@ const Products = {
         ? `<tr><td colspan="16" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
         : list.map(p => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-2">${p.foto_url ? `<img src="${esc(p.foto_url)}" class="w-8 h-8 object-cover rounded border border-slate-200" alt="">` : '<span class="text-slate-300">—</span>'}</td>
+            <td class="p-2">${p.foto_url ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-8 h-8 object-cover rounded border border-slate-200" alt="">` : '<span class="text-slate-300">—</span>'}</td>
             <td class="p-2 font-bold text-blue-800">${esc(p.sku_briggs)}</td>
             <td class="p-2">${esc(p.sku)}</td>
             <td class="p-2">${esc(p.name)}</td>
@@ -566,6 +566,21 @@ const Products = {
       document.getElementById('excel-import-modal').classList.remove('hidden');
     };
 
+    // Sube una foto con reintentos: una llamada que falla por un hipo transitorio
+    // de Apps Script/Drive (cuota, timeout, red) ya no se pierde en el primer intento.
+    const uploadFotoWithRetry = async (id, filename, mimeType, base64, attempts = 3) => {
+      let lastErr;
+      for (let i = 0; i < attempts; i++) {
+        try {
+          return await uploadFoto(id, filename, mimeType, base64);
+        } catch (e) {
+          lastErr = e;
+          if (i < attempts - 1) await new Promise(r => setTimeout(r, 800 * (i + 1)));
+        }
+      }
+      throw lastErr;
+    };
+
     const runExcelImport = async () => {
       const tbody = document.getElementById('excel-import-tbody');
       const rows = excelCandidates.map((c, i) => {
@@ -641,7 +656,7 @@ const Products = {
           progressText.textContent = `Subiendo fotos… ${done + 1}/${rowsWithPhoto.length} (${c.sku_briggs})`;
           try {
             await sheetsUpsert('products', [product]); // asegura que la fila ya exista en Sheets
-            const result = await uploadFoto(product.id, c.photo.filename, c.photo.mimeType, c.photo.base64);
+            const result = await uploadFotoWithRetry(product.id, c.photo.filename, c.photo.mimeType, c.photo.base64);
             Store.update('products', { id: product.id, foto_url: result.foto_url, foto_file_id: result.foto_file_id });
           } catch (e) {
             console.warn('Maestro de Costo: no se pudo subir la foto de', c.sku_briggs, e);
@@ -668,6 +683,84 @@ const Products = {
           : ` ${rowsWithPhoto.length} foto${rowsWithPhoto.length === 1 ? '' : 's'} subida${rowsWithPhoto.length === 1 ? '' : 's'} a Drive.`)
         : '';
       alert(`Importados ${createdProducts} producto${createdProducts === 1 ? '' : 's'} (${createdSuppliers} proveedor${createdSuppliers === 1 ? '' : 'es'} nuevo${createdSuppliers === 1 ? '' : 's'} creado${createdSuppliers === 1 ? '' : 's'}).${photoNote}`);
+    };
+
+    // Reintentar fotos faltantes: reusa el mismo Excel del Maestro de Códigos, pero
+    // en vez de crear productos, solo completa la foto de los que ya existen y quedaron
+    // sin foto_file_id (falló su subida en la importación original).
+    const handleRetryPhotosFile = async (file) => {
+      try {
+        await ensureXlsx();
+      } catch (e) {
+        alert(e.message);
+        return;
+      }
+      if (!window.XLSX) {
+        alert('La librería de Excel no está disponible. Revisa tu conexión.');
+        return;
+      }
+
+      const buffer = await file.arrayBuffer();
+      const wb = window.XLSX.read(buffer, { type: 'array' });
+      const sheetName = wb.SheetNames.includes('Maestro') ? 'Maestro' : wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const rows = window.XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+      let images = {};
+      try {
+        await ensureJSZip();
+        const zip = await window.JSZip.loadAsync(buffer);
+        images = await extractImagesFromXlsx(zip);
+      } catch (e) {
+        console.warn('Maestro de Costo: no se pudieron leer las fotos del Excel.', e);
+      }
+
+      const candidates = buildExcelCandidatesFromRows(rows, images).filter(c => c.photo);
+      if (candidates.length === 0) {
+        alert('No se encontraron filas con foto en el archivo.');
+        return;
+      }
+
+      const norm = (s) => String(s || '').trim().toLowerCase();
+      let uploaded = 0, alreadyHadPhoto = 0, notFound = 0, failed = 0;
+      const progressWrap = document.getElementById('retry-photos-progress');
+      const progressBar = document.getElementById('retry-photos-progress-bar');
+      const progressText = document.getElementById('retry-photos-progress-text');
+      const btn = document.getElementById('btn-retry-photos');
+      btn.disabled = true;
+      progressWrap.classList.remove('hidden');
+
+      for (let i = 0; i < candidates.length; i++) {
+        const c = candidates[i];
+        progressText.textContent = `Revisando fotos… ${i + 1}/${candidates.length} (${c.sku_briggs})`;
+        progressBar.style.width = `${Math.round(((i + 1) / candidates.length) * 100)}%`;
+
+        const product = products.find(p => norm(p.sku_briggs) === norm(c.sku_briggs));
+        if (!product) { notFound++; continue; }
+        if (product.foto_file_id) { alreadyHadPhoto++; continue; }
+
+        try {
+          const result = await uploadFotoWithRetry(product.id, c.photo.filename, c.photo.mimeType, c.photo.base64);
+          Store.update('products', { id: product.id, foto_url: result.foto_url, foto_file_id: result.foto_file_id });
+          uploaded++;
+        } catch (e) {
+          console.warn('Maestro de Costo: no se pudo subir la foto de', c.sku_briggs, e);
+          failed++;
+        }
+      }
+
+      progressWrap.classList.add('hidden');
+      btn.disabled = false;
+      products = Store.getAll('products');
+      renderCount();
+      renderTable();
+
+      alert(
+        `Fotos subidas: ${uploaded}.\n` +
+        `Ya tenían foto (omitidas): ${alreadyHadPhoto}.\n` +
+        `Filas sin producto correspondiente en el catálogo: ${notFound}.\n` +
+        (failed > 0 ? `Fallaron incluso con reintentos: ${failed} (revisa tu Apps Script/Drive).` : 'Sin fallos.')
+      );
     };
 
     const openSupplierForm = () => {
@@ -711,11 +804,20 @@ const Products = {
           <button id="btn-import" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar de Contenedores</button>
           <button id="btn-import-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar Excel</button>
           <input id="excel-file-input" type="file" accept=".xlsx,.xls" class="hidden">
+          <button id="btn-retry-photos" class="bg-slate-600 hover:bg-slate-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Reintentar fotos faltantes</button>
+          <input id="retry-photos-file-input" type="file" accept=".xlsx,.xls" class="hidden">
           <button id="btn-new-product" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">
             + Nuevo Producto
           </button>
         </div>
       </header>
+
+      <div id="retry-photos-progress" class="hidden bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+          <div id="retry-photos-progress-bar" class="h-full bg-emerald-500 transition-all duration-150" style="width:0%"></div>
+        </div>
+        <p id="retry-photos-progress-text" class="text-xs text-slate-500 mt-1"></p>
+      </div>
 
       <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
         <div class="flex items-center justify-between px-4 py-2 border-b border-slate-200 text-xs text-slate-500">
@@ -955,11 +1057,15 @@ const Products = {
       </div>
     `;
 
-    // Búsqueda
+    // Búsqueda (con debounce para no re-renderizar la tabla en cada tecla)
+    let searchDebounce = null;
     document.getElementById('products-search').addEventListener('input', (e) => {
       query = e.target.value;
-      renderCount();
-      renderTable();
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        renderCount();
+        renderTable();
+      }, 200);
     });
 
     // Botón nuevo producto
@@ -982,6 +1088,14 @@ const Products = {
       const file = e.target.files[0];
       e.target.value = '';
       if (file) handleExcelFile(file);
+    });
+    document.getElementById('btn-retry-photos').addEventListener('click', () => {
+      document.getElementById('retry-photos-file-input').click();
+    });
+    document.getElementById('retry-photos-file-input').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (file) handleRetryPhotosFile(file);
     });
     document.getElementById('excel-import-ok').addEventListener('click', runExcelImport);
     document.getElementById('excel-import-cancel').addEventListener('click', closeExcelImport);

@@ -75,6 +75,9 @@ async function resolve() {
 
 function boot() {
   window.addEventListener('hashchange', resolve);
+  // Cuando la sincronización inicial en segundo plano termina, refresca la
+  // vista activa sola para mostrar los datos ya sincronizados.
+  window.addEventListener('cif-data-updated', () => { resolve(); });
   resolve();
 }
 
