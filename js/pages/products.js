@@ -1,6 +1,6 @@
 import Store from '../store.js';
 import { fmtNum, fmtInt, esc, num, ensureXlsx, ensureJSZip } from '../utils.js';
-import { uploadImage } from '../sheets.js';
+import { uploadFoto, upsert as sheetsUpsert } from '../sheets.js';
 
 const Products = {
   async render(app) {
@@ -94,7 +94,7 @@ const Products = {
         ? `<tr><td colspan="16" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
         : list.map(p => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-2">${p.photo_url ? `<img src="${esc(p.photo_url)}" class="w-8 h-8 object-cover rounded border border-slate-200" alt="">` : '<span class="text-slate-300">—</span>'}</td>
+            <td class="p-2">${p.foto_url ? `<img src="${esc(p.foto_url)}" class="w-8 h-8 object-cover rounded border border-slate-200" alt="">` : '<span class="text-slate-300">—</span>'}</td>
             <td class="p-2 font-bold text-blue-800">${esc(p.sku_briggs)}</td>
             <td class="p-2">${esc(p.sku)}</td>
             <td class="p-2">${esc(p.name)}</td>
@@ -144,7 +144,7 @@ const Products = {
       document.getElementById('f-category').value = p.category || '';
       document.getElementById('f-collection').value = p.collection || '';
       document.getElementById('f-color').value = p.color || '';
-      document.getElementById('f-photo').value = p.photo_url || '';
+      document.getElementById('f-photo').value = p.foto_url || '';
       document.getElementById('f-upb').value = p.units_per_box != null ? p.units_per_box : 1;
       document.getElementById('f-vol').value = p.box_volume != null ? p.box_volume : 0;
       document.getElementById('f-kg').value = p.weight_kg != null ? p.weight_kg : 0;
@@ -220,7 +220,7 @@ const Products = {
         category: document.getElementById('f-category').value.trim(),
         collection: document.getElementById('f-collection').value.trim(),
         color: document.getElementById('f-color').value.trim(),
-        photo_url: document.getElementById('f-photo').value.trim(),
+        foto_url: document.getElementById('f-photo').value.trim(),
         units_per_box: num(document.getElementById('f-upb')),
         box_volume: num(document.getElementById('f-vol')),
         weight_kg: num(document.getElementById('f-kg')),
@@ -589,32 +589,18 @@ const Products = {
         return;
       }
 
-      // Fase 1: subir fotos a Drive, una por una (no en paralelo, para no saturar el Apps Script).
-      // Si una falla, el producto se importa igual sin foto — nunca bloquea la importación.
+      // uploadFoto busca la fila por id EN LA HOJA DE SHEETS, así que el producto debe
+      // existir ya (creado y escrito en Sheets) antes de pedirle al Apps Script la foto.
       const rowsWithPhoto = rows.filter(c => c.photo);
       let uploadFailures = 0;
+      let done = 0;
+      const progressWrap = document.getElementById('excel-upload-progress');
+      const progressBar = document.getElementById('excel-upload-progress-bar');
+      const progressText = document.getElementById('excel-upload-progress-text');
       if (rowsWithPhoto.length > 0) {
         document.getElementById('excel-import-ok').disabled = true;
         document.getElementById('excel-import-cancel').disabled = true;
-        const progressWrap = document.getElementById('excel-upload-progress');
-        const progressBar = document.getElementById('excel-upload-progress-bar');
-        const progressText = document.getElementById('excel-upload-progress-text');
         progressWrap.classList.remove('hidden');
-        let done = 0;
-        for (const c of rowsWithPhoto) {
-          progressText.textContent = `Subiendo fotos… ${done + 1}/${rowsWithPhoto.length} (${c.sku_briggs})`;
-          try {
-            c.photo_url = await uploadImage(c.photo.filename, c.photo.mimeType, c.photo.base64);
-          } catch (e) {
-            console.warn('Maestro de Costo: no se pudo subir la foto de', c.sku_briggs, e);
-            uploadFailures++;
-          }
-          done++;
-          progressBar.style.width = `${Math.round((done / rowsWithPhoto.length) * 100)}%`;
-        }
-        progressWrap.classList.add('hidden');
-        document.getElementById('excel-import-ok').disabled = false;
-        document.getElementById('excel-import-cancel').disabled = false;
       }
 
       let createdProducts = 0;
@@ -630,7 +616,7 @@ const Products = {
           createdSuppliers++;
         }
 
-        Store.insert('products', {
+        const product = Store.insert('products', {
           sku_briggs: c.sku_briggs,
           sku: c.sku,
           name: c.name || c.sku,
@@ -640,7 +626,8 @@ const Products = {
           category: c.category,
           collection: c.collection,
           color: c.color,
-          photo_url: c.photo_url || '',
+          foto_url: '',
+          foto_file_id: '',
           units_per_box: c.units_per_box,
           box_volume: c.box_volume,
           weight_kg: c.weight_kg,
@@ -649,7 +636,28 @@ const Products = {
           tariff_rate: c.tariff_rate
         });
         createdProducts++;
+
+        if (c.photo) {
+          progressText.textContent = `Subiendo fotos… ${done + 1}/${rowsWithPhoto.length} (${c.sku_briggs})`;
+          try {
+            await sheetsUpsert('products', [product]); // asegura que la fila ya exista en Sheets
+            const result = await uploadFoto(product.id, c.photo.filename, c.photo.mimeType, c.photo.base64);
+            Store.update('products', { id: product.id, foto_url: result.foto_url, foto_file_id: result.foto_file_id });
+          } catch (e) {
+            console.warn('Maestro de Costo: no se pudo subir la foto de', c.sku_briggs, e);
+            uploadFailures++;
+          }
+          done++;
+          progressBar.style.width = `${Math.round((done / rowsWithPhoto.length) * 100)}%`;
+        }
       }
+
+      if (rowsWithPhoto.length > 0) {
+        progressWrap.classList.add('hidden');
+        document.getElementById('excel-import-ok').disabled = false;
+        document.getElementById('excel-import-cancel').disabled = false;
+      }
+
       products = Store.getAll('products');
       renderCount();
       renderTable();
