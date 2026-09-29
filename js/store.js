@@ -678,17 +678,24 @@ function seed() {
 
   if (!seedDone) {
     seedDone = true;
-    // El render no espera a Sheets ni a la cola de reintentos: se difieren
-    // unos cientos de ms para no bloquear el primer pintado.
-    return syncWithCloud().then(() => {
+    // El primer render no espera a la nube: se pinta de inmediato con lo que
+    // ya hay en localStorage, y la sincronización corre en segundo plano.
+    // Al terminar, se avisa con un evento para que la vista activa se refresque sola.
+    syncWithCloud().then(() => {
       setTimeout(() => {
         mirrorAllToSheets();
         processRetryQueue();
       }, 300);
-      return Promise.resolve();
-    });
+      notifyDataUpdated();
+    }).catch(() => { /* los errores ya quedan registrados dentro de syncWithCloud */ });
   }
   return Promise.resolve();
+}
+
+function notifyDataUpdated() {
+  try {
+    window.dispatchEvent(new CustomEvent('cif-data-updated'));
+  } catch (e) { /* noop */ }
 }
 
 // ============================================

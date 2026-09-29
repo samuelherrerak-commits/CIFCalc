@@ -94,7 +94,7 @@ const Products = {
         ? `<tr><td colspan="16" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
         : list.map(p => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-2">${p.foto_url ? `<img src="${esc(p.foto_url)}" class="w-8 h-8 object-cover rounded border border-slate-200" alt="">` : '<span class="text-slate-300">—</span>'}</td>
+            <td class="p-2">${p.foto_url ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-8 h-8 object-cover rounded border border-slate-200" alt="">` : '<span class="text-slate-300">—</span>'}</td>
             <td class="p-2 font-bold text-blue-800">${esc(p.sku_briggs)}</td>
             <td class="p-2">${esc(p.sku)}</td>
             <td class="p-2">${esc(p.name)}</td>
@@ -955,11 +955,15 @@ const Products = {
       </div>
     `;
 
-    // Búsqueda
+    // Búsqueda (con debounce para no re-renderizar la tabla en cada tecla)
+    let searchDebounce = null;
     document.getElementById('products-search').addEventListener('input', (e) => {
       query = e.target.value;
-      renderCount();
-      renderTable();
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        renderCount();
+        renderTable();
+      }, 200);
     });
 
     // Botón nuevo producto
