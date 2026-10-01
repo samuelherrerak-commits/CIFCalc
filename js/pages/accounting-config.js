@@ -1,7 +1,11 @@
 import Store from '../store.js';
 import { esc, num } from '../utils.js';
-import { MOVEMENT_TYPES, subtypesForMovement } from '../accounting.js';
 import AccountingTabs from '../components/accounting-tabs.js';
+
+const VAT_BLOCKS = [
+  { movement: 'ingreso', label: 'IVA de Ingresos', accountLabel: 'Cuenta de IVA por Pagar' },
+  { movement: 'gasto', label: 'IVA de Gastos', accountLabel: 'Cuenta de IVA Acreditable' }
+];
 
 const AccountingConfig = {
   async render(app) {
@@ -18,39 +22,21 @@ const AccountingConfig = {
     const accountOptions = (selected) => `<option value="">— Sin asignar —</option>` +
       activeAccounts().map(a => `<option value="${a.id}" ${a.id === selected ? 'selected' : ''}>${esc(a.code)} — ${esc(a.name)}</option>`).join('');
 
-    const renderMovementBlock = (movement) => {
-      const subtypes = subtypesForMovement(movement.value);
-      const vatBlock = movement.value !== 'costo' ? `
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100 mt-2">
+    const renderVatBlock = (block) => `
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+        <h2 class="font-bold text-slate-800">${block.label}</h2>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs font-semibold text-slate-600 mb-1">Tasa de IVA (%)</label>
-            <input data-field="vat_rate_${movement.value}" type="number" min="0" step="0.1" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+            <input data-field="vat_rate_${block.movement}" type="number" min="0" step="0.1" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
           </div>
           <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">Cuenta de IVA ${movement.value === 'ingreso' ? 'por Pagar' : 'Acreditable'}</label>
-            <select data-field="vat_account_id_${movement.value}" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">${block.accountLabel}</label>
+            <select data-field="vat_account_id_${block.movement}" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
           </div>
         </div>
-      ` : '';
-
-      return `
-        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
-          <div>
-            <h2 class="font-bold text-slate-800">${movement.label}</h2>
-            <p class="text-xs text-slate-500">Cuenta contable a la que se registra cada tipo de movimiento de ${movement.label.toLowerCase()}.</p>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            ${subtypes.map(s => `
-              <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">${esc(s.label)}</label>
-                <select data-field="${s.accountField}" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
-              </div>
-            `).join('')}
-          </div>
-          ${vatBlock}
-        </div>
-      `;
-    };
+      </div>
+    `;
 
     app.innerHTML = `
       <header class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
@@ -61,10 +47,10 @@ const AccountingConfig = {
       ${AccountingTabs.render('accounting-config')}
 
       <p class="text-sm text-slate-500">
-        Define aquí, una sola vez, a qué cuenta del plan de cuentas va cada tipo de movimiento. Luego, en "Movimientos", solo eliges el tipo y el monto.
+        Los tipos de movimiento (Ingresos de Ventas, Costo de Producto, Gastos de Logística, etc.) ya son las cuentas nominales — no hace falta mapearlas a una cuenta. Aquí solo se configura el IVA que aplica a Ingresos y a Gastos.
       </p>
 
-      ${MOVEMENT_TYPES.map(renderMovementBlock).join('')}
+      ${VAT_BLOCKS.map(renderVatBlock).join('')}
 
       <div class="flex items-center gap-3">
         <button id="btn-save-movement-mapping" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg transition">Guardar Configuración</button>
@@ -72,28 +58,17 @@ const AccountingConfig = {
       </div>
     `;
 
-    for (const movement of MOVEMENT_TYPES) {
-      for (const s of subtypesForMovement(movement.value)) {
-        const sel = document.querySelector(`[data-field="${s.accountField}"]`);
-        sel.innerHTML = accountOptions(mapping[s.accountField]);
-      }
-      if (movement.value !== 'costo') {
-        document.querySelector(`[data-field="vat_rate_${movement.value}"]`).value = mapping[`vat_rate_${movement.value}`] != null ? mapping[`vat_rate_${movement.value}`] : 16;
-        const vatSel = document.querySelector(`[data-field="vat_account_id_${movement.value}"]`);
-        vatSel.innerHTML = accountOptions(mapping[`vat_account_id_${movement.value}`]);
-      }
+    for (const block of VAT_BLOCKS) {
+      document.querySelector(`[data-field="vat_rate_${block.movement}"]`).value = mapping[`vat_rate_${block.movement}`] != null ? mapping[`vat_rate_${block.movement}`] : 16;
+      const vatSel = document.querySelector(`[data-field="vat_account_id_${block.movement}"]`);
+      vatSel.innerHTML = accountOptions(mapping[`vat_account_id_${block.movement}`]);
     }
 
     document.getElementById('btn-save-movement-mapping').addEventListener('click', () => {
       const data = {};
-      for (const movement of MOVEMENT_TYPES) {
-        for (const s of subtypesForMovement(movement.value)) {
-          data[s.accountField] = document.querySelector(`[data-field="${s.accountField}"]`).value || null;
-        }
-        if (movement.value !== 'costo') {
-          data[`vat_rate_${movement.value}`] = num(document.querySelector(`[data-field="vat_rate_${movement.value}"]`));
-          data[`vat_account_id_${movement.value}`] = document.querySelector(`[data-field="vat_account_id_${movement.value}"]`).value || null;
-        }
+      for (const block of VAT_BLOCKS) {
+        data[`vat_rate_${block.movement}`] = num(document.querySelector(`[data-field="vat_rate_${block.movement}"]`));
+        data[`vat_account_id_${block.movement}`] = document.querySelector(`[data-field="vat_account_id_${block.movement}"]`).value || null;
       }
       mapping = Store.saveMovementSettings(data);
       document.getElementById('mapping-saved').classList.remove('hidden');

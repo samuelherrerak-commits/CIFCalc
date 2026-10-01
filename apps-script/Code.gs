@@ -77,14 +77,26 @@ const SCHEMAS = {
     'units_per_box', 'box_volume', 'weight_kg', 'hs_code', 'fob_unit',
     'tariff_rate', 'created_at', 'updated_at', 'foto_url', 'foto_file_id'
   ],
-  // Mapeo de cuentas del módulo de Movimientos (Ingreso/Costo/Gasto) — fila única, id fijo 'default'.
+  // Solo IVA de Ingresos y de Gastos — los tipos de movimiento (Ingreso/Costo/Gasto) son las cuentas
+  // nominales y no se mapean a una cuenta contable aparte. Fila única, id fijo 'default'.
   movement_settings: [
     'id',
-    'ingreso_ventas_account_id', 'ingreso_prestamo_account_id', 'ingreso_otros_account_id',
     'vat_rate_ingreso', 'vat_account_id_ingreso',
-    'costo_venta_account_id', 'costo_producto_account_id', 'costo_logistico_account_id', 'costo_otros_account_id',
-    'gasto_admin_account_id', 'gasto_logistica_account_id', 'gasto_ventas_account_id',
     'vat_rate_gasto', 'vat_account_id_gasto',
+    'created_at', 'updated_at'
+  ],
+  // Catálogo de cuentas reales (de balance): Activo, Pasivo, Capital. Las cuentas nominales
+  // (ingreso/costo/gasto) no viven aquí, son los tipos de movimiento.
+  accounts: [
+    'id', 'code', 'name', 'type', 'nature', 'is_active', 'is_bank_account',
+    'created_at', 'updated_at'
+  ],
+  // Tabla plana de Movimientos: una fila por cuenta tocada en un asiento. Varias filas comparten
+  // el mismo document_number (el "número de documento" del asiento). account_id va vacío en el
+  // lado nominal de un movimiento de Ingreso/Costo/Gasto (ese lado solo lleva movement_subtype).
+  movements: [
+    'id', 'entry_date', 'document_number', 'movement_subtype', 'account_id',
+    'description', 'debit', 'credit', 'source', 'source_ref',
     'created_at', 'updated_at'
   ]
 };

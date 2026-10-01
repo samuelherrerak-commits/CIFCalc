@@ -20,11 +20,13 @@ const NUMERIC_FIELDS = {
   products: [
     'units_per_box', 'box_volume', 'weight_kg', 'fob_unit', 'tariff_rate'
   ],
-  movement_settings: ['vat_rate_ingreso', 'vat_rate_gasto']
+  movement_settings: ['vat_rate_ingreso', 'vat_rate_gasto'],
+  movements: ['document_number', 'debit', 'credit']
 };
 
 const BOOL_FIELDS = {
-  containers: ['insurance_enabled']
+  containers: ['insurance_enabled'],
+  accounts: ['is_active', 'is_bank_account']
 };
 
 const MAX_SEARCH = 100;

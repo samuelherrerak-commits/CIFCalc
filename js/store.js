@@ -28,6 +28,7 @@ const STORE_KEYS = {
   items: 'cif_items',
   products: 'cif_products',
   accounts: 'cif_accounts',
+  movements: 'cif_movements',
   journal_entries: 'cif_journal_entries',
   journal_lines: 'cif_journal_lines',
   accounting_settings: 'cif_accounting_settings',
@@ -39,8 +40,8 @@ const STORE_KEYS = {
 
 // Tablas que el Web App de Sheets respalda (schemas definidos en Code.gs).
 // Las demás entidades (contabilidad, ventas, gastos) viven en Supabase.
-const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'movement_settings'];
-const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'movement_settings'];
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'movement_settings'];
+const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'movement_settings', 'accounts', 'movements'];
 
 function readAll(key) {
   try {
@@ -387,30 +388,6 @@ async function sheetsMirrorItems(containerId, newItems) {
   }
 }
 
-// Atomic per-journal-entry line sync with generation counter (mismo patrón que sbSyncContainerItems)
-const _journalSyncGeneration = new Map();
-
-async function sbSyncJournalLines(entryId, newLines) {
-  if (!sb) return;
-  const gen = (_journalSyncGeneration.get(entryId) || 0) + 1;
-  _journalSyncGeneration.set(entryId, gen);
-  try {
-    await sb.from('journal_lines').delete().eq('entry_id', entryId);
-    if (_journalSyncGeneration.get(entryId) !== gen) return;
-    if (newLines.length) {
-      const { error } = await sb.from('journal_lines').upsert(newLines, { onConflict: 'id' });
-      if (error) throw error;
-    }
-  } catch (e) {
-    if (isRetryableError(e)) {
-      console.warn(`Maestro de Costo: sync journal lines fallo:`, e.message);
-      pushRetry({ type: 'upsert', table: 'journal_lines', record: newLines });
-    } else {
-      console.warn(`Maestro de Costo: sync journal lines descartado (error no re-intentable):`, e.message);
-    }
-  }
-}
-
 // ============================================
 // Adaptador cloud: doble escritura + failover de lectura
 // ============================================
@@ -667,6 +644,7 @@ function seed() {
   if (!localStorage.getItem(STORE_KEYS.items)) writeAll(STORE_KEYS.items, []);
   if (!localStorage.getItem(STORE_KEYS.products)) writeAll(STORE_KEYS.products, []);
   if (!localStorage.getItem(STORE_KEYS.accounts)) writeAll(STORE_KEYS.accounts, []);
+  if (!localStorage.getItem(STORE_KEYS.movements)) writeAll(STORE_KEYS.movements, []);
   if (!localStorage.getItem(STORE_KEYS.journal_entries)) writeAll(STORE_KEYS.journal_entries, []);
   if (!localStorage.getItem(STORE_KEYS.journal_lines)) writeAll(STORE_KEYS.journal_lines, []);
   if (!localStorage.getItem(STORE_KEYS.accounting_settings)) writeAll(STORE_KEYS.accounting_settings, []);
@@ -777,8 +755,8 @@ const Store = {
   // Nunca lanza: un error aquí no debe romper el guardado del contenedor.
   generateClosingEntryForContainer(container, items) {
     try {
-      const already = readAll(STORE_KEYS.journal_entries)
-        .some(e => e.source === 'container_close' && e.source_ref === container.id);
+      const already = readAll(STORE_KEYS.movements)
+        .some(m => m.source === 'container_close' && m.source_ref === container.id);
       if (already) return;
 
       const { summary } = computeContainer(container, items);
@@ -792,18 +770,12 @@ const Store = {
 
       const lines = buildContainerClosingLines(container, summary, mapping);
       const check = validateJournalBalance(lines);
-      const status = check.balanced ? 'posted' : 'draft';
-      if (status === 'draft') {
-        console.warn('Maestro de Costo: asiento de cierre generado como borrador (no balanceó). Revísala en el Diario.');
+      if (!check.balanced) {
+        console.warn('Maestro de Costo: no se generó el asiento de cierre — no balanceó.', check.reason);
+        return;
       }
 
-      this.saveJournalEntryWithLines({
-        entry_date: container.operation_date,
-        description: `Cierre de contenedor ${container.bl_number || container.id}`,
-        source: 'container_close',
-        source_ref: container.id,
-        status
-      }, lines);
+      this.saveMovement(lines, { source: 'container_close', sourceRef: container.id });
     } catch (e) {
       console.error('Maestro de Costo: error generando asiento de cierre (el contenedor se guardó igual).', e);
     }
@@ -933,48 +905,53 @@ const Store = {
     );
   },
 
-  getJournalLinesByEntry(entryId) {
-    return readAll(STORE_KEYS.journal_lines).filter(l => l.entry_id === entryId);
+  // Tabla plana de Movimientos: una fila por cuenta tocada (fecha, número de documento,
+  // tipo de movimiento nominal, cuenta contable real, descripción, debe, haber).
+  // Reemplaza el viejo par journal_entries/journal_lines — no hay borrador/contabilizado,
+  // todo movimiento guardado queda final de una vez (igual que ya se comportaba el módulo de Movimientos).
+  getMovementLinesByDocument(documentNumber) {
+    return readAll(STORE_KEYS.movements)
+      .filter(m => m.document_number === documentNumber)
+      .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
   },
 
-  // Upsert de la cabecera + reemplazo atómico de sus líneas, análogo a saveContainerWithItems.
-  saveJournalEntryWithLines(entry, lines) {
-    let e;
-    if (entry.id && readAll(STORE_KEYS.journal_entries).some(x => x.id === entry.id)) {
-      e = this.update('journal_entries', entry);
-    } else {
-      e = this.insert('journal_entries', entry);
-    }
-    const remaining = readAll(STORE_KEYS.journal_lines).filter(l => l.entry_id !== e.id);
-    const ts = now();
-    const newLines = lines.map((l, i) => ({ ...l, entry_id: e.id, id: l.id || uid(), line_order: i, updated_at: ts }));
-    writeAll(STORE_KEYS.journal_lines, [...remaining, ...newLines]);
-    sbUpsert('journal_entries', e);
-    sbSyncJournalLines(e.id, newLines);
-    return { entry: e, lines: newLines };
+  nextDocumentNumber() {
+    const all = readAll(STORE_KEYS.movements);
+    return all.reduce((max, m) => Math.max(max, Number(m.document_number) || 0), 0) + 1;
   },
 
-  // Marca un asiento como contabilizado (inmutable). Vuelve a validar el balance en el Store,
-  // sin confiar en el estado de la UI. Idempotente si ya estaba posted.
-  postJournalEntry(entryId) {
-    const entry = this.getById('journal_entries', entryId);
-    if (!entry) return { ok: false, error: 'El asiento no existe.' };
-    if (entry.status === 'posted') return { ok: true, entry };
-    const lines = this.getJournalLinesByEntry(entryId);
+  // lines = [{ entry_date, movement_subtype, account_id, debit, credit, description }, ...]
+  // opts = { source, sourceRef } — opcional, para marcar movimientos autogenerados (p. ej. cierre de contenedor).
+  saveMovement(lines, opts = {}) {
     const check = validateJournalBalance(lines);
     if (!check.balanced) return { ok: false, error: check.reason };
-    return { ok: true, entry: this.update('journal_entries', { id: entryId, status: 'posted' }) };
+
+    const documentNumber = this.nextDocumentNumber();
+    const ts = now();
+    const rows = lines.map(l => ({
+      id: uid(),
+      entry_date: l.entry_date,
+      document_number: documentNumber,
+      movement_subtype: l.movement_subtype || null,
+      account_id: l.account_id || null,
+      description: l.description || '',
+      debit: Math.round((Number(l.debit) || 0) * 100) / 100,
+      credit: Math.round((Number(l.credit) || 0) * 100) / 100,
+      source: opts.source || 'manual',
+      source_ref: opts.sourceRef || null,
+      created_at: ts,
+      updated_at: ts
+    }));
+    const existing = readAll(STORE_KEYS.movements);
+    writeAll(STORE_KEYS.movements, [...existing, ...rows]);
+    cloudUpsert('movements', rows);
+    return { ok: true, documentNumber, lines: rows };
   },
 
-  removeJournalEntry(id) {
-    const entry = this.getById('journal_entries', id);
-    if (entry && entry.status === 'posted') {
-      return { ok: false, error: 'No se puede eliminar un asiento contabilizado.' };
-    }
-    this.remove('journal_entries', id);
-    const remaining = readAll(STORE_KEYS.journal_lines).filter(l => l.entry_id !== id);
-    writeAll(STORE_KEYS.journal_lines, remaining);
-    sbDeleteWhere('journal_lines', 'entry_id', id);
+  removeMovement(documentNumber) {
+    const remaining = readAll(STORE_KEYS.movements).filter(m => m.document_number !== documentNumber);
+    writeAll(STORE_KEYS.movements, remaining);
+    cloudDeleteWhere('movements', 'document_number', documentNumber);
     return { ok: true };
   },
 

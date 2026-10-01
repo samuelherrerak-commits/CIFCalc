@@ -3,57 +3,55 @@ import { fmtNum, esc, num } from '../utils.js';
 import { validateJournalBalance } from '../accounting.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 
-const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', sales_module: 'Venta', expense_module: 'Gasto', movement: 'Movimiento' };
-const STATUS_LABEL = { draft: 'Borrador', posted: 'Contabilizado' };
-const STATUS_STYLE = { draft: 'bg-amber-100 text-amber-700', posted: 'bg-emerald-100 text-emerald-700' };
+const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', movement: 'Movimiento' };
 
 const Journal = {
   async render(app) {
     const destroy = new AbortController();
     const { signal } = destroy;
 
-    let entries = Store.getAll('journal_entries');
     let accounts = Store.getAll('accounts');
-    let editingId = null;
     let lines = [];
-    let readOnly = false;
 
-    const accountLabel = (id) => {
-      const a = accounts.find(x => x.id === id);
-      return a ? `${a.code} — ${a.name}` : '';
-    };
-
-    const sortedEntries = () => [...entries].sort((a, b) => new Date(b.entry_date || 0) - new Date(a.entry_date || 0));
-
-    const totalsFor = (entryId) => {
-      const ls = Store.getJournalLinesByEntry(entryId);
-      return ls.reduce((acc, l) => ({ debit: acc.debit + (Number(l.debit) || 0), credit: acc.credit + (Number(l.credit) || 0) }), { debit: 0, credit: 0 });
+    // Agrupa las filas planas de "movements" por document_number — cada grupo es un asiento.
+    const documents = () => {
+      const all = Store.getAll('movements');
+      const byDoc = new Map();
+      for (const m of all) {
+        if (!byDoc.has(m.document_number)) byDoc.set(m.document_number, []);
+        byDoc.get(m.document_number).push(m);
+      }
+      return [...byDoc.entries()]
+        .map(([documentNumber, ls]) => ({ documentNumber, lines: ls }))
+        .sort((a, b) => new Date(b.lines[0].entry_date || 0) - new Date(a.lines[0].entry_date || 0));
     };
 
     const renderList = () => {
       const tbody = document.getElementById('journal-tbody');
-      const list = sortedEntries();
-      tbody.innerHTML = list.length === 0
+      const docs = documents();
+      tbody.innerHTML = docs.length === 0
         ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin asientos. Crea uno con "+ Nuevo Asiento".</td></tr>`
-        : list.map(e => {
-          const t = totalsFor(e.id);
+        : docs.map(({ documentNumber, lines: ls }) => {
+          const total = ls.reduce((acc, l) => ({ debit: acc.debit + (Number(l.debit) || 0), credit: acc.credit + (Number(l.credit) || 0) }), { debit: 0, credit: 0 });
+          const main = ls.find(l => l.description) || ls[0];
+          const source = main.source || 'manual';
           return `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-2">${esc(e.entry_date)}</td>
-            <td class="p-2">${esc(e.description)}</td>
-            <td class="p-2"><span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">${SOURCE_LABEL[e.source] || e.source}</span></td>
-            <td class="p-2"><span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_STYLE[e.status]}">${STATUS_LABEL[e.status] || e.status}</span></td>
-            <td class="p-2 text-right font-mono">$${fmtNum(t.debit)} / $${fmtNum(t.credit)}</td>
+            <td class="p-2">${esc(main.entry_date)}</td>
+            <td class="p-2">#${documentNumber} — ${esc(main.description)}</td>
+            <td class="p-2"><span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">${SOURCE_LABEL[source] || source}</span></td>
+            <td class="p-2"><span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">Contabilizado</span></td>
+            <td class="p-2 text-right font-mono">$${fmtNum(total.debit)} / $${fmtNum(total.credit)}</td>
             <td class="p-2 whitespace-nowrap">
-              <button data-open="${e.id}" class="text-blue-600 hover:text-blue-800 font-bold px-1" title="Ver / Editar">✎</button>
-              <button data-del="${e.id}" class="text-red-500 hover:text-red-700 font-bold px-1" title="Eliminar">🗑</button>
+              <button data-view="${documentNumber}" class="text-blue-600 hover:text-blue-800 font-bold px-1" title="Ver">👁</button>
+              <button data-del="${documentNumber}" class="text-red-500 hover:text-red-700 font-bold px-1" title="Eliminar">🗑</button>
             </td>
           </tr>
         `;
         }).join('');
 
-      tbody.querySelectorAll('[data-open]').forEach(btn => btn.addEventListener('click', () => openForm(btn.dataset.open)));
-      tbody.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => removeEntry(btn.dataset.del)));
+      tbody.querySelectorAll('[data-view]').forEach(btn => btn.addEventListener('click', () => viewDocument(Number(btn.dataset.view))));
+      tbody.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => removeDocument(Number(btn.dataset.del))));
     };
 
     const accountOptions = (selected) => {
@@ -63,23 +61,24 @@ const Journal = {
       ).join('');
     };
 
-    const renderLines = () => {
+    const renderLines = (readOnly) => {
       const tbody = document.getElementById('lines-tbody');
       tbody.innerHTML = lines.map((l, i) => `
         <tr>
           <td class="p-1"><select data-line-acc="${i}" ${readOnly ? 'disabled' : ''} class="w-full p-1.5 border rounded text-xs bg-white">${accountOptions(l.account_id)}</select></td>
           <td class="p-1"><input data-line-debit="${i}" type="number" min="0" step="0.01" value="${l.debit || 0}" ${readOnly ? 'disabled' : ''} class="w-24 p-1.5 border rounded text-xs text-right"></td>
           <td class="p-1"><input data-line-credit="${i}" type="number" min="0" step="0.01" value="${l.credit || 0}" ${readOnly ? 'disabled' : ''} class="w-24 p-1.5 border rounded text-xs text-right"></td>
-          <td class="p-1"><input data-line-memo="${i}" type="text" value="${esc(l.memo || '')}" ${readOnly ? 'disabled' : ''} class="w-full p-1.5 border rounded text-xs"></td>
+          <td class="p-1"><input data-line-memo="${i}" type="text" value="${esc(l.description || '')}" ${readOnly ? 'disabled' : ''} class="w-full p-1.5 border rounded text-xs"></td>
           <td class="p-1 text-center">${readOnly ? '' : `<button data-line-del="${i}" class="text-red-500 hover:text-red-700 font-bold px-1">✕</button>`}</td>
         </tr>
       `).join('');
 
+      if (readOnly) return;
       tbody.querySelectorAll('[data-line-acc]').forEach(el => el.addEventListener('change', (e) => { lines[e.target.dataset.lineAcc].account_id = e.target.value; renderTotals(); }));
       tbody.querySelectorAll('[data-line-debit]').forEach(el => el.addEventListener('input', (e) => { lines[e.target.dataset.lineDebit].debit = num(e.target); if (num(e.target) > 0) lines[e.target.dataset.lineDebit].credit = 0; renderTotals(); }));
       tbody.querySelectorAll('[data-line-credit]').forEach(el => el.addEventListener('input', (e) => { lines[e.target.dataset.lineCredit].credit = num(e.target); if (num(e.target) > 0) lines[e.target.dataset.lineCredit].debit = 0; renderTotals(); }));
-      tbody.querySelectorAll('[data-line-memo]').forEach(el => el.addEventListener('input', (e) => { lines[e.target.dataset.lineMemo].memo = e.target.value; }));
-      tbody.querySelectorAll('[data-line-del]').forEach(el => el.addEventListener('click', (e) => { lines.splice(Number(e.target.dataset.lineDel), 1); renderLines(); renderTotals(); }));
+      tbody.querySelectorAll('[data-line-memo]').forEach(el => el.addEventListener('input', (e) => { lines[e.target.dataset.lineMemo].description = e.target.value; }));
+      tbody.querySelectorAll('[data-line-del]').forEach(el => el.addEventListener('click', (e) => { lines.splice(Number(e.target.dataset.lineDel), 1); renderLines(false); renderTotals(); }));
     };
 
     const renderTotals = () => {
@@ -89,73 +88,68 @@ const Journal = {
       const diffEl = document.getElementById('total-diff');
       diffEl.textContent = check.balanced ? '✓ Balanceado' : (check.reason || '');
       diffEl.className = check.balanced ? 'text-xs font-semibold text-emerald-600' : 'text-xs font-semibold text-red-600';
-      const postBtn = document.getElementById('entry-post');
-      if (postBtn) postBtn.disabled = readOnly || !check.balanced;
+      const saveBtn = document.getElementById('entry-save');
+      if (saveBtn) saveBtn.disabled = !check.balanced;
     };
 
-    const addLine = () => { lines.push({ account_id: '', debit: 0, credit: 0, memo: '' }); renderLines(); renderTotals(); };
+    const addLine = () => { lines.push({ account_id: '', debit: 0, credit: 0, description: '' }); renderLines(false); renderTotals(); };
 
-    const openForm = (id = null) => {
-      editingId = id;
-      const e = id ? Store.getById('journal_entries', id) : { entry_date: new Date().toISOString().slice(0, 10), description: '', status: 'draft' };
-      lines = id ? Store.getJournalLinesByEntry(id).sort((a, b) => (a.line_order || 0) - (b.line_order || 0)) : [{ account_id: '', debit: 0, credit: 0, memo: '' }, { account_id: '', debit: 0, credit: 0, memo: '' }];
-      readOnly = e.status === 'posted';
-
-      document.getElementById('f-date').value = e.entry_date || '';
-      document.getElementById('f-desc').value = e.description || '';
-      document.getElementById('f-date').disabled = readOnly;
-      document.getElementById('f-desc').disabled = readOnly;
-      document.getElementById('journal-modal-title').textContent = id ? (readOnly ? 'Asiento Contabilizado (solo lectura)' : 'Editar Asiento') : 'Nuevo Asiento';
-      document.getElementById('btn-add-line').classList.toggle('hidden', readOnly);
-      document.getElementById('entry-save').classList.toggle('hidden', readOnly);
-      document.getElementById('entry-post').classList.toggle('hidden', readOnly);
+    const openForm = () => {
+      lines = [{ account_id: '', debit: 0, credit: 0, description: '' }, { account_id: '', debit: 0, credit: 0, description: '' }];
+      document.getElementById('f-date').value = new Date().toISOString().slice(0, 10);
+      document.getElementById('f-desc').value = '';
+      document.getElementById('f-date').disabled = false;
+      document.getElementById('f-desc').disabled = false;
+      document.getElementById('journal-modal-title').textContent = 'Nuevo Asiento';
+      document.getElementById('btn-add-line').classList.remove('hidden');
+      document.getElementById('entry-save').classList.remove('hidden');
       document.getElementById('journal-modal').classList.remove('hidden');
-      renderLines();
+      renderLines(false);
+      renderTotals();
+    };
+
+    const viewDocument = (documentNumber) => {
+      const ls = Store.getMovementLinesByDocument(documentNumber);
+      lines = ls.map(l => ({ ...l }));
+      const main = ls.find(l => l.description) || ls[0];
+      document.getElementById('f-date').value = main.entry_date || '';
+      document.getElementById('f-desc').value = main.description || '';
+      document.getElementById('f-date').disabled = true;
+      document.getElementById('f-desc').disabled = true;
+      document.getElementById('journal-modal-title').textContent = `Asiento #${documentNumber} (solo lectura)`;
+      document.getElementById('btn-add-line').classList.add('hidden');
+      document.getElementById('entry-save').classList.add('hidden');
+      document.getElementById('journal-modal').classList.remove('hidden');
+      renderLines(true);
       renderTotals();
     };
 
     const closeForm = () => {
       document.getElementById('journal-modal').classList.add('hidden');
-      editingId = null;
     };
 
-    const gatherEntry = () => ({
-      id: editingId,
-      entry_date: document.getElementById('f-date').value,
-      description: document.getElementById('f-desc').value.trim(),
-      source: editingId ? (Store.getById('journal_entries', editingId) || {}).source || 'manual' : 'manual',
-      status: 'draft'
-    });
+    const saveEntry = () => {
+      const date = document.getElementById('f-date').value;
+      const description = document.getElementById('f-desc').value.trim();
+      if (!date) { alert('La fecha es obligatoria.'); return; }
+      if (!description) { alert('La descripción es obligatoria.'); return; }
 
-    const saveDraft = () => {
-      const entry = gatherEntry();
-      if (!entry.entry_date) { alert('La fecha es obligatoria.'); return; }
-      if (!entry.description) { alert('La descripción es obligatoria.'); return; }
-      Store.saveJournalEntryWithLines(entry, lines);
-      entries = Store.getAll('journal_entries');
-      closeForm();
-      renderList();
-    };
-
-    const postEntry = () => {
-      const entry = gatherEntry();
-      if (!entry.entry_date) { alert('La fecha es obligatoria.'); return; }
-      if (!entry.description) { alert('La descripción es obligatoria.'); return; }
       const check = validateJournalBalance(lines);
       if (!check.balanced) { alert(check.reason || 'El asiento no está balanceado.'); return; }
-      const { entry: saved } = Store.saveJournalEntryWithLines(entry, lines);
-      const result = Store.postJournalEntry(saved.id);
+
+      const finalLines = lines
+        .filter(l => l.account_id && (Number(l.debit) || Number(l.credit)))
+        .map(l => ({ entry_date: date, movement_subtype: null, account_id: l.account_id, debit: l.debit, credit: l.credit, description: l.description || description }));
+
+      const result = Store.saveMovement(finalLines, { source: 'manual' });
       if (!result.ok) { alert(result.error); return; }
-      entries = Store.getAll('journal_entries');
       closeForm();
       renderList();
     };
 
-    const removeEntry = (id) => {
+    const removeDocument = (documentNumber) => {
       if (!confirm('¿Eliminar este asiento?')) return;
-      const result = Store.removeJournalEntry(id);
-      if (!result.ok) { alert(result.error); return; }
-      entries = Store.getAll('journal_entries');
+      Store.removeMovement(documentNumber);
       renderList();
     };
 
@@ -223,8 +217,7 @@ const Journal = {
           </div>
           <div class="flex justify-end gap-2 pt-1">
             <button id="journal-cancel" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-2 px-4 rounded-lg transition">Cerrar</button>
-            <button id="entry-save" class="text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold py-2 px-4 rounded-lg transition">Guardar Borrador</button>
-            <button id="entry-post" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed">Contabilizar</button>
+            <button id="entry-save" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed">Registrar</button>
           </div>
         </div>
       </div>
@@ -232,8 +225,7 @@ const Journal = {
 
     document.getElementById('btn-new-entry').addEventListener('click', () => openForm());
     document.getElementById('btn-add-line').addEventListener('click', addLine);
-    document.getElementById('entry-save').addEventListener('click', saveDraft);
-    document.getElementById('entry-post').addEventListener('click', postEntry);
+    document.getElementById('entry-save').addEventListener('click', saveEntry);
     document.getElementById('journal-cancel').addEventListener('click', closeForm);
     document.getElementById('journal-close').addEventListener('click', closeForm);
     document.getElementById('journal-modal').addEventListener('click', (e) => { if (e.target.id === 'journal-modal') closeForm(); });

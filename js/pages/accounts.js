@@ -14,7 +14,7 @@ const Accounts = {
 
     const activeAccounts = () => accounts.filter(a => a.is_active !== false);
 
-    const hasMovements = (id) => Store.getAll('journal_lines').some(l => l.account_id === id);
+    const hasMovements = (id) => Store.getAll('movements').some(l => l.account_id === id);
 
     const filtered = () => {
       const q = query.trim().toLowerCase();
@@ -48,13 +48,13 @@ const Accounts = {
 
     const openForm = (id = null) => {
       editingId = id;
-      const a = id ? Store.getById('accounts', id) : { code: '', name: '', type: 'activo_circulante', is_active: true };
+      const a = id ? Store.getById('accounts', id) : { code: '', name: '', type: 'activo', is_active: true };
       document.getElementById('f-code').value = a.code || '';
       document.getElementById('f-name').value = a.name || '';
-      document.getElementById('f-type').value = a.type || 'activo_circulante';
+      document.getElementById('f-type').value = a.type || 'activo';
       document.getElementById('f-active').checked = a.is_active !== false;
       document.getElementById('f-bank').checked = a.is_bank_account === true;
-      document.getElementById('f-nature-preview').textContent = natureForType(a.type || 'activo_circulante');
+      document.getElementById('f-nature-preview').textContent = natureForType(a.type || 'activo');
       document.getElementById('account-modal-title').textContent = id ? 'Editar Cuenta' : 'Nueva Cuenta';
       document.getElementById('account-modal').classList.remove('hidden');
       document.getElementById('f-code').focus();
