@@ -3,7 +3,7 @@ import { fmtNum, esc, num } from '../utils.js';
 import { validateJournalBalance } from '../accounting.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 
-const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', sales_module: 'Venta', expense_module: 'Gasto' };
+const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', sales_module: 'Venta', expense_module: 'Gasto', movement: 'Movimiento' };
 const STATUS_LABEL = { draft: 'Borrador', posted: 'Contabilizado' };
 const STATUS_STYLE = { draft: 'bg-amber-100 text-amber-700', posted: 'bg-emerald-100 text-emerald-700' };
 

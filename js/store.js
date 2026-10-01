@@ -33,13 +33,14 @@ const STORE_KEYS = {
   accounting_settings: 'cif_accounting_settings',
   expense_categories: 'cif_expense_categories',
   sale_concepts: 'cif_sale_concepts',
-  module_settings: 'cif_module_settings'
+  module_settings: 'cif_module_settings',
+  movement_settings: 'cif_movement_settings'
 };
 
 // Tablas que el Web App de Sheets respalda (schemas definidos en Code.gs).
 // Las demás entidades (contabilidad, ventas, gastos) viven en Supabase.
-const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings'];
-const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products'];
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'movement_settings'];
+const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'movement_settings'];
 
 function readAll(key) {
   try {
@@ -672,6 +673,7 @@ function seed() {
   if (!localStorage.getItem(STORE_KEYS.expense_categories)) writeAll(STORE_KEYS.expense_categories, []);
   if (!localStorage.getItem(STORE_KEYS.sale_concepts)) writeAll(STORE_KEYS.sale_concepts, []);
   if (!localStorage.getItem(STORE_KEYS.module_settings)) writeAll(STORE_KEYS.module_settings, []);
+  if (!localStorage.getItem(STORE_KEYS.movement_settings)) writeAll(STORE_KEYS.movement_settings, []);
 
   purgeDroppedColumns();
   localStorage.setItem(RETRY_KEY, JSON.stringify(getRetryQueue()));
@@ -993,6 +995,16 @@ const Store = {
 
   saveModuleSettings(moduleId, data) {
     return this.upsert('module_settings', { ...data, id: moduleId });
+  },
+
+  // Mapeo de cuentas del módulo de Movimientos (Ingreso/Costo/Gasto), fila única
+  // (id fijo 'default'), mismo patrón que getAccountMapping.
+  getMovementSettings() {
+    return this.getById('movement_settings', 'default');
+  },
+
+  saveMovementSettings(map) {
+    return this.upsert('movement_settings', { ...map, id: 'default' });
   }
 };
 

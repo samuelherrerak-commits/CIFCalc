@@ -5,8 +5,8 @@ import Dashboard from './pages/dashboard.js';
 import Calculator from './pages/calculator.js';
 import Products from './pages/products.js';
 import Accounts from './pages/accounts.js';
-import Sales from './pages/sales.js';
-import Expenses from './pages/expenses.js';
+import Movements from './pages/movements.js';
+import AccountingConfig from './pages/accounting-config.js';
 import Journal from './pages/journal.js';
 import Ledger from './pages/ledger.js';
 
@@ -15,8 +15,8 @@ const routes = [
   { pattern: /^#\/contenedor\/(.+)$/, handler: 'calculator', key: 'calculator' },
   { pattern: /^#\/productos\/?$/, handler: 'products', key: 'products' },
   { pattern: /^#\/contabilidad\/cuentas\/?$/, handler: 'accounts', key: 'accounts' },
-  { pattern: /^#\/contabilidad\/ventas\/?$/, handler: 'sales', key: 'sales' },
-  { pattern: /^#\/contabilidad\/gastos\/?$/, handler: 'expenses', key: 'expenses' },
+  { pattern: /^#\/contabilidad\/movimientos\/?$/, handler: 'movements', key: 'movements' },
+  { pattern: /^#\/contabilidad\/configuracion\/?$/, handler: 'accounting-config', key: 'accounting-config' },
   { pattern: /^#\/contabilidad\/diario\/?$/, handler: 'journal', key: 'journal' },
   { pattern: /^#\/contabilidad\/mayor\/?$/, handler: 'ledger', key: 'ledger' }
 ];
@@ -26,8 +26,8 @@ const pages = {
   calculator: Calculator,
   products: Products,
   accounts: Accounts,
-  sales: Sales,
-  expenses: Expenses,
+  movements: Movements,
+  'accounting-config': AccountingConfig,
   journal: Journal,
   ledger: Ledger
 };
