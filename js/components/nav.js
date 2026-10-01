@@ -3,9 +3,9 @@ const Nav = {
     const links = [
       { path: '#/', key: 'dashboard', label: 'Dashboard', icon: '📊' },
       { path: '#/productos', key: 'products', label: 'Productos', icon: '📦' },
-      { path: '#/contabilidad/cuentas', key: 'contabilidad', label: 'Contabilidad', icon: '📒' }
+      { path: '#/contabilidad/movimientos', key: 'contabilidad', label: 'Contabilidad', icon: '📒' }
     ];
-    const accountingKeys = ['accounts', 'sales', 'expenses', 'journal', 'ledger'];
+    const accountingKeys = ['movements', 'accounting-config', 'accounts', 'journal', 'ledger'];
     const activeKey = accountingKeys.includes(active) ? 'contabilidad' : active;
 
     const nav = document.getElementById('navbar');

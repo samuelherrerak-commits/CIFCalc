@@ -146,39 +146,90 @@ export function splitVat(total, vatRate) {
   return { net, vat: round2(Number(total) - net) };
 }
 
-// Construye las líneas de un asiento de venta: Banco (Debe) contra Ingreso [+ IVA por Pagar] (Haber).
-// sale = { total, bank_account_id, include_vat, memo }; concept = { name, revenue_account_id };
-// moduleSettings = { vat_rate, vat_account_id } — vat_account_id es la cuenta de IVA por Pagar.
-export function buildSaleLines(sale, concept, moduleSettings) {
-  const total = round2(sale.total);
-  const lines = [{ account_id: sale.bank_account_id, debit: total, credit: 0, memo: sale.memo || 'Cobro de venta' }];
-  if (sale.include_vat) {
-    const { net, vat } = splitVat(total, moduleSettings.vat_rate);
-    lines.push({ account_id: concept.revenue_account_id, debit: 0, credit: net, memo: concept.name });
-    if (moduleSettings.vat_account_id && vat > 0) {
-      lines.push({ account_id: moduleSettings.vat_account_id, debit: 0, credit: vat, memo: 'IVA por pagar' });
-    }
-  } else {
-    lines.push({ account_id: concept.revenue_account_id, debit: 0, credit: total, memo: concept.name });
-  }
-  return lines;
+// ============================================
+// Módulo de Movimientos (Ingreso / Costo / Gasto)
+// Plan de cuentas simplificado: un tipo de movimiento con una lista fija de
+// subtipos, cada uno mapeado a una cuenta contable en Configuración.
+// ============================================
+export const MOVEMENT_TYPES = [
+  { value: 'ingreso', label: 'Ingreso' },
+  { value: 'costo', label: 'Costo' },
+  { value: 'gasto', label: 'Gasto' }
+];
+
+export const MOVEMENT_SUBTYPES = [
+  { key: 'ingreso_ventas', movement: 'ingreso', label: 'Ingresos de Ventas', accountField: 'ingreso_ventas_account_id' },
+  { key: 'ingreso_prestamo', movement: 'ingreso', label: 'Préstamo', accountField: 'ingreso_prestamo_account_id' },
+  { key: 'ingreso_otros', movement: 'ingreso', label: 'Otros Ingresos', accountField: 'ingreso_otros_account_id' },
+
+  { key: 'costo_venta', movement: 'costo', label: 'Costo de Venta', accountField: 'costo_venta_account_id' },
+  { key: 'costo_producto', movement: 'costo', label: 'Costo de Producto', accountField: 'costo_producto_account_id' },
+  { key: 'costo_logistico', movement: 'costo', label: 'Costo Logístico', accountField: 'costo_logistico_account_id' },
+  { key: 'costo_otros', movement: 'costo', label: 'Otros Costos', accountField: 'costo_otros_account_id' },
+
+  { key: 'gasto_admin', movement: 'gasto', label: 'Gastos de Administración y Finanzas', accountField: 'gasto_admin_account_id' },
+  { key: 'gasto_logistica', movement: 'gasto', label: 'Gastos de Logística', accountField: 'gasto_logistica_account_id' },
+  { key: 'gasto_ventas', movement: 'gasto', label: 'Gastos de Ventas', accountField: 'gasto_ventas_account_id' }
+];
+
+export function subtypesForMovement(movement) {
+  return MOVEMENT_SUBTYPES.filter(s => s.movement === movement);
 }
 
-// Construye las líneas de un asiento de gasto: Gasto [+ IVA Acreditable] (Debe) contra Banco (Haber).
-// expense = { total, bank_account_id, include_vat, memo }; category = { name, account_id };
-// moduleSettings = { vat_rate, vat_account_id } — vat_account_id es la cuenta de IVA Acreditable.
-export function buildExpenseLines(expense, category, moduleSettings) {
-  const total = round2(expense.total);
-  const lines = [];
-  if (expense.include_vat) {
-    const { net, vat } = splitVat(total, moduleSettings.vat_rate);
-    lines.push({ account_id: category.account_id, debit: net, credit: 0, memo: expense.memo || category.name });
-    if (moduleSettings.vat_account_id && vat > 0) {
-      lines.push({ account_id: moduleSettings.vat_account_id, debit: vat, credit: 0, memo: 'IVA acreditable' });
+export function labelForSubtype(key) {
+  const s = MOVEMENT_SUBTYPES.find(s => s.key === key);
+  return s ? s.label : key;
+}
+
+// mapping = movement_settings: una fila con un *_account_id por subtipo + vat_rate/vat_account_id
+// para ingreso y gasto (ver accountField de cada subtipo arriba).
+//
+// data = { subtype, total, date, memo, bank_account_id (ingreso/gasto), counterpart_account_id (costo), include_vat (ingreso/gasto) }
+//
+// Ingreso: Debe Banco, Haber cuenta del subtipo [+ Haber IVA por pagar].
+// Gasto:   Debe cuenta del subtipo [+ Debe IVA acreditable], Haber Banco.
+// Costo:   Debe cuenta del subtipo, Haber cuenta contrapartida elegida (sin IVA, sin banco).
+export function buildMovementLines(movement, data, mapping) {
+  const subtype = MOVEMENT_SUBTYPES.find(s => s.key === data.subtype);
+  if (!subtype) throw new Error('Tipo de movimiento inválido.');
+  const accountId = mapping ? mapping[subtype.accountField] : null;
+  if (!accountId) throw new Error(`No hay una cuenta configurada para "${subtype.label}". Complétala en Configuración.`);
+
+  const total = round2(data.total);
+  const memo = data.memo || subtype.label;
+
+  if (movement === 'ingreso') {
+    const lines = [{ account_id: data.bank_account_id, debit: total, credit: 0, memo }];
+    if (data.include_vat) {
+      const { net, vat } = splitVat(total, mapping.vat_rate_ingreso);
+      lines.push({ account_id: accountId, debit: 0, credit: net, memo });
+      if (mapping.vat_account_id_ingreso && vat > 0) {
+        lines.push({ account_id: mapping.vat_account_id_ingreso, debit: 0, credit: vat, memo: 'IVA por pagar' });
+      }
+    } else {
+      lines.push({ account_id: accountId, debit: 0, credit: total, memo });
     }
-  } else {
-    lines.push({ account_id: category.account_id, debit: total, credit: 0, memo: expense.memo || category.name });
+    return lines;
   }
-  lines.push({ account_id: expense.bank_account_id, debit: 0, credit: total, memo: expense.memo || category.name });
-  return lines;
+
+  if (movement === 'gasto') {
+    const lines = [];
+    if (data.include_vat) {
+      const { net, vat } = splitVat(total, mapping.vat_rate_gasto);
+      lines.push({ account_id: accountId, debit: net, credit: 0, memo });
+      if (mapping.vat_account_id_gasto && vat > 0) {
+        lines.push({ account_id: mapping.vat_account_id_gasto, debit: vat, credit: 0, memo: 'IVA acreditable' });
+      }
+    } else {
+      lines.push({ account_id: accountId, debit: total, credit: 0, memo });
+    }
+    lines.push({ account_id: data.bank_account_id, debit: 0, credit: total, memo });
+    return lines;
+  }
+
+  // costo
+  return [
+    { account_id: accountId, debit: total, credit: 0, memo },
+    { account_id: data.counterpart_account_id, debit: 0, credit: total, memo }
+  ];
 }
