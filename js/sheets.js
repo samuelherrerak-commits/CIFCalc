@@ -19,7 +19,8 @@ const NUMERIC_FIELDS = {
   ],
   products: [
     'units_per_box', 'box_volume', 'weight_kg', 'fob_unit', 'tariff_rate'
-  ]
+  ],
+  movement_settings: ['vat_rate_ingreso', 'vat_rate_gasto']
 };
 
 const BOOL_FIELDS = {

@@ -40,7 +40,7 @@ const STORE_KEYS = {
 // Tablas que el Web App de Sheets respalda (schemas definidos en Code.gs).
 // Las demás entidades (contabilidad, ventas, gastos) viven en Supabase.
 const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'movement_settings'];
-const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products'];
+const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'movement_settings'];
 
 function readAll(key) {
   try {

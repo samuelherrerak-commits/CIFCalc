@@ -6,7 +6,7 @@
  *  Replica el contrato de datos de Supabase (Postgres) usando esta hoja de
  *  cálculo como almacenamiento. Una hoja = una tabla.
  *
- *  Tablas: companies, suppliers, containers, items, products
+ *  Tablas: companies, suppliers, containers, items, products, movement_settings
  *
  *  GET  ?table=<t>[&column=<c>&value=<v>]&pt=<token>
  *  POST (body JSON, enviado como text/plain para evitar preflight CORS):
@@ -76,6 +76,16 @@ const SCHEMAS = {
     'id', 'sku_briggs', 'sku', 'name', 'supplier_id', 'origin_country',
     'units_per_box', 'box_volume', 'weight_kg', 'hs_code', 'fob_unit',
     'tariff_rate', 'created_at', 'updated_at', 'foto_url', 'foto_file_id'
+  ],
+  // Mapeo de cuentas del módulo de Movimientos (Ingreso/Costo/Gasto) — fila única, id fijo 'default'.
+  movement_settings: [
+    'id',
+    'ingreso_ventas_account_id', 'ingreso_prestamo_account_id', 'ingreso_otros_account_id',
+    'vat_rate_ingreso', 'vat_account_id_ingreso',
+    'costo_venta_account_id', 'costo_producto_account_id', 'costo_logistico_account_id', 'costo_otros_account_id',
+    'gasto_admin_account_id', 'gasto_logistica_account_id', 'gasto_ventas_account_id',
+    'vat_rate_gasto', 'vat_account_id_gasto',
+    'created_at', 'updated_at'
   ]
 };
 
