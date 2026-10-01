@@ -1,18 +1,12 @@
 // Motor de partida doble: validación de balance y construcción de asientos automáticos.
 // Módulo puro, sin dependencia de Store, para poder probarlo y reutilizarlo desde la UI y desde el hook automático.
 
+// Cuentas contables REALES (de balance). Las cuentas nominales (ingreso/costo/gasto)
+// ya no viven aquí — las cubren los tipos de movimiento (ver MOVEMENT_SUBTYPES más abajo).
 export const ACCOUNT_TYPES = [
-  { value: 'activo_circulante', label: 'Activo Circulante', group: 'Activo', nature: 'deudora' },
-  { value: 'activo_fijo', label: 'Activo Fijo', group: 'Activo', nature: 'deudora' },
-  { value: 'pasivo_circulante', label: 'Pasivo Circulante', group: 'Pasivo', nature: 'acreedora' },
-  { value: 'pasivo_fijo', label: 'Pasivo Fijo', group: 'Pasivo', nature: 'acreedora' },
-  { value: 'capital', label: 'Capital', group: 'Capital', nature: 'acreedora' },
-  { value: 'ingreso_ventas', label: 'Ingresos por Ventas', group: 'Ingresos', nature: 'acreedora' },
-  { value: 'ingreso_otros', label: 'Otros Ingresos', group: 'Ingresos', nature: 'acreedora' },
-  { value: 'gasto_logistica', label: 'Gastos de Logística', group: 'Gastos', nature: 'deudora' },
-  { value: 'gasto_ventas', label: 'Gastos de Ventas', group: 'Gastos', nature: 'deudora' },
-  { value: 'gasto_admin', label: 'Gastos de Administración y Finanzas', group: 'Gastos', nature: 'deudora' },
-  { value: 'gasto_otros', label: 'Otros Gastos', group: 'Gastos', nature: 'deudora' }
+  { value: 'activo', label: 'Activo', group: 'Activo', nature: 'deudora' },
+  { value: 'pasivo', label: 'Pasivo', group: 'Pasivo', nature: 'acreedora' },
+  { value: 'capital', label: 'Capital', group: 'Capital', nature: 'acreedora' }
 ];
 
 export function natureForType(type) {
@@ -26,42 +20,23 @@ export function labelForType(type) {
 }
 
 // Catálogo de cuentas sugerido (semilla). Se siembra por acción explícita del usuario, no en el boot.
+// Solo cuentas de balance — las de ingreso/costo/gasto ya no aplican (ver MOVEMENT_SUBTYPES).
 export const SEED_ACCOUNTS = [
-  { code: '1001', name: 'Caja y Bancos', type: 'activo_circulante' },
-  { code: '1002', name: 'Clientes / Cuentas por Cobrar', type: 'activo_circulante' },
-  { code: '1003', name: 'IVA Acreditable', type: 'activo_circulante' },
-  { code: '1004', name: 'Inventario de Mercancías en Tránsito (Importaciones)', type: 'activo_circulante' },
-  { code: '1005', name: 'Inventario de Mercancías Disponibles para la Venta', type: 'activo_circulante' },
-  { code: '1006', name: 'Anticipo a Proveedores', type: 'activo_circulante' },
-  { code: '1007', name: 'Préstamos Otorgados (por Cobrar)', type: 'activo_circulante' },
-  { code: '1501', name: 'Mobiliario y Equipo de Oficina', type: 'activo_fijo' },
-  { code: '1502', name: 'Equipo de Transporte', type: 'activo_fijo' },
-  { code: '1503', name: 'Equipo de Cómputo', type: 'activo_fijo' },
-  { code: '2001', name: 'Proveedores Nacionales', type: 'pasivo_circulante' },
-  { code: '2002', name: 'Acreedores por Importación', type: 'pasivo_circulante' },
-  { code: '2003', name: 'IVA por Pagar (ventas locales)', type: 'pasivo_circulante' },
-  { code: '2004', name: 'Impuestos por Pagar', type: 'pasivo_circulante' },
-  { code: '2005', name: 'Préstamos por Pagar — Corto Plazo', type: 'pasivo_circulante' },
-  { code: '2501', name: 'Préstamos por Pagar — Largo Plazo', type: 'pasivo_fijo' },
+  { code: '1001', name: 'Caja y Bancos', type: 'activo' },
+  { code: '1002', name: 'Clientes / Cuentas por Cobrar', type: 'activo' },
+  { code: '1003', name: 'IVA Acreditable', type: 'activo' },
+  { code: '1004', name: 'Inventario de Mercancías en Tránsito (Importaciones)', type: 'activo' },
+  { code: '1005', name: 'Inventario de Mercancías Disponibles para la Venta', type: 'activo' },
+  { code: '1006', name: 'Anticipo a Proveedores', type: 'activo' },
+  { code: '1007', name: 'Préstamos Otorgados (por Cobrar)', type: 'activo' },
+  { code: '2001', name: 'Proveedores Nacionales', type: 'pasivo' },
+  { code: '2002', name: 'Acreedores por Importación', type: 'pasivo' },
+  { code: '2003', name: 'IVA por Pagar (ventas locales)', type: 'pasivo' },
+  { code: '2004', name: 'Impuestos por Pagar', type: 'pasivo' },
+  { code: '2005', name: 'Préstamos por Pagar', type: 'pasivo' },
   { code: '3001', name: 'Capital Social', type: 'capital' },
   { code: '3002', name: 'Utilidades Retenidas', type: 'capital' },
-  { code: '3003', name: 'Resultado del Ejercicio', type: 'capital' },
-  { code: '4001', name: 'Ventas Nacionales', type: 'ingreso_ventas' },
-  { code: '4002', name: 'Ventas de Exportación', type: 'ingreso_ventas' },
-  { code: '4501', name: 'Otros Ingresos', type: 'ingreso_otros' },
-  { code: '4502', name: 'Ingresos por Intereses (Préstamos Otorgados)', type: 'ingreso_otros' },
-  { code: '5001', name: 'Fletes y Distribución Nacional', type: 'gasto_logistica' },
-  { code: '5002', name: 'Almacenaje y Bodega', type: 'gasto_logistica' },
-  { code: '5003', name: 'Mermas y Faltantes de Inventario', type: 'gasto_logistica' },
-  { code: '5501', name: 'Comisiones sobre Ventas', type: 'gasto_ventas' },
-  { code: '5502', name: 'Publicidad y Marketing', type: 'gasto_ventas' },
-  { code: '5503', name: 'Fletes sobre Ventas', type: 'gasto_ventas' },
-  { code: '6001', name: 'Sueldos y Salarios Administrativos', type: 'gasto_admin' },
-  { code: '6002', name: 'Renta de Oficina', type: 'gasto_admin' },
-  { code: '6003', name: 'Honorarios Profesionales', type: 'gasto_admin' },
-  { code: '6004', name: 'Comisiones y Gastos Bancarios', type: 'gasto_admin' },
-  { code: '6005', name: 'Intereses Pagados', type: 'gasto_admin' },
-  { code: '6501', name: 'Otros Gastos', type: 'gasto_otros' }
+  { code: '3003', name: 'Resultado del Ejercicio', type: 'capital' }
 ];
 
 // Conceptos del maestro de costos que se mapean a cuentas configurables al cerrar un contenedor.
@@ -84,7 +59,9 @@ function round2(n) {
 // Valida partida doble: al menos 2 líneas con cuenta y monto, ninguna línea con Debe y Haber a la vez,
 // y que la suma del Debe sea igual a la suma del Haber (tolerancia de un centavo).
 export function validateJournalBalance(lines) {
-  const active = (lines || []).filter(l => l.account_id && (round2(l.debit) + round2(l.credit)) > 0);
+  // Una línea es válida si toca una cuenta real (account_id) o una cuenta nominal
+  // (movement_subtype) — un movimiento de Ingreso/Costo/Gasto no tiene cuenta real en su lado nominal.
+  const active = (lines || []).filter(l => (l.account_id || l.movement_subtype) && (round2(l.debit) + round2(l.credit)) > 0);
 
   if (active.length < 2) {
     return { balanced: false, totalDebit: 0, totalCredit: 0, diff: 0, reason: 'Se requieren al menos 2 líneas con cuenta y monto.' };
@@ -111,10 +88,11 @@ export function validateJournalBalance(lines) {
 export function buildContainerClosingLines(container, summary, mapping) {
   const lines = [];
   const map = mapping || {};
+  const entryDate = container.operation_date;
 
-  const debit = (accountId, amount, memo) => {
+  const debit = (accountId, amount, description) => {
     const amt = round2(amount);
-    if (accountId && amt > 0) lines.push({ account_id: accountId, debit: amt, credit: 0, memo });
+    if (accountId && amt > 0) lines.push({ entry_date: entryDate, movement_subtype: null, account_id: accountId, debit: amt, credit: 0, description });
   };
 
   debit(map.fob_account_id, summary.fob, 'FOB mercancía importada');
@@ -130,7 +108,7 @@ export function buildContainerClosingLines(container, summary, mapping) {
   // para blindar el asiento contra desajustes de centavos por redondeo independiente.
   const totalDebit = round2(lines.reduce((s, l) => s + l.debit, 0));
   if (map.payable_account_id && totalDebit > 0) {
-    lines.push({ account_id: map.payable_account_id, debit: 0, credit: totalDebit, memo: 'Total por pagar — costeo de importación' });
+    lines.push({ entry_date: entryDate, movement_subtype: null, account_id: map.payable_account_id, debit: 0, credit: totalDebit, description: 'Total por pagar — costeo de importación' });
   }
   return lines;
 }
@@ -157,19 +135,21 @@ export const MOVEMENT_TYPES = [
   { value: 'gasto', label: 'Gasto' }
 ];
 
+// Estas SON las cuentas nominales: no se mapean a una cuenta contable aparte,
+// la línea del movimiento lleva directamente la clave del subtipo (movement_subtype).
 export const MOVEMENT_SUBTYPES = [
-  { key: 'ingreso_ventas', movement: 'ingreso', label: 'Ingresos de Ventas', accountField: 'ingreso_ventas_account_id' },
-  { key: 'ingreso_prestamo', movement: 'ingreso', label: 'Préstamo', accountField: 'ingreso_prestamo_account_id' },
-  { key: 'ingreso_otros', movement: 'ingreso', label: 'Otros Ingresos', accountField: 'ingreso_otros_account_id' },
+  { key: 'ingreso_ventas', movement: 'ingreso', label: 'Ingresos de Ventas' },
+  { key: 'ingreso_prestamo', movement: 'ingreso', label: 'Préstamo' },
+  { key: 'ingreso_otros', movement: 'ingreso', label: 'Otros Ingresos' },
 
-  { key: 'costo_venta', movement: 'costo', label: 'Costo de Venta', accountField: 'costo_venta_account_id' },
-  { key: 'costo_producto', movement: 'costo', label: 'Costo de Producto', accountField: 'costo_producto_account_id' },
-  { key: 'costo_logistico', movement: 'costo', label: 'Costo Logístico', accountField: 'costo_logistico_account_id' },
-  { key: 'costo_otros', movement: 'costo', label: 'Otros Costos', accountField: 'costo_otros_account_id' },
+  { key: 'costo_venta', movement: 'costo', label: 'Costo de Venta' },
+  { key: 'costo_producto', movement: 'costo', label: 'Costo de Producto' },
+  { key: 'costo_logistico', movement: 'costo', label: 'Costo Logístico' },
+  { key: 'costo_otros', movement: 'costo', label: 'Otros Costos' },
 
-  { key: 'gasto_admin', movement: 'gasto', label: 'Gastos de Administración y Finanzas', accountField: 'gasto_admin_account_id' },
-  { key: 'gasto_logistica', movement: 'gasto', label: 'Gastos de Logística', accountField: 'gasto_logistica_account_id' },
-  { key: 'gasto_ventas', movement: 'gasto', label: 'Gastos de Ventas', accountField: 'gasto_ventas_account_id' }
+  { key: 'gasto_admin', movement: 'gasto', label: 'Gastos de Administración y Finanzas' },
+  { key: 'gasto_logistica', movement: 'gasto', label: 'Gastos de Logística' },
+  { key: 'gasto_ventas', movement: 'gasto', label: 'Gastos de Ventas' }
 ];
 
 export function subtypesForMovement(movement) {
@@ -181,33 +161,39 @@ export function labelForSubtype(key) {
   return s ? s.label : key;
 }
 
-// mapping = movement_settings: una fila con un *_account_id por subtipo + vat_rate/vat_account_id
-// para ingreso y gasto (ver accountField de cada subtipo arriba).
+// mapping = movement_settings: solo tasas/cuentas de IVA (vat_rate_ingreso, vat_account_id_ingreso,
+// vat_rate_gasto, vat_account_id_gasto) — ya no hay cuenta por subtipo, el subtipo mismo es la cuenta nominal.
 //
 // data = { subtype, total, date, memo, bank_account_id (ingreso/gasto), counterpart_account_id (costo), include_vat (ingreso/gasto) }
 //
-// Ingreso: Debe Banco, Haber cuenta del subtipo [+ Haber IVA por pagar].
-// Gasto:   Debe cuenta del subtipo [+ Debe IVA acreditable], Haber Banco.
-// Costo:   Debe cuenta del subtipo, Haber cuenta contrapartida elegida (sin IVA, sin banco).
+// Cada línea del resultado lleva movement_subtype (todas las líneas del mismo movimiento comparten
+// el mismo subtipo, para poder filtrarlas juntas) y account_id (cuenta real; null en el lado nominal).
+//
+// Ingreso: Debe Banco (real), Haber el subtipo (nominal) [+ Haber IVA por pagar (real)].
+// Gasto:   Debe el subtipo (nominal) [+ Debe IVA acreditable (real)], Haber Banco (real).
+// Costo:   Debe el subtipo (nominal), Haber cuenta contrapartida elegida (real, sin IVA, sin banco).
 export function buildMovementLines(movement, data, mapping) {
   const subtype = MOVEMENT_SUBTYPES.find(s => s.key === data.subtype);
   if (!subtype) throw new Error('Tipo de movimiento inválido.');
-  const accountId = mapping ? mapping[subtype.accountField] : null;
-  if (!accountId) throw new Error(`No hay una cuenta configurada para "${subtype.label}". Complétala en Configuración.`);
+  const map = mapping || {};
 
   const total = round2(data.total);
   const memo = data.memo || subtype.label;
+  const line = (accountId, debit, credit, lineMemo) => ({
+    entry_date: data.date, movement_subtype: subtype.key, account_id: accountId || null,
+    debit, credit, description: lineMemo
+  });
 
   if (movement === 'ingreso') {
-    const lines = [{ account_id: data.bank_account_id, debit: total, credit: 0, memo }];
+    const lines = [line(data.bank_account_id, total, 0, memo)];
     if (data.include_vat) {
-      const { net, vat } = splitVat(total, mapping.vat_rate_ingreso);
-      lines.push({ account_id: accountId, debit: 0, credit: net, memo });
-      if (mapping.vat_account_id_ingreso && vat > 0) {
-        lines.push({ account_id: mapping.vat_account_id_ingreso, debit: 0, credit: vat, memo: 'IVA por pagar' });
+      const { net, vat } = splitVat(total, map.vat_rate_ingreso);
+      lines.push(line(null, 0, net, memo));
+      if (map.vat_account_id_ingreso && vat > 0) {
+        lines.push(line(map.vat_account_id_ingreso, 0, vat, 'IVA por pagar'));
       }
     } else {
-      lines.push({ account_id: accountId, debit: 0, credit: total, memo });
+      lines.push(line(null, 0, total, memo));
     }
     return lines;
   }
@@ -215,21 +201,21 @@ export function buildMovementLines(movement, data, mapping) {
   if (movement === 'gasto') {
     const lines = [];
     if (data.include_vat) {
-      const { net, vat } = splitVat(total, mapping.vat_rate_gasto);
-      lines.push({ account_id: accountId, debit: net, credit: 0, memo });
-      if (mapping.vat_account_id_gasto && vat > 0) {
-        lines.push({ account_id: mapping.vat_account_id_gasto, debit: vat, credit: 0, memo: 'IVA acreditable' });
+      const { net, vat } = splitVat(total, map.vat_rate_gasto);
+      lines.push(line(null, net, 0, memo));
+      if (map.vat_account_id_gasto && vat > 0) {
+        lines.push(line(map.vat_account_id_gasto, vat, 0, 'IVA acreditable'));
       }
     } else {
-      lines.push({ account_id: accountId, debit: total, credit: 0, memo });
+      lines.push(line(null, total, 0, memo));
     }
-    lines.push({ account_id: data.bank_account_id, debit: 0, credit: total, memo });
+    lines.push(line(data.bank_account_id, 0, total, memo));
     return lines;
   }
 
   // costo
   return [
-    { account_id: accountId, debit: total, credit: 0, memo },
-    { account_id: data.counterpart_account_id, debit: 0, credit: total, memo }
+    line(null, total, 0, memo),
+    line(data.counterpart_account_id, 0, total, memo)
   ];
 }
