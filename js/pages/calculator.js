@@ -25,6 +25,42 @@ const Calculator = {
 
     let items = Store.getItemsByContainer(containerId);
 
+    // Sincronización viva con el catálogo: cada vez que se abre el contenedor, los
+    // ítems que vienen de un producto (product_id) se actualizan con los datos
+    // ACTUALES de Productos — no quedan congelados en el precio que tenían al
+    // agregarlos. qty y gain_margin son decisiones del usuario para este
+    // contenedor, no datos del catálogo, así que no se tocan.
+    const syncItemsFromCatalog = (list) => {
+      let changed = false;
+      const synced = list.map((item) => {
+        if (!item.product_id) return item;
+        const product = Store.getById('products', item.product_id);
+        if (!product) return item;
+        const updated = {
+          ...item,
+          name: product.name,
+          sku: product.sku,
+          origin_country: product.origin_country,
+          supplier_id: product.supplier_id,
+          units_per_box: Number(product.units_per_box) || 1,
+          box_volume: Number(product.box_volume) || 0,
+          weight_kg: Number(product.weight_kg) || 0,
+          fob_unit: Number(product.fob_unit) || 0,
+          hs_code: product.hs_code || '',
+          tariff_rate: Number(product.tariff_rate) || 0
+        };
+        if (!changed && Object.keys(updated).some((k) => updated[k] !== item[k])) changed = true;
+        return updated;
+      });
+      return { items: synced, changed };
+    };
+
+    {
+      const { items: synced, changed } = syncItemsFromCatalog(items);
+      items = synced;
+      if (changed) Store.saveContainerWithItems(container, items);
+    }
+
     const supplierName = (id) => {
       const s = Store.getById('suppliers', id);
       return s ? s.name : '';
