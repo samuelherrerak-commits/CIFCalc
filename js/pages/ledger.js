@@ -9,10 +9,8 @@ const Ledger = {
     const { signal } = destroy;
 
     const accounts = [...Store.getAll('accounts')].sort((a, b) => String(a.code).localeCompare(String(b.code)));
-    const entries = Store.getAll('journal_entries').filter(e => e.status === 'posted');
-    const postedIds = new Set(entries.map(e => e.id));
-    const allLines = Store.getAll('journal_lines').filter(l => postedIds.has(l.entry_id));
-    const entryById = new Map(entries.map(e => [e.id, e]));
+    // Solo las líneas con cuenta real (el lado nominal de Ingreso/Costo/Gasto no tiene account_id).
+    const allLines = Store.getAll('movements').filter(l => l.account_id);
 
     let selectedAccountId = accounts[0] ? accounts[0].id : null;
 
@@ -34,8 +32,7 @@ const Ledger = {
       }
       const lines = allLines
         .filter(l => l.account_id === account.id)
-        .map(l => ({ ...l, entry: entryById.get(l.entry_id) }))
-        .sort((a, b) => new Date(a.entry?.entry_date || 0) - new Date(b.entry?.entry_date || 0));
+        .sort((a, b) => new Date(a.entry_date || 0) - new Date(b.entry_date || 0));
 
       let running = 0;
       const rows = lines.map(l => {
@@ -44,8 +41,8 @@ const Ledger = {
         running += account.nature === 'acreedora' ? (credit - debit) : (debit - credit);
         return `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-2">${esc(l.entry?.entry_date || '')}</td>
-            <td class="p-2">${esc(l.entry?.description || '')} ${l.memo ? `<span class="text-slate-400">— ${esc(l.memo)}</span>` : ''}</td>
+            <td class="p-2">${esc(l.entry_date || '')}</td>
+            <td class="p-2">#${l.document_number} — ${esc(l.description || '')}</td>
             <td class="p-2 text-right">${debit ? '$' + fmtNum(debit) : ''}</td>
             <td class="p-2 text-right">${credit ? '$' + fmtNum(credit) : ''}</td>
             <td class="p-2 text-right font-mono">$${fmtNum(running)}</td>
@@ -118,7 +115,7 @@ const Ledger = {
       <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
         <div class="px-4 py-3 border-b border-slate-200">
           <h2 class="font-bold text-slate-800">Balance de Comprobación</h2>
-          <p class="text-xs text-slate-500">Solo asientos contabilizados (estado "Contabilizado")</p>
+          <p class="text-xs text-slate-500">Solo cuentas reales con movimientos registrados</p>
         </div>
         <table class="w-full text-left border-collapse text-xs">
           <thead>

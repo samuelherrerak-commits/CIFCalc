@@ -77,14 +77,26 @@ const SCHEMAS = {
     'units_per_box', 'box_volume', 'weight_kg', 'hs_code', 'fob_unit',
     'tariff_rate', 'created_at', 'updated_at', 'foto_url', 'foto_file_id'
   ],
-  // Mapeo de cuentas del módulo de Movimientos (Ingreso/Costo/Gasto) — fila única, id fijo 'default'.
+  // Solo IVA de Ingresos y de Gastos — los tipos de movimiento (Ingreso/Costo/Gasto) son las cuentas
+  // nominales y no se mapean a una cuenta contable aparte. Fila única, id fijo 'default'.
   movement_settings: [
     'id',
-    'ingreso_ventas_account_id', 'ingreso_prestamo_account_id', 'ingreso_otros_account_id',
     'vat_rate_ingreso', 'vat_account_id_ingreso',
-    'costo_venta_account_id', 'costo_producto_account_id', 'costo_logistico_account_id', 'costo_otros_account_id',
-    'gasto_admin_account_id', 'gasto_logistica_account_id', 'gasto_ventas_account_id',
     'vat_rate_gasto', 'vat_account_id_gasto',
+    'created_at', 'updated_at'
+  ],
+  // Catálogo de cuentas reales (de balance): Activo, Pasivo, Capital. Las cuentas nominales
+  // (ingreso/costo/gasto) no viven aquí, son los tipos de movimiento.
+  accounts: [
+    'id', 'code', 'name', 'type', 'nature', 'is_active', 'is_bank_account',
+    'created_at', 'updated_at'
+  ],
+  // Tabla plana de Movimientos: una fila por cuenta tocada en un asiento. Varias filas comparten
+  // el mismo document_number (el "número de documento" del asiento). account_id va vacío en el
+  // lado nominal de un movimiento de Ingreso/Costo/Gasto (ese lado solo lleva movement_subtype).
+  movements: [
+    'id', 'entry_date', 'document_number', 'movement_subtype', 'account_id',
+    'description', 'debit', 'credit', 'source', 'source_ref',
     'created_at', 'updated_at'
   ]
 };
@@ -110,12 +122,16 @@ const MAX_FOTO_BYTES = 8 * 1024 * 1024;
 // ---------------------------------------------------------------------------
 
 /**
- * Lectura de una tabla completa (o filtrada por columna=valor).
+ * Lectura de una tabla completa (o filtrada por columna=valor). Si se abre la
+ * URL del Web App sin "?table=" (p.ej. directo en el navegador), se sirve en
+ * su lugar la app de Contabilidad Simple (ver AccountingApp.html).
  */
 function doGet(e) {
+  const p = (e && e.parameter) || {};
+  if (!p.table) return serveAccountingApp_();
+
   try {
     ensureSheets();
-    const p = (e && e.parameter) || {};
 
     if (REQUIRE_TOKEN_ON_GET && !isAuthorized_(p.pt)) {
       return json_({ ok: false, error: 'unauthorized', code: 401 });
@@ -168,6 +184,11 @@ function doPost(e) {
     // trae un archivo, no filas de tabla.
     if (body.action === 'uploadFoto') return jsonOk_(handleFotoUpload_(body));
 
+    // Registrar un movimiento (Ingreso/Costo/Gasto) de la app de Contabilidad
+    // Simple: body.lines ya trae las líneas armadas, aquí solo se valida el
+    // balance, se calcula el document_number y se insertan todas las líneas.
+    if (body.action === 'saveMovement') return json_(saveMovement_(body.lines));
+
     const tableErr = validateTable_(body.table);
     if (tableErr) return json_({ ok: false, error: tableErr, code: 400 });
 
@@ -184,6 +205,21 @@ function doPost(e) {
   } catch (err) {
     return json_({ ok: false, error: errorMessage_(err), code: errorCode_(err) });
   }
+}
+
+/**
+ * Sirve la app de Contabilidad Simple (archivo AccountingApp.html del
+ * proyecto). Es una página aparte, pensada para abrirse directo en el
+ * navegador en la URL /exec — habla con este mismo Web App (mismo token,
+ * ya inyectado en la plantilla) para leer/escribir accounts/movements/
+ * movement_settings sin pasar por el resto de la app principal.
+ */
+function serveAccountingApp_() {
+  const tmpl = HtmlService.createTemplateFromFile('AccountingApp');
+  tmpl.token = TOKEN;
+  return tmpl.evaluate()
+    .setTitle('Contabilidad Simple')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 // ---------------------------------------------------------------------------
@@ -443,6 +479,83 @@ function deleteWhere_(table, column, value) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ---------------------------------------------------------------------------
+// MOVIMIENTOS (Ingreso / Costo / Gasto) — usado por la app de Contabilidad
+// Simple (AccountingApp.html) y reutilizable por cualquier otro cliente.
+// ---------------------------------------------------------------------------
+
+function round2_(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/** Misma regla de partida doble que validateJournalBalance() en js/accounting.js. */
+function validateMovementBalance_(lines) {
+  const active = (lines || []).filter(function (l) {
+    return (l.account_id || l.movement_subtype) && (round2_(l.debit) + round2_(l.credit)) > 0;
+  });
+  if (active.length < 2) {
+    return { balanced: false, reason: 'Se requieren al menos 2 líneas con cuenta y monto.' };
+  }
+  for (let i = 0; i < active.length; i++) {
+    if (round2_(active[i].debit) > 0 && round2_(active[i].credit) > 0) {
+      return { balanced: false, reason: 'Una línea no puede tener Debe y Haber al mismo tiempo.' };
+    }
+  }
+  const totalDebit = round2_(active.reduce(function (s, l) { return s + round2_(l.debit); }, 0));
+  const totalCredit = round2_(active.reduce(function (s, l) { return s + round2_(l.credit); }, 0));
+  const diff = round2_(totalDebit - totalCredit);
+  return {
+    balanced: Math.abs(diff) < 0.01,
+    reason: Math.abs(diff) < 0.01 ? null : ('Diferencia de $' + diff.toFixed(2) + ' entre Debe y Haber.')
+  };
+}
+
+/**
+ * Guarda todas las líneas de un movimiento de una vez: valida el balance,
+ * calcula el siguiente document_number (correlativo sobre toda la hoja) y
+ * las inserta con upsert_(). lines = [{ entry_date, movement_subtype,
+ * account_id, description, debit, credit, source, source_ref }, ...]
+ */
+function saveMovement_(lines) {
+  if (!Array.isArray(lines) || lines.length === 0) {
+    return { ok: false, error: 'Se requieren líneas.', code: 400 };
+  }
+  const check = validateMovementBalance_(lines);
+  if (!check.balanced) return { ok: false, error: check.reason, code: 400 };
+
+  const sheet = getSheet_('movements');
+  const headers = SCHEMAS.movements;
+  const idxDoc = headers.indexOf('document_number');
+  const lastRow = sheet.getLastRow();
+  let maxDoc = 0;
+  if (lastRow >= 2) {
+    const docCol = sheet.getRange(2, idxDoc + 1, lastRow - 1, 1).getDisplayValues();
+    docCol.forEach(function (r) {
+      const n = Number(r[0]) || 0;
+      if (n > maxDoc) maxDoc = n;
+    });
+  }
+  const documentNumber = maxDoc + 1;
+  const rows = lines.map(function (l) {
+    return {
+      id: Utilities.getUuid(),
+      entry_date: l.entry_date || '',
+      document_number: documentNumber,
+      movement_subtype: l.movement_subtype || '',
+      account_id: l.account_id || '',
+      description: l.description || '',
+      debit: round2_(l.debit),
+      credit: round2_(l.credit),
+      source: l.source || 'manual',
+      source_ref: l.source_ref || ''
+    };
+  });
+
+  const result = upsert_('movements', rows);
+  if (!result.ok) return result;
+  return { ok: true, document_number: documentNumber };
 }
 
 // ---------------------------------------------------------------------------

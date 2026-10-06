@@ -1,6 +1,6 @@
 import Store from '../store.js';
 import { fmtNum, esc, num } from '../utils.js';
-import { MOVEMENT_TYPES, subtypesForMovement, labelForSubtype, buildMovementLines, validateJournalBalance } from '../accounting.js';
+import { MOVEMENT_TYPES, subtypesForMovement, buildMovementLines, validateJournalBalance } from '../accounting.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 
 const CARD_STYLE = {
@@ -21,22 +21,32 @@ const Movements = {
     const activeAccounts = () => accounts.filter(a => a.is_active !== false).sort((a, b) => String(a.code).localeCompare(String(b.code)));
     const bankAccounts = () => activeAccounts().filter(a => a.is_bank_account);
 
-    const recentEntries = () => Store.getAll('journal_entries')
-      .filter(e => e.source === 'movement')
-      .sort((a, b) => new Date(b.entry_date || 0) - new Date(a.entry_date || 0))
-      .slice(0, 30);
+    // Agrupa las líneas de "movements" (source: 'movement') por document_number para mostrar
+    // un renglón por movimiento registrado desde esta pantalla.
+    const recentMovements = () => {
+      const bySource = Store.getAll('movements').filter(m => m.source === 'movement');
+      const byDoc = new Map();
+      for (const m of bySource) {
+        if (!byDoc.has(m.document_number)) byDoc.set(m.document_number, []);
+        byDoc.get(m.document_number).push(m);
+      }
+      return [...byDoc.values()]
+        .sort((a, b) => new Date(b[0].entry_date || 0) - new Date(a[0].entry_date || 0))
+        .slice(0, 30);
+    };
 
     const renderList = () => {
       const tbody = document.getElementById('movements-tbody');
-      const list = recentEntries();
+      const list = recentMovements();
       tbody.innerHTML = list.length === 0
         ? `<tr><td colspan="4" class="p-3 text-center text-slate-400">Sin movimientos registrados todavía.</td></tr>`
-        : list.map(e => {
-          const total = Store.getJournalLinesByEntry(e.id).reduce((s, l) => s + (Number(l.debit) || 0), 0);
+        : list.map(lines => {
+          const main = lines.find(l => l.description) || lines[0];
+          const total = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
           return `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-2">${esc(e.entry_date)}</td>
-            <td class="p-2">${esc(e.description)}</td>
+            <td class="p-2">${esc(main.entry_date)}</td>
+            <td class="p-2">${esc(main.description)}</td>
             <td class="p-2 text-right font-mono">$${fmtNum(total)}</td>
             <td class="p-2"><span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">Contabilizado</span></td>
           </tr>`;
@@ -119,14 +129,7 @@ const Movements = {
       const check = validateJournalBalance(lines);
       if (!check.balanced) { alert(check.reason || 'El asiento no está balanceado.'); return; }
 
-      const subtypeLabel = labelForSubtype(subtype);
-      const { entry } = Store.saveJournalEntryWithLines({
-        entry_date: date,
-        description: memoInput ? `${subtypeLabel} — ${memoInput}` : subtypeLabel,
-        source: 'movement',
-        status: 'draft'
-      }, lines);
-      const result = Store.postJournalEntry(entry.id);
+      const result = Store.saveMovement(lines, { source: 'movement' });
       if (!result.ok) { alert(result.error); return; }
 
       closeModal();
