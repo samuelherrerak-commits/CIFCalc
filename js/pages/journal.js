@@ -1,9 +1,11 @@
 import Store from '../store.js';
 import { fmtNum, esc, num } from '../utils.js';
-import { validateJournalBalance } from '../accounting.js';
+import { withRoundingPlug, totalsFor } from '../accounting.js';
 import AccountingTabs from '../components/accounting-tabs.js';
+import AccountingShell, { btnPrimary, btnSecondary, card, input, label } from '../components/accounting-shell.js';
 
-const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', movement: 'Movimiento' };
+const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', income: 'Ingreso', expense: 'Gasto', inventory_reception: 'Recepción' };
+const MAX_ROWS = 200;
 
 const Journal = {
   async render(app) {
@@ -11,219 +13,184 @@ const Journal = {
     const { signal } = destroy;
 
     let accounts = Store.getAll('accounts');
+    let query = '';
+    let accountFilter = '';
     let lines = [];
 
-    // Agrupa las filas planas de "movements" por document_number — cada grupo es un asiento.
-    const documents = () => {
-      const all = Store.getAll('movements');
-      const byDoc = new Map();
-      for (const m of all) {
-        if (!byDoc.has(m.document_number)) byDoc.set(m.document_number, []);
-        byDoc.get(m.document_number).push(m);
-      }
-      return [...byDoc.entries()]
-        .map(([documentNumber, ls]) => ({ documentNumber, lines: ls }))
-        .sort((a, b) => new Date(b.lines[0].entry_date || 0) - new Date(a.lines[0].entry_date || 0));
-    };
-
-    const renderList = () => {
-      const tbody = document.getElementById('journal-tbody');
-      const docs = documents();
-      tbody.innerHTML = docs.length === 0
-        ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin asientos. Crea uno con "+ Nuevo Asiento".</td></tr>`
-        : docs.map(({ documentNumber, lines: ls }) => {
-          const total = ls.reduce((acc, l) => ({ debit: acc.debit + (Number(l.debit) || 0), credit: acc.credit + (Number(l.credit) || 0) }), { debit: 0, credit: 0 });
-          const main = ls.find(l => l.description) || ls[0];
-          const source = main.source || 'manual';
-          return `
-          <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-2">${esc(main.entry_date)}</td>
-            <td class="p-2">#${documentNumber} — ${esc(main.description)}</td>
-            <td class="p-2"><span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">${SOURCE_LABEL[source] || source}</span></td>
-            <td class="p-2"><span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">Contabilizado</span></td>
-            <td class="p-2 text-right font-mono">$${fmtNum(total.debit)} / $${fmtNum(total.credit)}</td>
-            <td class="p-2 whitespace-nowrap">
-              <button data-view="${documentNumber}" class="text-blue-600 hover:text-blue-800 font-bold px-1" title="Ver">👁</button>
-              <button data-del="${documentNumber}" class="text-red-500 hover:text-red-700 font-bold px-1" title="Eliminar">🗑</button>
-            </td>
-          </tr>
-        `;
-        }).join('');
-
-      tbody.querySelectorAll('[data-view]').forEach(btn => btn.addEventListener('click', () => viewDocument(Number(btn.dataset.view))));
-      tbody.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => removeDocument(Number(btn.dataset.del))));
-    };
-
     const accountOptions = (selected) => {
-      const sorted = [...accounts].filter(a => a.is_active !== false).sort((a, b) => String(a.code).localeCompare(String(b.code)));
+      const sorted = [...accounts].filter(a => a.is_active !== false).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
       return `<option value="">— Cuenta —</option>` + sorted.map(a =>
-        `<option value="${a.id}" ${a.id === selected ? 'selected' : ''}>${esc(a.code)} — ${esc(a.name)}</option>`
+        `<option value="${a.id}" ${a.id === selected ? 'selected' : ''}>${esc(a.codigo)} — ${esc(a.nombre)}</option>`
       ).join('');
     };
 
-    const renderLines = (readOnly) => {
+    const filteredRows = () => {
+      const q = query.trim().toLowerCase();
+      const accFilterObj = accounts.find(a => a.id === accountFilter);
+      return Store.getAll('movements')
+        .filter(m => {
+          if (accFilterObj && m.codigo_cuenta !== accFilterObj.codigo) return false;
+          if (!q) return true;
+          return [m.concepto, m.ref_doc].some(v => String(v || '').toLowerCase().includes(q));
+        })
+        .sort((a, b) => new Date(b.entry_date || 0) - new Date(a.entry_date || 0));
+    };
+
+    const renderList = () => {
+      const rows = filteredRows();
+      const totals = totalsFor(rows);
+      document.getElementById('journal-total-debit').textContent = `$${fmtNum(totals.debit)}`;
+      document.getElementById('journal-total-credit').textContent = `$${fmtNum(totals.credit)}`;
+      document.getElementById('journal-count').textContent = `${rows.length} asiento${rows.length === 1 ? '' : 's'}`;
+
+      const shown = rows.slice(0, MAX_ROWS);
+      const tbody = document.getElementById('journal-tbody');
+      tbody.innerHTML = shown.length === 0
+        ? `<tr><td colspan="6" class="py-4 text-center text-slate-500">Sin asientos.</td></tr>`
+        : shown.map(m => `
+          <tr class="border-t border-slate-700/30 hover:bg-slate-800/30">
+            <td class="py-1.5">${esc(m.entry_date)}</td>
+            <td class="py-1.5 text-slate-200">${esc(m.concepto)}</td>
+            <td class="py-1.5" title="${esc(m.cuenta_contable)}"><span class="font-mono text-slate-300">${esc(m.codigo_cuenta)}</span></td>
+            <td class="py-1.5 text-right font-mono text-blue-400">${m.debit > 0 ? '$' + fmtNum(m.debit) : ''}</td>
+            <td class="py-1.5 text-right font-mono text-emerald-400">${m.credit > 0 ? '$' + fmtNum(m.credit) : ''}</td>
+            <td class="py-1.5 text-slate-500">${esc(m.ref_doc)}</td>
+          </tr>
+        `).join('');
+
+      document.getElementById('journal-footer-note').textContent =
+        rows.length > MAX_ROWS ? `Mostrando ${MAX_ROWS} de ${rows.length} asientos.` : '';
+    };
+
+    const accountOptionsForFilter = () => {
+      const sorted = [...accounts].sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
+      return `<option value="">Todas las cuentas</option>` + sorted.map(a =>
+        `<option value="${a.id}">${esc(a.codigo)} — ${esc(a.nombre)}</option>`
+      ).join('');
+    };
+
+    // --- Asiento manual ---
+    const renderLines = () => {
       const tbody = document.getElementById('lines-tbody');
       tbody.innerHTML = lines.map((l, i) => `
         <tr>
-          <td class="p-1"><select data-line-acc="${i}" ${readOnly ? 'disabled' : ''} class="w-full p-1.5 border rounded text-xs bg-white">${accountOptions(l.account_id)}</select></td>
-          <td class="p-1"><input data-line-debit="${i}" type="number" min="0" step="0.01" value="${l.debit || 0}" ${readOnly ? 'disabled' : ''} class="w-24 p-1.5 border rounded text-xs text-right"></td>
-          <td class="p-1"><input data-line-credit="${i}" type="number" min="0" step="0.01" value="${l.credit || 0}" ${readOnly ? 'disabled' : ''} class="w-24 p-1.5 border rounded text-xs text-right"></td>
-          <td class="p-1"><input data-line-memo="${i}" type="text" value="${esc(l.description || '')}" ${readOnly ? 'disabled' : ''} class="w-full p-1.5 border rounded text-xs"></td>
-          <td class="p-1 text-center">${readOnly ? '' : `<button data-line-del="${i}" class="text-red-500 hover:text-red-700 font-bold px-1">✕</button>`}</td>
+          <td class="p-1"><select data-line-acc="${i}" class="w-full p-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100">${accountOptions(l.account_id)}</select></td>
+          <td class="p-1"><input data-line-debit="${i}" type="number" min="0" step="0.01" value="${l.debit || 0}" class="w-24 p-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-right text-slate-100"></td>
+          <td class="p-1"><input data-line-credit="${i}" type="number" min="0" step="0.01" value="${l.credit || 0}" class="w-24 p-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-right text-slate-100"></td>
+          <td class="p-1"><input data-line-concepto="${i}" type="text" value="${esc(l.concepto || '')}" class="w-full p-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100"></td>
+          <td class="p-1 text-center"><button data-line-del="${i}" class="text-rose-400 hover:text-rose-300 font-bold px-1">✕</button></td>
         </tr>
       `).join('');
 
-      if (readOnly) return;
       tbody.querySelectorAll('[data-line-acc]').forEach(el => el.addEventListener('change', (e) => { lines[e.target.dataset.lineAcc].account_id = e.target.value; renderTotals(); }));
       tbody.querySelectorAll('[data-line-debit]').forEach(el => el.addEventListener('input', (e) => { lines[e.target.dataset.lineDebit].debit = num(e.target); if (num(e.target) > 0) lines[e.target.dataset.lineDebit].credit = 0; renderTotals(); }));
       tbody.querySelectorAll('[data-line-credit]').forEach(el => el.addEventListener('input', (e) => { lines[e.target.dataset.lineCredit].credit = num(e.target); if (num(e.target) > 0) lines[e.target.dataset.lineCredit].debit = 0; renderTotals(); }));
-      tbody.querySelectorAll('[data-line-memo]').forEach(el => el.addEventListener('input', (e) => { lines[e.target.dataset.lineMemo].description = e.target.value; }));
-      tbody.querySelectorAll('[data-line-del]').forEach(el => el.addEventListener('click', (e) => { lines.splice(Number(e.target.dataset.lineDel), 1); renderLines(false); renderTotals(); }));
+      tbody.querySelectorAll('[data-line-concepto]').forEach(el => el.addEventListener('input', (e) => { lines[e.target.dataset.lineConcepto].concepto = e.target.value; }));
+      tbody.querySelectorAll('[data-line-del]').forEach(el => el.addEventListener('click', (e) => { lines.splice(Number(e.target.dataset.lineDel), 1); renderLines(); renderTotals(); }));
     };
 
     const renderTotals = () => {
-      const check = validateJournalBalance(lines);
-      document.getElementById('total-debit').textContent = `$${fmtNum(check.totalDebit)}`;
-      document.getElementById('total-credit').textContent = `$${fmtNum(check.totalCredit)}`;
-      const diffEl = document.getElementById('total-diff');
-      diffEl.textContent = check.balanced ? '✓ Balanceado' : (check.reason || '');
-      diffEl.className = check.balanced ? 'text-xs font-semibold text-emerald-600' : 'text-xs font-semibold text-red-600';
-      const saveBtn = document.getElementById('entry-save');
-      if (saveBtn) saveBtn.disabled = !check.balanced;
+      const t = totalsFor(lines);
+      document.getElementById('entry-total-debit').textContent = `$${fmtNum(t.debit)}`;
+      document.getElementById('entry-total-credit').textContent = `$${fmtNum(t.credit)}`;
+      const diffEl = document.getElementById('entry-diff');
+      diffEl.textContent = Math.abs(t.diff) < 0.01 ? '✓ Balanceado' : `Diferencia $${t.diff.toFixed(2)} (se ajusta sola con "Diferencias de Redondeo" si guardas)`;
+      diffEl.className = Math.abs(t.diff) < 0.01 ? 'text-xs font-black text-emerald-400' : 'text-xs font-black text-amber-400';
     };
 
-    const addLine = () => { lines.push({ account_id: '', debit: 0, credit: 0, description: '' }); renderLines(false); renderTotals(); };
+    const addLine = () => { lines.push({ account_id: '', debit: 0, credit: 0, concepto: '' }); renderLines(); renderTotals(); };
 
     const openForm = () => {
-      lines = [{ account_id: '', debit: 0, credit: 0, description: '' }, { account_id: '', debit: 0, credit: 0, description: '' }];
+      lines = [{ account_id: '', debit: 0, credit: 0, concepto: '' }, { account_id: '', debit: 0, credit: 0, concepto: '' }];
       document.getElementById('f-date').value = new Date().toISOString().slice(0, 10);
-      document.getElementById('f-desc').value = '';
-      document.getElementById('f-date').disabled = false;
-      document.getElementById('f-desc').disabled = false;
-      document.getElementById('journal-modal-title').textContent = 'Nuevo Asiento';
-      document.getElementById('btn-add-line').classList.remove('hidden');
-      document.getElementById('entry-save').classList.remove('hidden');
+      document.getElementById('f-refdoc').value = `MAN-${Date.now().toString().slice(-6)}`;
       document.getElementById('journal-modal').classList.remove('hidden');
-      renderLines(false);
+      renderLines();
       renderTotals();
     };
 
-    const viewDocument = (documentNumber) => {
-      const ls = Store.getMovementLinesByDocument(documentNumber);
-      lines = ls.map(l => ({ ...l }));
-      const main = ls.find(l => l.description) || ls[0];
-      document.getElementById('f-date').value = main.entry_date || '';
-      document.getElementById('f-desc').value = main.description || '';
-      document.getElementById('f-date').disabled = true;
-      document.getElementById('f-desc').disabled = true;
-      document.getElementById('journal-modal-title').textContent = `Asiento #${documentNumber} (solo lectura)`;
-      document.getElementById('btn-add-line').classList.add('hidden');
-      document.getElementById('entry-save').classList.add('hidden');
-      document.getElementById('journal-modal').classList.remove('hidden');
-      renderLines(true);
-      renderTotals();
-    };
-
-    const closeForm = () => {
-      document.getElementById('journal-modal').classList.add('hidden');
-    };
+    const closeForm = () => document.getElementById('journal-modal').classList.add('hidden');
 
     const saveEntry = () => {
       const date = document.getElementById('f-date').value;
-      const description = document.getElementById('f-desc').value.trim();
+      const refDoc = document.getElementById('f-refdoc').value.trim();
       if (!date) { alert('La fecha es obligatoria.'); return; }
-      if (!description) { alert('La descripción es obligatoria.'); return; }
 
-      const check = validateJournalBalance(lines);
-      if (!check.balanced) { alert(check.reason || 'El asiento no está balanceado.'); return; }
-
-      const finalLines = lines
+      const diffAccount = accounts.find(a => a.codigo === '6.9.01.01');
+      const rawLines = lines
         .filter(l => l.account_id && (Number(l.debit) || Number(l.credit)))
-        .map(l => ({ entry_date: date, movement_subtype: null, account_id: l.account_id, debit: l.debit, credit: l.credit, description: l.description || description }));
+        .map(l => {
+          const acc = accounts.find(a => a.id === l.account_id);
+          return { entry_date: date, codigo_cuenta: acc.codigo, cuenta_contable: acc.nombre, concepto: l.concepto, debit: l.debit, credit: l.credit, ref_doc: refDoc };
+        });
+      if (rawLines.length < 2) { alert('Se requieren al menos 2 líneas con cuenta y monto.'); return; }
 
-      const result = Store.saveMovement(finalLines, { source: 'manual' });
-      if (!result.ok) { alert(result.error); return; }
+      const finalLines = withRoundingPlug(rawLines, diffAccount, date, refDoc);
+      Store.postJournalRows(finalLines, { source: 'manual' });
       closeForm();
       renderList();
     };
 
-    const removeDocument = (documentNumber) => {
-      if (!confirm('¿Eliminar este asiento?')) return;
-      Store.removeMovement(documentNumber);
-      renderList();
-    };
-
-    app.innerHTML = `
-      <header class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <h1 class="text-2xl font-bold text-slate-900">Contabilidad</h1>
-        <p class="text-sm text-slate-500">Partida doble en USD, integrada con el Maestro de Costo</p>
-      </header>
-
-      ${AccountingTabs.render('journal')}
-
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
-        <div class="flex justify-between items-center px-4 py-3 border-b border-slate-200">
-          <h2 class="font-bold text-slate-800">Diario General</h2>
-          <button id="btn-new-entry" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition">+ Nuevo Asiento</button>
+    const body = `
+      <div class="${card}">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-3">
+          <h2 class="text-sm font-black uppercase tracking-wide text-slate-300">Diario Contable <span class="text-slate-500" id="journal-count"></span></h2>
+          <div class="flex items-center gap-2 flex-wrap">
+            <input id="journal-search" type="text" placeholder="Buscar concepto o referencia…" class="${input}" style="width:220px">
+            <select id="journal-account-filter" class="${input}" style="width:220px"></select>
+            <button id="btn-new-entry" class="${btnPrimary}">+ Nuevo Asiento</button>
+          </div>
         </div>
-        <table class="w-full text-left border-collapse text-xs">
-          <thead>
-            <tr class="bg-slate-100 border-b border-slate-200 text-slate-700">
-              <th class="p-2">Fecha</th>
-              <th class="p-2">Descripción</th>
-              <th class="p-2">Origen</th>
-              <th class="p-2">Estado</th>
-              <th class="p-2 text-right">Debe / Haber</th>
-              <th class="p-2 text-center">Acciones</th>
-            </tr>
-          </thead>
+        <div class="flex gap-4 text-xs mb-2">
+          <span>Debe: <span id="journal-total-debit" class="font-black text-blue-400"></span></span>
+          <span>Haber: <span id="journal-total-credit" class="font-black text-emerald-400"></span></span>
+        </div>
+        <table class="w-full text-left text-xs">
+          <thead><tr class="text-[9px] font-black text-slate-500 uppercase tracking-wider">
+            <th class="py-1.5">Fecha</th><th class="py-1.5">Concepto</th><th class="py-1.5">Cuenta</th>
+            <th class="py-1.5 text-right">Debe</th><th class="py-1.5 text-right">Haber</th><th class="py-1.5">Ref.</th>
+          </tr></thead>
           <tbody id="journal-tbody"></tbody>
         </table>
+        <p id="journal-footer-note" class="text-xs text-slate-500 mt-2"></p>
       </div>
+    `;
 
-      <!-- Modal Asiento -->
-      <div id="journal-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+    app.innerHTML = AccountingShell.wrap(AccountingTabs.render('journal'), body) + `
+      <!-- Modal Asiento Manual -->
+      <div id="journal-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto text-slate-100">
           <div class="flex justify-between items-center">
-            <h3 id="journal-modal-title" class="text-lg font-bold text-slate-800">Nuevo Asiento</h3>
-            <button id="journal-close" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
+            <h3 class="text-sm font-black uppercase tracking-wide">Nuevo Asiento Manual</h3>
+            <button id="journal-close" class="text-slate-500 hover:text-slate-300 text-xl font-bold leading-none">✕</button>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Fecha *</label>
-              <input id="f-date" type="date" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Descripción *</label>
-              <input id="f-desc" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-            </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div><label class="${label}">Fecha *</label><input id="f-date" type="date" class="${input}"></div>
+            <div><label class="${label}">Referencia</label><input id="f-refdoc" type="text" class="${input}"></div>
           </div>
-          <table class="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr class="bg-slate-100 text-slate-700">
-                <th class="p-1">Cuenta</th>
-                <th class="p-1 text-right">Debe</th>
-                <th class="p-1 text-right">Haber</th>
-                <th class="p-1">Concepto</th>
-                <th class="p-1"></th>
-              </tr>
-            </thead>
+          <table class="w-full text-left text-xs">
+            <thead><tr class="text-[9px] font-black text-slate-500 uppercase tracking-wider">
+              <th class="p-1">Cuenta</th><th class="p-1 text-right">Debe</th><th class="p-1 text-right">Haber</th><th class="p-1">Concepto</th><th class="p-1"></th>
+            </tr></thead>
             <tbody id="lines-tbody"></tbody>
           </table>
-          <button id="btn-add-line" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-1.5 px-3 rounded-lg transition">+ Agregar línea</button>
-          <div class="flex justify-between items-center border-t border-slate-200 pt-3">
-            <div class="text-xs">Debe: <span id="total-debit" class="font-bold"></span> &nbsp; Haber: <span id="total-credit" class="font-bold"></span></div>
-            <span id="total-diff" class="text-xs font-semibold"></span>
+          <button id="btn-add-line" class="${btnSecondary}">+ Agregar línea</button>
+          <div class="flex justify-between items-center border-t border-slate-700/30 pt-3">
+            <div class="text-xs">Debe: <span id="entry-total-debit" class="font-black"></span> &nbsp; Haber: <span id="entry-total-credit" class="font-black"></span></div>
+            <span id="entry-diff" class="text-xs font-black"></span>
           </div>
           <div class="flex justify-end gap-2 pt-1">
-            <button id="journal-cancel" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-2 px-4 rounded-lg transition">Cerrar</button>
-            <button id="entry-save" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed">Registrar</button>
+            <button id="journal-cancel" class="${btnSecondary}">Cerrar</button>
+            <button id="entry-save" class="${btnPrimary}">Registrar</button>
           </div>
         </div>
       </div>
     `;
 
-    document.getElementById('btn-new-entry').addEventListener('click', () => openForm());
+    document.getElementById('journal-account-filter').innerHTML = accountOptionsForFilter();
+    document.getElementById('journal-search').addEventListener('input', (e) => { query = e.target.value; renderList(); });
+    document.getElementById('journal-account-filter').addEventListener('change', (e) => { accountFilter = e.target.value; renderList(); });
+    document.getElementById('btn-new-entry').addEventListener('click', openForm);
     document.getElementById('btn-add-line').addEventListener('click', addLine);
     document.getElementById('entry-save').addEventListener('click', saveEntry);
     document.getElementById('journal-cancel').addEventListener('click', closeForm);

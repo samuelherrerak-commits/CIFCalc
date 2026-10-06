@@ -5,8 +5,9 @@ import Dashboard from './pages/dashboard.js';
 import Calculator from './pages/calculator.js';
 import Products from './pages/products.js';
 import Accounts from './pages/accounts.js';
-import Movements from './pages/movements.js';
-import AccountingConfig from './pages/accounting-config.js';
+import Income from './pages/income.js';
+import Expenses from './pages/expenses.js';
+import Inventory from './pages/inventory.js';
 import Journal from './pages/journal.js';
 import Ledger from './pages/ledger.js';
 
@@ -15,8 +16,9 @@ const routes = [
   { pattern: /^#\/contenedor\/(.+)$/, handler: 'calculator', key: 'calculator' },
   { pattern: /^#\/productos\/?$/, handler: 'products', key: 'products' },
   { pattern: /^#\/contabilidad\/cuentas\/?$/, handler: 'accounts', key: 'accounts' },
-  { pattern: /^#\/contabilidad\/movimientos\/?$/, handler: 'movements', key: 'movements' },
-  { pattern: /^#\/contabilidad\/configuracion\/?$/, handler: 'accounting-config', key: 'accounting-config' },
+  { pattern: /^#\/contabilidad\/ingresos\/?$/, handler: 'income', key: 'income' },
+  { pattern: /^#\/contabilidad\/gastos\/?$/, handler: 'expenses', key: 'expenses' },
+  { pattern: /^#\/contabilidad\/inventario\/?$/, handler: 'inventory', key: 'inventory' },
   { pattern: /^#\/contabilidad\/diario\/?$/, handler: 'journal', key: 'journal' },
   { pattern: /^#\/contabilidad\/mayor\/?$/, handler: 'ledger', key: 'ledger' }
 ];
@@ -26,8 +28,9 @@ const pages = {
   calculator: Calculator,
   products: Products,
   accounts: Accounts,
-  movements: Movements,
-  'accounting-config': AccountingConfig,
+  income: Income,
+  expenses: Expenses,
+  inventory: Inventory,
   journal: Journal,
   ledger: Ledger
 };
