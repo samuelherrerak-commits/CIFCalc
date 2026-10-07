@@ -18,15 +18,14 @@ const NUMERIC_FIELDS = {
     'fob_unit', 'tariff_rate', 'gain_margin'
   ],
   products: [
-    'units_per_box', 'box_volume', 'weight_kg', 'fob_unit', 'tariff_rate'
+    'units_per_box', 'box_volume', 'weight_kg', 'fob_unit', 'tariff_rate', 'stock', 'avg_cost'
   ],
-  movement_settings: ['vat_rate_ingreso', 'vat_rate_gasto'],
-  movements: ['document_number', 'debit', 'credit']
+  movements: ['debit', 'credit']
 };
 
 const BOOL_FIELDS = {
   containers: ['insurance_enabled'],
-  accounts: ['is_active', 'is_bank_account']
+  accounts: ['is_active']
 };
 
 const MAX_SEARCH = 100;

@@ -1,45 +1,94 @@
-// Motor de partida doble: validación de balance y construcción de asientos automáticos.
-// Módulo puro, sin dependencia de Store, para poder probarlo y reutilizarlo desde la UI y desde el hook automático.
+// Motor de partida doble, estilo LegalYa: un solo catálogo de cuentas (códigos
+// jerárquicos con punto, 6 tipos) y un diario plano (una fila = una línea de
+// Debe o Haber, sin encabezado de asiento). Módulo puro, sin dependencia de Store.
 
-// Cuentas contables REALES (de balance). Las cuentas nominales (ingreso/costo/gasto)
-// ya no viven aquí — las cubren los tipos de movimiento (ver MOVEMENT_SUBTYPES más abajo).
+// El tipo se infiere del primer dígito del código, igual que LegalYa.
 export const ACCOUNT_TYPES = [
-  { value: 'activo', label: 'Activo', group: 'Activo', nature: 'deudora' },
-  { value: 'pasivo', label: 'Pasivo', group: 'Pasivo', nature: 'acreedora' },
-  { value: 'capital', label: 'Capital', group: 'Capital', nature: 'acreedora' }
+  { digit: '1', value: 'Activo', nature: 'Deudora' },
+  { digit: '2', value: 'Pasivo', nature: 'Acreedora' },
+  { digit: '3', value: 'Patrimonio', nature: 'Acreedora' },
+  { digit: '4', value: 'Ingreso', nature: 'Acreedora' },
+  { digit: '5', value: 'Costo', nature: 'Deudora' },
+  { digit: '6', value: 'Gasto', nature: 'Deudora' }
 ];
 
-export function natureForType(type) {
-  const t = ACCOUNT_TYPES.find(t => t.value === type);
-  return t ? t.nature : 'deudora';
+export function inferirTipo(codigo) {
+  const digit = String(codigo || '').charAt(0);
+  const t = ACCOUNT_TYPES.find(t => t.digit === digit);
+  return t ? t.value : 'Gasto';
 }
 
-export function labelForType(type) {
-  const t = ACCOUNT_TYPES.find(t => t.value === type);
-  return t ? t.label : type;
+export function naturalezaForTipo(tipo) {
+  const t = ACCOUNT_TYPES.find(t => t.value === tipo);
+  return t ? t.nature : 'Deudora';
 }
 
-// Catálogo de cuentas sugerido (semilla). Se siembra por acción explícita del usuario, no en el boot.
-// Solo cuentas de balance — las de ingreso/costo/gasto ya no aplican (ver MOVEMENT_SUBTYPES).
-export const SEED_ACCOUNTS = [
-  { code: '1001', name: 'Caja y Bancos', type: 'activo' },
-  { code: '1002', name: 'Clientes / Cuentas por Cobrar', type: 'activo' },
-  { code: '1003', name: 'IVA Acreditable', type: 'activo' },
-  { code: '1004', name: 'Inventario de Mercancías en Tránsito (Importaciones)', type: 'activo' },
-  { code: '1005', name: 'Inventario de Mercancías Disponibles para la Venta', type: 'activo' },
-  { code: '1006', name: 'Anticipo a Proveedores', type: 'activo' },
-  { code: '1007', name: 'Préstamos Otorgados (por Cobrar)', type: 'activo' },
-  { code: '2001', name: 'Proveedores Nacionales', type: 'pasivo' },
-  { code: '2002', name: 'Acreedores por Importación', type: 'pasivo' },
-  { code: '2003', name: 'IVA por Pagar (ventas locales)', type: 'pasivo' },
-  { code: '2004', name: 'Impuestos por Pagar', type: 'pasivo' },
-  { code: '2005', name: 'Préstamos por Pagar', type: 'pasivo' },
-  { code: '3001', name: 'Capital Social', type: 'capital' },
-  { code: '3002', name: 'Utilidades Retenidas', type: 'capital' },
-  { code: '3003', name: 'Resultado del Ejercicio', type: 'capital' }
+// tipo_especifico: lo que usan Ingresos/Gastos/Inventario para filtrar qué
+// cuentas mostrar en cada selector (cuentas de pago = Efectivo/Banco,
+// por cobrar = Clientes, por pagar = Proveedores).
+export const TIPO_ESPECIFICO_OPTIONS = {
+  Activo: ['Efectivo', 'Banco', 'Clientes', 'Inventario', 'Otros'],
+  Pasivo: ['Proveedores', 'Otros'],
+  Patrimonio: ['Otros'],
+  Ingreso: ['Otros'],
+  Costo: ['Otros'],
+  Gasto: ['Otros']
+};
+
+// Catálogo sugerido (semilla). Se siembra por acción explícita del usuario, no en el boot.
+export const CHART_OF_ACCOUNTS = [
+  { codigo: '1.1.01.01', nombre: 'Caja', tipo_especifico: 'Efectivo' },
+  { codigo: '1.1.01.02', nombre: 'Bancos', tipo_especifico: 'Banco' },
+  { codigo: '1.1.02.01', nombre: 'Cuentas por Cobrar Clientes', tipo_especifico: 'Clientes' },
+  { codigo: '1.1.03.01', nombre: 'Inventario de Mercancía', tipo_especifico: 'Inventario' },
+  { codigo: '1.1.04.01', nombre: 'Inventario de Mercancías en Tránsito (Importaciones)', tipo_especifico: 'Inventario' },
+  { codigo: '1.1.05.01', nombre: 'Anticipo a Proveedores', tipo_especifico: 'Otros' },
+  { codigo: '2.1.01.01', nombre: 'Proveedores por Pagar', tipo_especifico: 'Proveedores' },
+  { codigo: '2.1.02.01', nombre: 'Acreedores por Importación', tipo_especifico: 'Proveedores' },
+  { codigo: '2.1.03.01', nombre: 'Préstamos por Pagar', tipo_especifico: 'Otros' },
+  { codigo: '3.1.01.01', nombre: 'Capital Social', tipo_especifico: 'Otros' },
+  { codigo: '3.1.02.01', nombre: 'Utilidades Retenidas', tipo_especifico: 'Otros' },
+  { codigo: '4.1.01.01', nombre: 'Ingresos por Ventas', tipo_especifico: 'Otros' },
+  { codigo: '4.1.02.01', nombre: 'Préstamos Recibidos', tipo_especifico: 'Otros' },
+  { codigo: '4.1.03.01', nombre: 'Otros Ingresos', tipo_especifico: 'Otros' },
+  { codigo: '5.1.01.01', nombre: 'Costo de Venta', tipo_especifico: 'Otros' },
+  { codigo: '6.1.01.01', nombre: 'Gastos de Administración y Finanzas', tipo_especifico: 'Otros' },
+  { codigo: '6.1.02.01', nombre: 'Gastos de Logística', tipo_especifico: 'Otros' },
+  { codigo: '6.1.03.01', nombre: 'Gastos de Ventas', tipo_especifico: 'Otros' },
+  { codigo: '6.9.01.01', nombre: 'Diferencias de Redondeo', tipo_especifico: 'Otros' }
 ];
 
-// Conceptos del maestro de costos que se mapean a cuentas configurables al cerrar un contenedor.
+function round2(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+// Suma Debe/Haber de un lote de líneas de diario.
+export function totalsFor(lines) {
+  const debit = round2((lines || []).reduce((s, l) => s + (Number(l.debit) || 0), 0));
+  const credit = round2((lines || []).reduce((s, l) => s + (Number(l.credit) || 0), 0));
+  return { debit, credit, diff: round2(debit - credit) };
+}
+
+// Si el lote no balancea por culpa de centavos de redondeo, agrega una línea
+// contra "Diferencias de Redondeo" en vez de bloquear el guardado — mismo
+// parche que el DIF_CAMB de LegalYa (sin el componente de tipo de cambio,
+// porque aquí todo es USD).
+export function withRoundingPlug(lines, diffAccount, entryDate, refDoc) {
+  const { diff } = totalsFor(lines);
+  if (Math.abs(diff) < 0.01) return lines;
+  const plug = {
+    entry_date: entryDate,
+    codigo_cuenta: diffAccount ? diffAccount.codigo : '',
+    cuenta_contable: diffAccount ? diffAccount.nombre : 'Diferencias de Redondeo',
+    concepto: 'Ajuste por redondeo',
+    debit: diff < 0 ? Math.abs(diff) : 0,
+    credit: diff > 0 ? diff : 0,
+    ref_doc: refDoc
+  };
+  return [...lines, plug];
+}
+
+// Conceptos del maestro de costos que se mapean a cuentas al cerrar un contenedor.
 export const CLOSING_MAPPING_FIELDS = [
   { key: 'fob_account_id', label: 'FOB de mercancía' },
   { key: 'ocean_freight_account_id', label: 'Flete marítimo' },
@@ -52,47 +101,25 @@ export const CLOSING_MAPPING_FIELDS = [
   { key: 'payable_account_id', label: 'Contrapartida — Acreedores por Importación' }
 ];
 
-function round2(n) {
-  return Math.round((Number(n) || 0) * 100) / 100;
+export function isClosingMappingComplete(mapping) {
+  if (!mapping) return false;
+  return CLOSING_MAPPING_FIELDS.every(f => mapping[f.key]);
 }
 
-// Valida partida doble: al menos 2 líneas con cuenta y monto, ninguna línea con Debe y Haber a la vez,
-// y que la suma del Debe sea igual a la suma del Haber (tolerancia de un centavo).
-export function validateJournalBalance(lines) {
-  // Una línea es válida si toca una cuenta real (account_id) o una cuenta nominal
-  // (movement_subtype) — un movimiento de Ingreso/Costo/Gasto no tiene cuenta real en su lado nominal.
-  const active = (lines || []).filter(l => (l.account_id || l.movement_subtype) && (round2(l.debit) + round2(l.credit)) > 0);
-
-  if (active.length < 2) {
-    return { balanced: false, totalDebit: 0, totalCredit: 0, diff: 0, reason: 'Se requieren al menos 2 líneas con cuenta y monto.' };
-  }
-  for (const l of active) {
-    if (round2(l.debit) > 0 && round2(l.credit) > 0) {
-      return { balanced: false, totalDebit: 0, totalCredit: 0, diff: 0, reason: 'Una línea no puede tener Debe y Haber al mismo tiempo.' };
-    }
-  }
-  const totalDebit = round2(active.reduce((s, l) => s + round2(l.debit), 0));
-  const totalCredit = round2(active.reduce((s, l) => s + round2(l.credit), 0));
-  const diff = round2(totalDebit - totalCredit);
-  return {
-    balanced: Math.abs(diff) < 0.01,
-    totalDebit,
-    totalCredit,
-    diff,
-    reason: Math.abs(diff) < 0.01 ? null : `Diferencia de $${diff.toFixed(2)} entre Debe y Haber.`
-  };
-}
-
-// Construye las líneas del asiento de cierre de un contenedor a partir del resumen de computeContainer()
-// y el mapeo configurable de cuentas. No depende de Store ni de IDs de cuenta hardcodeados.
-export function buildContainerClosingLines(container, summary, mapping) {
+// Construye las líneas del asiento de cierre de un contenedor. mapping = { campo: account_id },
+// accountsById = Map<id, account> para resolver codigo_cuenta/cuenta_contable (texto, no FK).
+export function buildContainerClosingLines(container, summary, mapping, accountsById) {
   const lines = [];
   const map = mapping || {};
   const entryDate = container.operation_date;
+  const refDoc = `CIE-${String(container.bl_number || container.id).slice(-6)}`;
 
-  const debit = (accountId, amount, description) => {
+  const debit = (accountId, amount, concepto) => {
     const amt = round2(amount);
-    if (accountId && amt > 0) lines.push({ entry_date: entryDate, movement_subtype: null, account_id: accountId, debit: amt, credit: 0, description });
+    const acc = accountsById.get(accountId);
+    if (acc && amt > 0) {
+      lines.push({ entry_date: entryDate, codigo_cuenta: acc.codigo, cuenta_contable: acc.nombre, concepto, debit: amt, credit: 0, ref_doc: refDoc });
+    }
   };
 
   debit(map.fob_account_id, summary.fob, 'FOB mercancía importada');
@@ -107,115 +134,61 @@ export function buildContainerClosingLines(container, summary, mapping) {
   // El crédito se fuerza a ser exactamente la suma de los débitos ya redondeados,
   // para blindar el asiento contra desajustes de centavos por redondeo independiente.
   const totalDebit = round2(lines.reduce((s, l) => s + l.debit, 0));
-  if (map.payable_account_id && totalDebit > 0) {
-    lines.push({ entry_date: entryDate, movement_subtype: null, account_id: map.payable_account_id, debit: 0, credit: totalDebit, description: 'Total por pagar — costeo de importación' });
+  const payableAcc = accountsById.get(map.payable_account_id);
+  if (payableAcc && totalDebit > 0) {
+    lines.push({ entry_date: entryDate, codigo_cuenta: payableAcc.codigo, cuenta_contable: payableAcc.nombre, concepto: 'Total por pagar — costeo de importación', debit: 0, credit: totalDebit, ref_doc: refDoc });
   }
   return lines;
 }
 
-export function isClosingMappingComplete(mapping) {
-  if (!mapping) return false;
-  return CLOSING_MAPPING_FIELDS.every(f => mapping[f.key]);
-}
-
-// Separa un monto total (con IVA incluido) en neto + IVA, dada una tasa en porcentaje.
-export function splitVat(total, vatRate) {
-  const net = round2(Number(total) / (1 + (Number(vatRate) || 0) / 100));
-  return { net, vat: round2(Number(total) - net) };
-}
-
 // ============================================
-// Módulo de Movimientos (Ingreso / Costo / Gasto)
-// Plan de cuentas simplificado: un tipo de movimiento con una lista fija de
-// subtipos, cada uno mapeado a una cuenta contable en Configuración.
+// Ingresos, Gastos e Inventario — construcción de líneas de diario.
+// Cada builder recibe las cuentas reales ya resueltas (objetos {id, codigo, nombre}),
+// no solo sus ids, para poder escribir codigo_cuenta/cuenta_contable como texto.
 // ============================================
-export const MOVEMENT_TYPES = [
-  { value: 'ingreso', label: 'Ingreso' },
-  { value: 'costo', label: 'Costo' },
-  { value: 'gasto', label: 'Gasto' }
-];
 
-// Estas SON las cuentas nominales: no se mapean a una cuenta contable aparte,
-// la línea del movimiento lleva directamente la clave del subtipo (movement_subtype).
-export const MOVEMENT_SUBTYPES = [
-  { key: 'ingreso_ventas', movement: 'ingreso', label: 'Ingresos de Ventas' },
-  { key: 'ingreso_prestamo', movement: 'ingreso', label: 'Préstamo' },
-  { key: 'ingreso_otros', movement: 'ingreso', label: 'Otros Ingresos' },
-
-  { key: 'costo_venta', movement: 'costo', label: 'Costo de Venta' },
-  { key: 'costo_producto', movement: 'costo', label: 'Costo de Producto' },
-  { key: 'costo_logistico', movement: 'costo', label: 'Costo Logístico' },
-  { key: 'costo_otros', movement: 'costo', label: 'Otros Costos' },
-
-  { key: 'gasto_admin', movement: 'gasto', label: 'Gastos de Administración y Finanzas' },
-  { key: 'gasto_logistica', movement: 'gasto', label: 'Gastos de Logística' },
-  { key: 'gasto_ventas', movement: 'gasto', label: 'Gastos de Ventas' }
-];
-
-export function subtypesForMovement(movement) {
-  return MOVEMENT_SUBTYPES.filter(s => s.movement === movement);
+function line(entryDate, account, debit, credit, concepto, refDoc, entidad) {
+  return {
+    entry_date: entryDate,
+    codigo_cuenta: account ? account.codigo : '',
+    cuenta_contable: account ? account.nombre : '',
+    concepto,
+    debit: round2(debit),
+    credit: round2(credit),
+    ref_doc: refDoc,
+    entidad: entidad || ''
+  };
 }
 
-export function labelForSubtype(key) {
-  const s = MOVEMENT_SUBTYPES.find(s => s.key === key);
-  return s ? s.label : key;
+// data = { date, total, concepto, entidad, refDoc, paymentAccount (Efectivo/Banco/Clientes), revenueAccount }
+// Si incluye venta de inventario: data.inventory = { qty, unitCost, costAccount, inventoryAccount }
+export function buildIncomeLines(data) {
+  const lines = [
+    line(data.date, data.paymentAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
+    line(data.date, data.revenueAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
+  ];
+  if (data.inventory) {
+    const costTotal = round2(data.inventory.qty * data.inventory.unitCost);
+    if (costTotal > 0) {
+      lines.push(line(data.date, data.inventory.costAccount, costTotal, 0, `Costo de venta — ${data.concepto}`, data.refDoc, data.entidad));
+      lines.push(line(data.date, data.inventory.inventoryAccount, 0, costTotal, `Costo de venta — ${data.concepto}`, data.refDoc, data.entidad));
+    }
+  }
+  return lines;
 }
 
-// mapping = movement_settings: solo tasas/cuentas de IVA (vat_rate_ingreso, vat_account_id_ingreso,
-// vat_rate_gasto, vat_account_id_gasto) — ya no hay cuenta por subtipo, el subtipo mismo es la cuenta nominal.
-//
-// data = { subtype, total, date, memo, bank_account_id (ingreso/gasto), counterpart_account_id (costo), include_vat (ingreso/gasto) }
-//
-// Cada línea del resultado lleva movement_subtype (todas las líneas del mismo movimiento comparten
-// el mismo subtipo, para poder filtrarlas juntas) y account_id (cuenta real; null en el lado nominal).
-//
-// Ingreso: Debe Banco (real), Haber el subtipo (nominal) [+ Haber IVA por pagar (real)].
-// Gasto:   Debe el subtipo (nominal) [+ Debe IVA acreditable (real)], Haber Banco (real).
-// Costo:   Debe el subtipo (nominal), Haber cuenta contrapartida elegida (real, sin IVA, sin banco).
-export function buildMovementLines(movement, data, mapping) {
-  const subtype = MOVEMENT_SUBTYPES.find(s => s.key === data.subtype);
-  if (!subtype) throw new Error('Tipo de movimiento inválido.');
-  const map = mapping || {};
-
-  const total = round2(data.total);
-  const memo = data.memo || subtype.label;
-  const line = (accountId, debit, credit, lineMemo) => ({
-    entry_date: data.date, movement_subtype: subtype.key, account_id: accountId || null,
-    debit, credit, description: lineMemo
-  });
-
-  if (movement === 'ingreso') {
-    const lines = [line(data.bank_account_id, total, 0, memo)];
-    if (data.include_vat) {
-      const { net, vat } = splitVat(total, map.vat_rate_ingreso);
-      lines.push(line(null, 0, net, memo));
-      if (map.vat_account_id_ingreso && vat > 0) {
-        lines.push(line(map.vat_account_id_ingreso, 0, vat, 'IVA por pagar'));
-      }
-    } else {
-      lines.push(line(null, 0, total, memo));
-    }
-    return lines;
-  }
-
-  if (movement === 'gasto') {
-    const lines = [];
-    if (data.include_vat) {
-      const { net, vat } = splitVat(total, map.vat_rate_gasto);
-      lines.push(line(null, net, 0, memo));
-      if (map.vat_account_id_gasto && vat > 0) {
-        lines.push(line(map.vat_account_id_gasto, vat, 0, 'IVA acreditable'));
-      }
-    } else {
-      lines.push(line(null, total, 0, memo));
-    }
-    lines.push(line(data.bank_account_id, 0, total, memo));
-    return lines;
-  }
-
-  // costo
+// data = { date, total, concepto, entidad, refDoc, paymentAccount (Efectivo/Banco/Proveedores), expenseAccount }
+export function buildExpenseLines(data) {
   return [
-    line(null, total, 0, memo),
-    line(data.counterpart_account_id, 0, total, memo)
+    line(data.date, data.expenseAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
+    line(data.date, data.paymentAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
+  ];
+}
+
+// data = { date, total, concepto, entidad, refDoc, paymentAccount (Efectivo/Banco/Proveedores), inventoryAccount }
+export function buildReceptionLines(data) {
+  return [
+    line(data.date, data.inventoryAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
+    line(data.date, data.paymentAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
   ];
 }

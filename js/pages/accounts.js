@@ -1,7 +1,8 @@
 import Store from '../store.js';
 import { esc } from '../utils.js';
-import { ACCOUNT_TYPES, natureForType, labelForType, SEED_ACCOUNTS, CLOSING_MAPPING_FIELDS } from '../accounting.js';
+import { ACCOUNT_TYPES, naturalezaForTipo, inferirTipo, TIPO_ESPECIFICO_OPTIONS, CHART_OF_ACCOUNTS, CLOSING_MAPPING_FIELDS } from '../accounting.js';
 import AccountingTabs from '../components/accounting-tabs.js';
+import AccountingShell, { btnPrimary, btnSecondary, card, input, label } from '../components/accounting-shell.js';
 
 const Accounts = {
   async render(app) {
@@ -9,82 +10,113 @@ const Accounts = {
     const { signal } = destroy;
 
     let accounts = Store.getAll('accounts');
-    let editingId = null;
-    let query = '';
+    let activeType = '';
 
     const activeAccounts = () => accounts.filter(a => a.is_active !== false);
-
-    const hasMovements = (id) => Store.getAll('movements').some(l => l.account_id === id);
-
-    const filtered = () => {
-      const q = query.trim().toLowerCase();
-      const list = [...accounts].sort((a, b) => String(a.code).localeCompare(String(b.code)));
-      if (!q) return list;
-      return list.filter(a => [a.code, a.name, labelForType(a.type)].some(v => String(v || '').toLowerCase().includes(q)));
+    const hasMovements = (id) => {
+      const acc = accounts.find(a => a.id === id);
+      return acc && Store.getAll('movements').some(m => m.codigo_cuenta === acc.codigo);
     };
 
-    const renderTable = () => {
-      const tbody = document.getElementById('accounts-tbody');
-      const list = filtered();
-      tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin cuentas. Crea una con "+ Nueva Cuenta" o carga el catálogo sugerido.</td></tr>`
-        : list.map(a => `
-          <tr class="border-b border-slate-100 hover:bg-slate-50 ${a.is_active === false ? 'opacity-50' : ''}">
-            <td class="p-2 font-mono font-bold text-slate-700">${esc(a.code)}</td>
-            <td class="p-2">${esc(a.name)}</td>
-            <td class="p-2"><span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">${esc(labelForType(a.type))}</span></td>
-            <td class="p-2 capitalize">${a.nature}</td>
-            <td class="p-2">${a.is_active === false ? '<span class="text-slate-400">Inactiva</span>' : '<span class="text-emerald-600">Activa</span>'}</td>
-            <td class="p-2 whitespace-nowrap">
-              <button data-edit="${a.id}" class="text-blue-600 hover:text-blue-800 font-bold px-1" title="Editar">✎</button>
-              <button data-del="${a.id}" class="text-red-500 hover:text-red-700 font-bold px-1" title="Eliminar / Desactivar">🗑</button>
-            </td>
-          </tr>
-        `).join('');
-
-      tbody.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => openForm(btn.dataset.edit)));
-      tbody.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => removeAccount(btn.dataset.del)));
+    const renderFilterPills = () => {
+      const wrap = document.getElementById('type-pills');
+      const tipos = ['', ...ACCOUNT_TYPES.map(t => t.value)];
+      wrap.innerHTML = tipos.map(t => `
+        <button data-type="${t}" class="px-3 py-1.5 text-[10px] font-black uppercase tracking-wide rounded-full transition-all ${
+          activeType === t ? 'bg-blue-600 text-white' : 'bg-slate-800/50 text-slate-400 hover:text-slate-200'
+        }">${t || 'Todos'}</button>
+      `).join('');
+      wrap.querySelectorAll('[data-type]').forEach(btn => btn.addEventListener('click', () => {
+        activeType = btn.dataset.type;
+        renderFilterPills();
+        renderGroups();
+      }));
     };
 
-    const openForm = (id = null) => {
-      editingId = id;
-      const a = id ? Store.getById('accounts', id) : { code: '', name: '', type: 'activo', is_active: true };
-      document.getElementById('f-code').value = a.code || '';
-      document.getElementById('f-name').value = a.name || '';
-      document.getElementById('f-type').value = a.type || 'activo';
-      document.getElementById('f-active').checked = a.is_active !== false;
-      document.getElementById('f-bank').checked = a.is_bank_account === true;
-      document.getElementById('f-nature-preview').textContent = natureForType(a.type || 'activo');
-      document.getElementById('account-modal-title').textContent = id ? 'Editar Cuenta' : 'Nueva Cuenta';
+    const renderGroups = () => {
+      const wrap = document.getElementById('accounts-groups');
+      const list = [...accounts]
+        .filter(a => !activeType || a.tipo === activeType)
+        .sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
+
+      if (list.length === 0) {
+        wrap.innerHTML = `<div class="${card} text-center text-slate-500 text-sm">Sin cuentas. Crea una con "+ Nueva Cuenta" o carga el catálogo sugerido.</div>`;
+        return;
+      }
+
+      const byTipo = new Map();
+      for (const a of list) {
+        if (!byTipo.has(a.tipo)) byTipo.set(a.tipo, []);
+        byTipo.get(a.tipo).push(a);
+      }
+
+      wrap.innerHTML = [...byTipo.entries()].map(([tipo, accs]) => `
+        <div class="${card}">
+          <h3 class="text-sm font-black uppercase tracking-wide text-slate-300 mb-3">${esc(tipo)} <span class="text-slate-500">(${accs.length})</span></h3>
+          <table class="w-full text-left text-xs">
+            <thead>
+              <tr class="text-[9px] font-black text-slate-500 uppercase tracking-wider">
+                <th class="py-1.5 pr-2">Código</th>
+                <th class="py-1.5 pr-2">Nombre</th>
+                <th class="py-1.5 pr-2">Tipo Específico</th>
+                <th class="py-1.5 pr-2">Naturaleza</th>
+                <th class="py-1.5 pr-2">Estado</th>
+                <th class="py-1.5 text-center">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${accs.map(a => `
+                <tr class="border-t border-slate-700/30 hover:bg-slate-800/30 ${a.is_active === false ? 'opacity-40' : ''}">
+                  <td class="py-1.5 pr-2 font-mono text-slate-300">${esc(a.codigo)}</td>
+                  <td class="py-1.5 pr-2 text-slate-200">${esc(a.nombre)}</td>
+                  <td class="py-1.5 pr-2 text-slate-400">${esc(a.tipo_especifico || 'Otros')}</td>
+                  <td class="py-1.5 pr-2 text-slate-400">${esc(a.naturaleza)}</td>
+                  <td class="py-1.5 pr-2">${a.is_active === false ? '<span class="text-slate-500">Inactiva</span>' : '<span class="text-emerald-400">Activa</span>'}</td>
+                  <td class="py-1.5 text-center whitespace-nowrap">
+                    <button data-del="${a.id}" class="text-rose-400 hover:text-rose-300 font-bold px-1" title="Eliminar / Desactivar">🗑</button>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      `).join('');
+
+      wrap.querySelectorAll('[data-del]').forEach(btn => btn.addEventListener('click', () => removeAccount(btn.dataset.del)));
+    };
+
+    const openForm = () => {
+      document.getElementById('f-codigo').value = '';
+      document.getElementById('f-nombre').value = '';
+      document.getElementById('f-tipo').value = 'Activo';
+      refreshTipoEspecifico('Activo');
       document.getElementById('account-modal').classList.remove('hidden');
-      document.getElementById('f-code').focus();
+      document.getElementById('f-codigo').focus();
     };
 
-    const closeForm = () => {
-      document.getElementById('account-modal').classList.add('hidden');
-      editingId = null;
+    const closeForm = () => document.getElementById('account-modal').classList.add('hidden');
+
+    const refreshTipoEspecifico = (tipo) => {
+      const sel = document.getElementById('f-tipo-especifico');
+      const opts = TIPO_ESPECIFICO_OPTIONS[tipo] || ['Otros'];
+      sel.innerHTML = opts.map(o => `<option value="${o}">${o}</option>`).join('');
     };
 
     const saveAccount = () => {
-      const code = document.getElementById('f-code').value.trim();
-      const name = document.getElementById('f-name').value.trim();
-      const type = document.getElementById('f-type').value;
-      if (!code) { alert('El código es obligatorio.'); document.getElementById('f-code').focus(); return; }
-      if (!Store.isAccountCodeUnique(code, editingId)) { alert('Ya existe una cuenta con ese código.'); document.getElementById('f-code').focus(); return; }
-      if (!name) { alert('El nombre es obligatorio.'); document.getElementById('f-name').focus(); return; }
-      const data = {
-        code, name, type, nature: natureForType(type),
-        is_active: document.getElementById('f-active').checked,
-        is_bank_account: document.getElementById('f-bank').checked
-      };
-      if (editingId) {
-        Store.update('accounts', { ...data, id: editingId });
-      } else {
-        Store.insert('accounts', data);
-      }
+      const codigo = document.getElementById('f-codigo').value.trim();
+      const nombre = document.getElementById('f-nombre').value.trim();
+      const tipo = document.getElementById('f-tipo').value;
+      const tipoEspecifico = document.getElementById('f-tipo-especifico').value;
+      if (!codigo) { alert('El código es obligatorio.'); document.getElementById('f-codigo').focus(); return; }
+      if (!Store.isAccountCodigoUnique(codigo)) { alert('Ya existe una cuenta con ese código.'); document.getElementById('f-codigo').focus(); return; }
+      if (!nombre) { alert('El nombre es obligatorio.'); document.getElementById('f-nombre').focus(); return; }
+      Store.insert('accounts', {
+        codigo, nombre, tipo, tipo_especifico: tipoEspecifico,
+        naturaleza: naturalezaForTipo(tipo), is_active: true
+      });
       accounts = Store.getAll('accounts');
       closeForm();
-      renderTable();
+      renderGroups();
       renderMappingSelects();
     };
 
@@ -97,23 +129,27 @@ const Accounts = {
         Store.remove('accounts', id);
       }
       accounts = Store.getAll('accounts');
-      renderTable();
+      renderGroups();
       renderMappingSelects();
     };
 
     const loadSeed = () => {
-      const existingCodes = new Set(accounts.map(a => String(a.code)));
-      const toCreate = SEED_ACCOUNTS.filter(s => !existingCodes.has(s.code));
+      const existingCodes = new Set(accounts.map(a => String(a.codigo)));
+      const toCreate = CHART_OF_ACCOUNTS.filter(s => !existingCodes.has(s.codigo));
       if (toCreate.length === 0) {
         alert('El catálogo sugerido ya está cargado por completo.');
         return;
       }
       if (!confirm(`Se crearán ${toCreate.length} cuenta(s) sugerida(s). ¿Continuar?`)) return;
       for (const s of toCreate) {
-        Store.insert('accounts', { code: s.code, name: s.name, type: s.type, nature: natureForType(s.type), is_active: true, is_bank_account: s.code === '1001' });
+        const tipo = inferirTipo(s.codigo);
+        Store.insert('accounts', {
+          codigo: s.codigo, nombre: s.nombre, tipo, tipo_especifico: s.tipo_especifico,
+          naturaleza: naturalezaForTipo(tipo), is_active: true
+        });
       }
       accounts = Store.getAll('accounts');
-      renderTable();
+      renderGroups();
       renderMappingSelects();
     };
 
@@ -121,13 +157,13 @@ const Accounts = {
     const renderMappingSelects = () => {
       const mapping = Store.getAccountMapping() || {};
       const options = activeAccounts()
-        .sort((a, b) => String(a.code).localeCompare(String(b.code)))
-        .map(a => `<option value="${a.id}">${esc(a.code)} — ${esc(a.name)}</option>`).join('');
+        .sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)))
+        .map(a => `<option value="${a.id}">${esc(a.codigo)} — ${esc(a.nombre)}</option>`).join('');
       const wrap = document.getElementById('mapping-fields');
       wrap.innerHTML = CLOSING_MAPPING_FIELDS.map(f => `
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">${esc(f.label)}</label>
-          <select data-map="${f.key}" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+          <label class="${label}">${esc(f.label)}</label>
+          <select data-map="${f.key}" class="${input}">
             <option value="">— Sin asignar —</option>
             ${options}
           </select>
@@ -150,108 +186,80 @@ const Accounts = {
       setTimeout(() => document.getElementById('mapping-saved').classList.add('hidden'), 1500);
     };
 
-    app.innerHTML = `
-      <header class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <h1 class="text-2xl font-bold text-slate-900">Contabilidad</h1>
-        <p class="text-sm text-slate-500">Partida doble en USD, integrada con el Maestro de Costo</p>
-      </header>
-
-      ${AccountingTabs.render('accounts')}
-
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 px-4 py-3 border-b border-slate-200">
-          <h2 class="font-bold text-slate-800">Plan de Cuentas</h2>
-          <div class="flex items-center gap-2">
-            <input id="accounts-search" type="text" placeholder="Buscar por código, nombre, tipo…"
-                   class="w-64 p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-            <button id="btn-seed" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Cargar catálogo sugerido</button>
-            <button id="btn-new-account" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">+ Nueva Cuenta</button>
-          </div>
+    const body = `
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+        <h2 class="text-sm font-black uppercase tracking-wide text-slate-300">Plan de Cuentas</h2>
+        <div class="flex items-center gap-2">
+          <button id="btn-seed" class="${btnSecondary}">Cargar catálogo sugerido</button>
+          <button id="btn-new-account" class="${btnPrimary}">+ Nueva Cuenta</button>
         </div>
-        <table class="w-full text-left border-collapse text-xs">
-          <thead>
-            <tr class="bg-slate-100 border-b border-slate-200 text-slate-700">
-              <th class="p-2">Código</th>
-              <th class="p-2">Nombre</th>
-              <th class="p-2">Clasificación</th>
-              <th class="p-2">Naturaleza</th>
-              <th class="p-2">Estado</th>
-              <th class="p-2 text-center">Acciones</th>
-            </tr>
-          </thead>
-          <tbody id="accounts-tbody"></tbody>
-        </table>
       </div>
+      <div id="type-pills" class="flex gap-2 flex-wrap"></div>
+      <div id="accounts-groups" class="space-y-4"></div>
 
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+      <div class="${card} space-y-3">
         <div>
-          <h2 class="font-bold text-slate-800">Mapeo Contable — Cierre de Contenedores</h2>
+          <h2 class="text-sm font-black uppercase tracking-wide text-slate-300">Mapeo Contable — Cierre de Contenedores</h2>
           <p class="text-xs text-slate-500">Define a qué cuenta va cada concepto del Maestro de Costo cuando completas un contenedor. Si falta algún campo, no se genera el asiento automático hasta que completes el mapeo.</p>
         </div>
         <div id="mapping-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
         <div class="flex items-center gap-3">
-          <button id="btn-save-mapping" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg transition">Guardar Mapeo</button>
-          <span id="mapping-saved" class="hidden text-xs font-semibold text-emerald-600">✓ Guardado</span>
+          <button id="btn-save-mapping" class="${btnPrimary}">Guardar Mapeo</button>
+          <span id="mapping-saved" class="hidden text-xs font-black text-emerald-400">✓ Guardado</span>
         </div>
       </div>
+    `;
 
+    app.innerHTML = AccountingShell.wrap(AccountingTabs.render('accounts'), body) + `
       <!-- Modal Cuenta -->
-      <div id="account-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-5 space-y-4">
+      <div id="account-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 text-slate-100">
           <div class="flex justify-between items-center">
-            <h3 id="account-modal-title" class="text-lg font-bold text-slate-800">Nueva Cuenta</h3>
-            <button id="acc-close" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
+            <h3 class="text-sm font-black uppercase tracking-wide">Nueva Cuenta</h3>
+            <button id="acc-close" class="text-slate-500 hover:text-slate-300 text-xl font-bold leading-none">✕</button>
+          </div>
+          <div>
+            <label class="${label}">Código *</label>
+            <input id="f-codigo" type="text" placeholder="1.1.01.01" class="${input}">
+          </div>
+          <div>
+            <label class="${label}">Nombre *</label>
+            <input id="f-nombre" type="text" class="${input}">
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Código *</label>
-              <input id="f-code" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+              <label class="${label}">Tipo</label>
+              <select id="f-tipo" class="${input}">
+                ${ACCOUNT_TYPES.map(t => `<option value="${t.value}">${t.value}</option>`).join('')}
+              </select>
             </div>
             <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Naturaleza</label>
-              <div id="f-nature-preview" class="w-full p-2 text-sm text-slate-500 capitalize"></div>
+              <label class="${label}">Tipo Específico</label>
+              <select id="f-tipo-especifico" class="${input}"></select>
             </div>
           </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">Nombre *</label>
-            <input id="f-name" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-600 mb-1">Clasificación *</label>
-            <select id="f-type" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-              ${ACCOUNT_TYPES.map(t => `<option value="${t.value}">${t.label}</option>`).join('')}
-            </select>
-          </div>
-          <label class="flex items-center gap-2 text-sm text-slate-600">
-            <input id="f-active" type="checkbox" class="accent-blue-600 w-4 h-4"> Cuenta activa
-          </label>
-          <label class="flex items-center gap-2 text-sm text-slate-600">
-            <input id="f-bank" type="checkbox" class="accent-blue-600 w-4 h-4"> Es cuenta de banco/caja (aparece como destino de pago en Ventas y Gastos)
-          </label>
           <div class="flex justify-end gap-2 pt-1">
-            <button id="acc-cancel" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-2 px-4 rounded-lg transition">Cancelar</button>
-            <button id="acc-save" class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition">Guardar</button>
+            <button id="acc-cancel" class="${btnSecondary}">Cancelar</button>
+            <button id="acc-save" class="${btnPrimary}">Guardar</button>
           </div>
         </div>
       </div>
     `;
 
-    document.getElementById('accounts-search').addEventListener('input', (e) => { query = e.target.value; renderTable(); });
-    document.getElementById('btn-new-account').addEventListener('click', () => openForm());
+    document.getElementById('btn-new-account').addEventListener('click', openForm);
     document.getElementById('btn-seed').addEventListener('click', loadSeed);
     document.getElementById('acc-save').addEventListener('click', saveAccount);
     document.getElementById('acc-cancel').addEventListener('click', closeForm);
     document.getElementById('acc-close').addEventListener('click', closeForm);
     document.getElementById('account-modal').addEventListener('click', (e) => { if (e.target.id === 'account-modal') closeForm(); });
-    document.getElementById('f-type').addEventListener('change', (e) => {
-      document.getElementById('f-nature-preview').textContent = natureForType(e.target.value);
-    });
+    document.getElementById('f-tipo').addEventListener('change', (e) => refreshTipoEspecifico(e.target.value));
     document.getElementById('btn-save-mapping').addEventListener('click', saveMapping);
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !document.getElementById('account-modal').classList.contains('hidden')) closeForm();
     }, { signal });
 
-    renderTable();
+    renderFilterPills();
+    renderGroups();
     renderMappingSelects();
 
     return () => destroy.abort();

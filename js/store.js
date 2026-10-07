@@ -2,7 +2,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase-config.js';
 import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
 import { computeContainer } from './utils.js';
-import { validateJournalBalance, buildContainerClosingLines, isClosingMappingComplete } from './accounting.js';
+import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete } from './accounting.js';
 
 // ============================================
 // Supabase client (singleton) — backend primario
@@ -34,14 +34,13 @@ const STORE_KEYS = {
   accounting_settings: 'cif_accounting_settings',
   expense_categories: 'cif_expense_categories',
   sale_concepts: 'cif_sale_concepts',
-  module_settings: 'cif_module_settings',
-  movement_settings: 'cif_movement_settings'
+  module_settings: 'cif_module_settings'
 };
 
 // Tablas que el Web App de Sheets respalda (schemas definidos en Code.gs).
 // Las demás entidades (contabilidad, ventas, gastos) viven en Supabase.
-const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'movement_settings'];
-const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'movement_settings', 'accounts', 'movements'];
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings'];
+const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements'];
 
 function readAll(key) {
   try {
@@ -651,7 +650,6 @@ function seed() {
   if (!localStorage.getItem(STORE_KEYS.expense_categories)) writeAll(STORE_KEYS.expense_categories, []);
   if (!localStorage.getItem(STORE_KEYS.sale_concepts)) writeAll(STORE_KEYS.sale_concepts, []);
   if (!localStorage.getItem(STORE_KEYS.module_settings)) writeAll(STORE_KEYS.module_settings, []);
-  if (!localStorage.getItem(STORE_KEYS.movement_settings)) writeAll(STORE_KEYS.movement_settings, []);
 
   purgeDroppedColumns();
   localStorage.setItem(RETRY_KEY, JSON.stringify(getRetryQueue()));
@@ -768,14 +766,13 @@ const Store = {
         return;
       }
 
-      const lines = buildContainerClosingLines(container, summary, mapping);
-      const check = validateJournalBalance(lines);
-      if (!check.balanced) {
-        console.warn('Maestro de Costo: no se generó el asiento de cierre — no balanceó.', check.reason);
-        return;
-      }
+      const accountsById = this.getAccountsById();
+      const lines = buildContainerClosingLines(container, summary, mapping, accountsById);
+      if (lines.length === 0) return;
 
-      this.saveMovement(lines, { source: 'container_close', sourceRef: container.id });
+      const diffAccount = readAll(STORE_KEYS.accounts).find(a => a.codigo === '6.9.01.01');
+      const finalLines = withRoundingPlug(lines, diffAccount, container.operation_date, lines[0].ref_doc);
+      this.postJournalRows(finalLines, { source: 'container_close', sourceRef: container.id });
     } catch (e) {
       console.error('Maestro de Costo: error generando asiento de cierre (el contenedor se guardó igual).', e);
     }
@@ -882,7 +879,9 @@ const Store = {
       weight_kg: 0,
       hs_code: '',
       fob_unit: 0,
-      tariff_rate: 0
+      tariff_rate: 0,
+      stock: 0,
+      avg_cost: 0
     };
   },
 
@@ -895,48 +894,36 @@ const Store = {
   },
 
   // ============================================
-  // Contabilidad (plan de cuentas + asientos)
+  // Contabilidad — plan de cuentas unificado (estilo LegalYa) + diario plano
   // ============================================
-  isAccountCodeUnique(code, excludeId = null) {
-    const normalized = String(code || '').trim();
+  isAccountCodigoUnique(codigo, excludeId = null) {
+    const normalized = String(codigo || '').trim();
     if (!normalized) return true;
     return !readAll(STORE_KEYS.accounts).some(a =>
-      a.id !== excludeId && String(a.code || '').trim() === normalized
+      a.id !== excludeId && String(a.codigo || '').trim() === normalized
     );
   },
 
-  // Tabla plana de Movimientos: una fila por cuenta tocada (fecha, número de documento,
-  // tipo de movimiento nominal, cuenta contable real, descripción, debe, haber).
-  // Reemplaza el viejo par journal_entries/journal_lines — no hay borrador/contabilizado,
-  // todo movimiento guardado queda final de una vez (igual que ya se comportaba el módulo de Movimientos).
-  getMovementLinesByDocument(documentNumber) {
-    return readAll(STORE_KEYS.movements)
-      .filter(m => m.document_number === documentNumber)
-      .sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+  getAccountsById() {
+    return new Map(readAll(STORE_KEYS.accounts).map(a => [a.id, a]));
   },
 
-  nextDocumentNumber() {
-    const all = readAll(STORE_KEYS.movements);
-    return all.reduce((max, m) => Math.max(max, Number(m.document_number) || 0), 0) + 1;
-  },
-
-  // lines = [{ entry_date, movement_subtype, account_id, debit, credit, description }, ...]
-  // opts = { source, sourceRef } — opcional, para marcar movimientos autogenerados (p. ej. cierre de contenedor).
-  saveMovement(lines, opts = {}) {
-    const check = validateJournalBalance(lines);
-    if (!check.balanced) return { ok: false, error: check.reason };
-
-    const documentNumber = this.nextDocumentNumber();
+  // Diario plano: cada fila es una línea de Debe o Haber, sin encabezado de asiento.
+  // Las filas de un mismo evento se correlacionan solo por ref_doc (igual que LegalYa).
+  // lines = [{ entry_date, codigo_cuenta, cuenta_contable, concepto, debit, credit, ref_doc, entidad }, ...]
+  // opts = { source, sourceRef } — para marcar asientos autogenerados (p. ej. cierre de contenedor).
+  postJournalRows(lines, opts = {}) {
     const ts = now();
     const rows = lines.map(l => ({
       id: uid(),
       entry_date: l.entry_date,
-      document_number: documentNumber,
-      movement_subtype: l.movement_subtype || null,
-      account_id: l.account_id || null,
-      description: l.description || '',
+      codigo_cuenta: l.codigo_cuenta || '',
+      cuenta_contable: l.cuenta_contable || '',
+      concepto: l.concepto || '',
       debit: Math.round((Number(l.debit) || 0) * 100) / 100,
       credit: Math.round((Number(l.credit) || 0) * 100) / 100,
+      ref_doc: l.ref_doc || '',
+      entidad: l.entidad || '',
       source: opts.source || 'manual',
       source_ref: opts.sourceRef || null,
       created_at: ts,
@@ -945,43 +932,25 @@ const Store = {
     const existing = readAll(STORE_KEYS.movements);
     writeAll(STORE_KEYS.movements, [...existing, ...rows]);
     cloudUpsert('movements', rows);
-    return { ok: true, documentNumber, lines: rows };
+    return { ok: true, lines: rows };
   },
 
-  removeMovement(documentNumber) {
-    const remaining = readAll(STORE_KEYS.movements).filter(m => m.document_number !== documentNumber);
+  removeJournalRowsByRef(refDoc) {
+    const remaining = readAll(STORE_KEYS.movements).filter(m => m.ref_doc !== refDoc);
     writeAll(STORE_KEYS.movements, remaining);
-    cloudDeleteWhere('movements', 'document_number', documentNumber);
+    cloudDeleteWhere('movements', 'ref_doc', refDoc);
     return { ok: true };
   },
 
   // Fila única de configuración (id fijo 'default'), excepción documentada al uso normal de uuid.
+  // Mapeo de cuentas para el asiento automático de cierre de contenedores — sin relación con el
+  // catálogo unificado más allá de que ahora apunta a cuentas de ese mismo catálogo.
   getAccountMapping() {
     return this.getById('accounting_settings', 'default');
   },
 
   saveAccountMapping(map) {
     return this.upsert('accounting_settings', { ...map, id: 'default' });
-  },
-
-  // Configuración de los módulos de Ventas/Gastos (tasa de IVA + cuenta de IVA), una fila por módulo
-  // con id fijo ('sales_module' / 'expense_module'), mismo patrón de fila única que getAccountMapping.
-  getModuleSettings(moduleId) {
-    return this.getById('module_settings', moduleId);
-  },
-
-  saveModuleSettings(moduleId, data) {
-    return this.upsert('module_settings', { ...data, id: moduleId });
-  },
-
-  // Mapeo de cuentas del módulo de Movimientos (Ingreso/Costo/Gasto), fila única
-  // (id fijo 'default'), mismo patrón que getAccountMapping.
-  getMovementSettings() {
-    return this.getById('movement_settings', 'default');
-  },
-
-  saveMovementSettings(map) {
-    return this.upsert('movement_settings', { ...map, id: 'default' });
   }
 };
 
