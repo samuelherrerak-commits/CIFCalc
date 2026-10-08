@@ -3,11 +3,8 @@ const Nav = {
     const links = [
       { path: '#/', key: 'dashboard', label: 'Dashboard', icon: '📊' },
       { path: '#/productos', key: 'products', label: 'Productos', icon: '📦' },
-      { path: '#/contabilidad/cuentas', key: 'contabilidad', label: 'Contabilidad', icon: '📒' }
+      { path: '#/contabilidad/resumen', key: 'contabilidad', label: 'Contabilidad', icon: '📒' }
     ];
-    const accountingKeys = ['accounts', 'income', 'expenses', 'inventory', 'journal', 'ledger'];
-    const activeKey = accountingKeys.includes(active) ? 'contabilidad' : active;
-
     const nav = document.getElementById('navbar');
     nav.innerHTML = `
       <nav class="bg-slate-900 text-white shadow-md">
@@ -22,7 +19,7 @@ const Nav = {
               <li>
                 <a href="${l.path}"
                    class="px-3 py-2 rounded-lg text-sm font-semibold transition
-                          ${activeKey === l.key ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}">
+                          ${active === l.key ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}">
                   <span class="sm:hidden">${l.icon}</span>
                   <span class="hidden sm:inline">${l.label}</span>
                 </a>
