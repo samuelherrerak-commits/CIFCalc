@@ -88,10 +88,13 @@ const SCHEMAS = {
   ],
   // Diario plano: una fila = una línea de Debe o Haber, sin encabezado de asiento.
   // Las filas de un mismo evento se correlacionan solo por ref_doc.
+  // cantidad/unidad/precio_venta/codigo_barra van AL FINAL a propósito (mismo
+  // motivo que foto_url/foto_file_id en products): columnas nuevas siempre
+  // después de las existentes para no desalinear las filas ya guardadas.
   movements: [
     'id', 'entry_date', 'codigo_cuenta', 'cuenta_contable', 'concepto',
     'debit', 'credit', 'ref_doc', 'entidad', 'source', 'source_ref',
-    'created_at', 'updated_at'
+    'created_at', 'updated_at', 'cantidad', 'unidad', 'precio_venta', 'codigo_barra'
   ]
 };
 

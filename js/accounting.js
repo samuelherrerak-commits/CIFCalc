@@ -52,6 +52,9 @@ export const CHART_OF_ACCOUNTS = [
   { codigo: '4.1.02.01', nombre: 'Préstamos Recibidos', tipo_especifico: 'Otros' },
   { codigo: '4.1.03.01', nombre: 'Otros Ingresos', tipo_especifico: 'Otros' },
   { codigo: '5.1.01.01', nombre: 'Costo de Venta', tipo_especifico: 'Otros' },
+  { codigo: '5.1.02.01', nombre: 'Costo de Producto', tipo_especifico: 'Otros' },
+  { codigo: '5.1.03.01', nombre: 'Costo Logístico', tipo_especifico: 'Otros' },
+  { codigo: '5.1.04.01', nombre: 'Otros Costos', tipo_especifico: 'Otros' },
   { codigo: '6.1.01.01', nombre: 'Gastos de Administración y Finanzas', tipo_especifico: 'Otros' },
   { codigo: '6.1.02.01', nombre: 'Gastos de Logística', tipo_especifico: 'Otros' },
   { codigo: '6.1.03.01', nombre: 'Gastos de Ventas', tipo_especifico: 'Otros' },
@@ -83,7 +86,11 @@ export function withRoundingPlug(lines, diffAccount, entryDate, refDoc) {
     concepto: 'Ajuste por redondeo',
     debit: diff < 0 ? Math.abs(diff) : 0,
     credit: diff > 0 ? diff : 0,
-    ref_doc: refDoc
+    ref_doc: refDoc,
+    cantidad: 0,
+    unidad: 'monto',
+    precio_venta: 0,
+    codigo_barra: ''
   };
   return [...lines, plug];
 }
@@ -147,7 +154,11 @@ export function buildContainerClosingLines(container, summary, mapping, accounts
 // no solo sus ids, para poder escribir codigo_cuenta/cuenta_contable como texto.
 // ============================================
 
-function line(entryDate, account, debit, credit, concepto, refDoc, entidad) {
+// extra = { cantidad, unidad, precio_venta, codigo_barra } — columnas "anchas"
+// estilo LegalYa (addTransaction); las líneas de pago/contrapartida van sin
+// cantidad real (cantidad: 0, unidad: 'monto'), igual que allá.
+function line(entryDate, account, debit, credit, concepto, refDoc, entidad, extra) {
+  const ex = extra || {};
   return {
     entry_date: entryDate,
     codigo_cuenta: account ? account.codigo : '',
@@ -156,22 +167,28 @@ function line(entryDate, account, debit, credit, concepto, refDoc, entidad) {
     debit: round2(debit),
     credit: round2(credit),
     ref_doc: refDoc,
-    entidad: entidad || ''
+    entidad: entidad || '',
+    cantidad: ex.cantidad != null ? ex.cantidad : 0,
+    unidad: ex.unidad || 'monto',
+    precio_venta: ex.precio_venta != null ? round2(ex.precio_venta) : 0,
+    codigo_barra: ex.codigo_barra || ''
   };
 }
 
 // data = { date, total, concepto, entidad, refDoc, paymentAccount (Efectivo/Banco/Clientes), revenueAccount }
-// Si incluye venta de inventario: data.inventory = { qty, unitCost, costAccount, inventoryAccount }
+// Si incluye venta de inventario: data.inventory = { qty, unitCost, unitPrice, unidad, costAccount, inventoryAccount }
 export function buildIncomeLines(data) {
   const lines = [
     line(data.date, data.paymentAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
-    line(data.date, data.revenueAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
+    line(data.date, data.revenueAccount, 0, data.total, data.concepto, data.refDoc, data.entidad,
+      data.inventory ? { cantidad: data.inventory.qty, unidad: data.inventory.unidad || 'unidades', precio_venta: data.inventory.unitPrice } : null)
   ];
   if (data.inventory) {
     const costTotal = round2(data.inventory.qty * data.inventory.unitCost);
     if (costTotal > 0) {
-      lines.push(line(data.date, data.inventory.costAccount, costTotal, 0, `Costo de venta — ${data.concepto}`, data.refDoc, data.entidad));
-      lines.push(line(data.date, data.inventory.inventoryAccount, 0, costTotal, `Costo de venta — ${data.concepto}`, data.refDoc, data.entidad));
+      const invExtra = { cantidad: data.inventory.qty, unidad: data.inventory.unidad || 'unidades' };
+      lines.push(line(data.date, data.inventory.costAccount, costTotal, 0, `Costo de venta — ${data.concepto}`, data.refDoc, data.entidad, invExtra));
+      lines.push(line(data.date, data.inventory.inventoryAccount, 0, costTotal, `Costo de venta — ${data.concepto}`, data.refDoc, data.entidad, invExtra));
     }
   }
   return lines;
@@ -185,10 +202,23 @@ export function buildExpenseLines(data) {
   ];
 }
 
-// data = { date, total, concepto, entidad, refDoc, paymentAccount (Efectivo/Banco/Proveedores), inventoryAccount }
+// data = { date, total, concepto, entidad, refDoc, paymentAccount (Efectivo/Banco/Proveedores), inventoryAccount, qty, unidad, codigo_barra }
 export function buildReceptionLines(data) {
+  const invExtra = { cantidad: data.qty || 0, unidad: data.unidad || 'unidades', codigo_barra: data.codigo_barra || '' };
   return [
-    line(data.date, data.inventoryAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
+    line(data.date, data.inventoryAccount, data.total, 0, data.concepto, data.refDoc, data.entidad, invExtra),
     line(data.date, data.paymentAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
+  ];
+}
+
+// Costo como movimiento propio (no ligado a una venta de inventario): debita
+// la cuenta de costo elegida (uno de los 4 subtipos: Venta/Producto/Logístico/
+// Otros), acredita una cuenta contrapartida cualquiera (Proveedores,
+// Inventario, Caja/Banco si fue un gasto de costo pagado de inmediato, etc.).
+// data = { date, total, concepto, entidad, refDoc, costAccount, counterAccount }
+export function buildCostLines(data) {
+  return [
+    line(data.date, data.costAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
+    line(data.date, data.counterAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
   ];
 }

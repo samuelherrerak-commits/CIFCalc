@@ -87,7 +87,8 @@ const Inventory = {
       const data = {
         date, total: costTotal, concepto, entidad, refDoc,
         paymentAccount: accounts.find(a => a.id === paymentId),
-        inventoryAccount: invAccount
+        inventoryAccount: invAccount,
+        qty, unidad: 'unidades', codigo_barra: product.sku_briggs || ''
       };
       const lines = withRoundingPlug(buildReceptionLines(data), diffAccount(), date, refDoc);
       Store.postJournalRows(lines, { source: 'inventory_reception' });

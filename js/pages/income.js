@@ -48,7 +48,11 @@ const Income = {
     const toggleInventory = () => {
       includeInventory = document.getElementById('f-inventory-toggle').checked;
       document.getElementById('inventory-fields').classList.toggle('hidden', !includeInventory);
-      if (includeInventory) renderProductOptions();
+      if (includeInventory) {
+        renderProductOptions();
+        const defaultCost = accounts.find(a => a.nombre === 'Costo de Venta' && a.tipo === 'Costo');
+        if (defaultCost) document.getElementById('f-cost-account').value = defaultCost.id;
+      }
     };
 
     const saveIncome = () => {
@@ -78,13 +82,18 @@ const Income = {
       if (includeInventory) {
         const productId = document.getElementById('f-product').value;
         const qty = num(document.getElementById('f-qty'));
+        const costAccountId = document.getElementById('f-cost-account').value;
         product = Store.getById('products', productId);
         if (!product) { msgEl.textContent = 'Selecciona el producto vendido.'; return; }
         if (qty <= 0 || qty > Number(product.stock)) { msgEl.textContent = `Cantidad inválida (stock disponible: ${fmtNum(product.stock)}).`; return; }
-        const costAccount = accounts.find(a => a.tipo === 'Costo');
+        const costAccount = accounts.find(a => a.id === costAccountId) || accounts.find(a => a.tipo === 'Costo');
         const inventoryAccount = accounts.find(a => a.tipo_especifico === 'Inventario');
         if (!costAccount || !inventoryAccount) { msgEl.textContent = 'Crea una cuenta de tipo Costo y una de Inventario en el Plan de Cuentas antes de vender inventario.'; return; }
-        data.inventory = { qty, unitCost: Number(product.avg_cost) || 0, costAccount, inventoryAccount };
+        data.inventory = {
+          qty, unitCost: Number(product.avg_cost) || 0, unitPrice: qty > 0 ? Math.round((total / qty) * 100) / 100 : 0,
+          unidad: 'unidades', costAccount, inventoryAccount
+        };
+        data.concepto = `${concepto} | ${product.name}`;
       }
 
       const lines = withRoundingPlug(buildIncomeLines(data), diffAccount(), date, refDoc);
@@ -138,7 +147,7 @@ const Income = {
         <label class="flex items-center gap-2 text-xs text-slate-400">
           <input id="f-inventory-toggle" type="checkbox" class="accent-blue-600 w-4 h-4"> ¿Es venta de un producto del inventario?
         </label>
-        <div id="inventory-fields" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-700/30">
+        <div id="inventory-fields" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-700/30">
           <div>
             <label class="${label}">Producto</label>
             <select id="f-product" class="${input}"></select>
@@ -146,6 +155,10 @@ const Income = {
           <div>
             <label class="${label}">Cantidad</label>
             <input id="f-qty" type="number" min="0" step="1" class="${input}">
+          </div>
+          <div>
+            <label class="${label}">Cuenta de Costo</label>
+            <select id="f-cost-account" class="${input}">${accountOptions(byTipo('Costo'))}</select>
           </div>
         </div>
         <div id="income-msg" class="text-xs text-rose-400"></div>
