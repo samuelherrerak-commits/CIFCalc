@@ -37,7 +37,7 @@ const Inventory = {
     const products = Store.getAll('products');
     let subTab = 'stock';
     let query = '';
-    let onlyInStock = false;
+    let onlyInStock = true;
 
     const marginPct = (p) => {
       const price = Number(p.sale_price) || 0;
@@ -171,7 +171,7 @@ const Inventory = {
             <p class="text-xs text-slate-400">Entra al completar un contenedor, sale con cada venta. Es de referencia, no una cuenta contable.</p>
           </div>
           <div class="flex items-center gap-3">
-            <label class="flex items-center gap-1.5 text-xs text-slate-500 whitespace-nowrap"><input id="stock-only" type="checkbox"> Solo con existencia</label>
+            <label class="flex items-center gap-1.5 text-xs text-slate-500 whitespace-nowrap"><input id="stock-only" type="checkbox" checked> Solo con existencia</label>
             <input id="stock-search" type="text" placeholder="Buscar producto…" class="${input}" style="width:220px">
           </div>
         </div>
@@ -192,6 +192,18 @@ const Inventory = {
           <tbody id="history-tbody"></tbody>
         </table>
       </div>
+
+      <div class="bg-white border border-red-200 rounded-xl shadow-sm p-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-bold text-red-700">Reiniciar inventario y contenedores</h2>
+            <p class="text-xs text-slate-500 mt-1">Pone en 0 las existencias, borra los asientos de cierre y los pagos de los contenedores completos y los regresa a <strong>En proceso</strong>, para completarlos de nuevo uno a uno: cada uno genera su asiento (costo contra Contenedores por Pagar) y su entrada de inventario, y luego registras el pago en Pagos.</p>
+            <p id="reset-summary" class="text-xs text-slate-600 mt-2"></p>
+            <label class="flex items-center gap-2 text-xs text-slate-600 mt-2"><input id="reset-sales" type="checkbox"> También borrar las ventas registradas (<span id="reset-sales-count">0</span>)</label>
+          </div>
+          <button id="btn-reset" class="flex-shrink-0 bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm">Reiniciar</button>
+        </div>
+      </div>
     `;
 
     app.innerHTML = AccountingShell.wrap(AccountingTabs.render('inventory'), body);
@@ -203,6 +215,35 @@ const Inventory = {
     renderSummary();
     renderStock();
     renderHistory();
+
+    const resetCounts = () => {
+      const containers = Store.getAll('containers').filter(c => c.status === 'closed' || c.inventory_posted);
+      const ids = new Set(containers.map(c => c.id));
+      const movs = Store.getAll('movements');
+      return {
+        containers: containers.length,
+        entries: new Set(movs.filter(m => m.source_ref && ids.has(m.source_ref)).map(m => m.ref_doc)).size,
+        products: Store.getAll('products').filter(p => Number(p.stock) !== 0).length,
+        sales: new Set(movs.filter(m => m.source === 'sale').map(m => m.ref_doc)).size
+      };
+    };
+    const renderResetSummary = () => {
+      const n = resetCounts();
+      document.getElementById('reset-summary').textContent =
+        `Afecta: ${n.containers} contenedor(es) completo(s), ${n.entries} asiento(s) de cierre/pago y ${n.products} producto(s) con existencia.`;
+      document.getElementById('reset-sales-count').textContent = n.sales;
+    };
+    renderResetSummary();
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      const n = resetCounts();
+      const deleteSales = document.getElementById('reset-sales').checked;
+      const msg = `Se va a reiniciar:\n\n• ${n.products} producto(s) quedan con existencia 0\n• ${n.entries} asiento(s) de cierre y pago se borran\n• ${n.containers} contenedor(es) vuelven a "En proceso"` +
+        (deleteSales ? `\n• ${n.sales} venta(s) se borran` : '') +
+        `\n\nEsto también se borra en Google Sheets y no se puede deshacer. ¿Continuar?`;
+      if (!confirm(msg)) return;
+      const res = Store.resetInventoryAndContainers({ deleteSales });
+      alert(`Listo: ${res.containers} contenedor(es) en proceso, ${res.movements} línea(s) de diario borradas, ${res.products} producto(s) en 0.\n\nAhora abre cada contenedor y presiona "Completar".`);
+    }, { signal });
 
     return () => destroy.abort();
   }

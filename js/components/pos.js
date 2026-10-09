@@ -36,7 +36,7 @@ export function mountPOS(root, opts) {
           <span id="pos-count" class="hidden sm:block text-[11px] font-semibold text-slate-400 whitespace-nowrap"></span>
         </div>
         <div id="pos-categories" class="flex gap-2 overflow-x-auto pb-1"></div>
-        <div id="pos-grid" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3 lg:max-h-[75vh] lg:overflow-y-auto pr-1"></div>
+        <div id="pos-grid" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 auto-rows-max content-start gap-3 lg:max-h-[75vh] lg:overflow-y-auto pr-1"></div>
       </div>
 
       <div class="lg:col-span-5 xl:col-span-4">
@@ -128,8 +128,8 @@ export function mountPOS(root, opts) {
           ? `<span class="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold text-white ${left > 0 ? 'bg-emerald-500' : 'bg-red-500'}">${left > 0 ? fmtInt(left) + ' disp.' : 'Agotado'}</span>`
           : `<span class="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold ${stockOf(p) > 0 ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-600'}">${stockOf(p) > 0 ? fmtInt(stockOf(p)) + ' en stock' : 'Sin existencia'}</span>`;
         return `
-        <button data-add="${esc(p.id)}" class="group relative text-left bg-white rounded-2xl border-2 ${line ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-100 hover:border-blue-400'} shadow-sm hover:shadow-md active:scale-[0.98] transition overflow-hidden flex flex-col ${capToStock && left <= 0 ? 'opacity-60' : ''}">
-          <div class="relative aspect-square bg-slate-50">
+        <button data-add="${esc(p.id)}" class="group relative text-left bg-white rounded-2xl border-2 ${line ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-100 hover:border-blue-400'} shadow-sm hover:shadow-md active:scale-[0.98] transition overflow-hidden flex flex-col min-h-[15rem] ${capToStock && left <= 0 ? 'opacity-60' : ''}">
+          <div class="relative aspect-square bg-slate-50 flex-shrink-0">
             ${p.foto_url
               ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-full h-full object-cover" alt="">`
               : '<div class="w-full h-full flex items-center justify-center text-4xl text-slate-200">📦</div>'}

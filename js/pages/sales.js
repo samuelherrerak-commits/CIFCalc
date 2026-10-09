@@ -67,10 +67,44 @@ const Sales = {
       if (product && qty > 0) initialCart.push({ product, qty, unitPrice: it.unitPrice });
     }
 
-    const byTipoEspecifico = (te) => accounts.filter(a => a.tipo_especifico === te).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
-    const accountOptions = (list) => list.map(a => `<option value="${a.id}">${esc(a.codigo)} — ${esc(a.nombre)}</option>`).join('');
-    const diffAccount = () => accounts.find(a => a.codigo === '6.9.01.01');
-    const revenueAccount = () => accounts.find(a => a.nombre === 'Ingresos por Ventas' && a.tipo === 'Ingreso');
+    // Forma de pago estilo LegalYa: tres botones. Cada uno usa la(s) cuenta(s)
+    // con ese tipo específico; si no hay ninguna (p. ej. se borró el plan de
+    // cuentas) se crea la del catálogo sugerido al procesar la venta.
+    const PAY_METHODS = [
+      { key: 'efectivo', label: '💵 Efectivo', te: 'Efectivo', codigo: '1.1.01.01' },
+      { key: 'banco', label: '🏦 Banco', te: 'Banco', codigo: '1.1.01.02' },
+      { key: 'credito', label: '🧾 Crédito', te: 'Clientes', codigo: '1.1.02.01' }
+    ];
+    let payMethod = '';
+    const accountsFor = (m) => accounts.filter(a => a.tipo_especifico === m.te).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
+    const diffAccount = () => accounts.find(a => a.codigo === '6.9.01.01') || Store.ensureCatalogAccount('6.9.01.01');
+    const revenueAccount = () => accounts.find(a => a.codigo === '4.1.01.01')
+      || accounts.find(a => a.nombre === 'Ingresos por Ventas' && a.tipo === 'Ingreso')
+      || Store.ensureCatalogAccount('4.1.01.01');
+
+    const renderPayMethods = () => {
+      const wrap = document.getElementById('f-pay-methods');
+      wrap.innerHTML = PAY_METHODS.map(m => `
+        <button type="button" data-pay="${m.key}" class="py-2.5 rounded-xl text-xs font-bold border-2 transition ${
+          payMethod === m.key ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300'
+        }">${m.label}</button>`).join('');
+      wrap.querySelectorAll('[data-pay]').forEach(b => b.addEventListener('click', () => { payMethod = b.dataset.pay; pos.flash(''); renderPayMethods(); }));
+      // Si hay más de una cuenta de ese tipo (p. ej. dos bancos), se elige cuál.
+      const m = PAY_METHODS.find(x => x.key === payMethod);
+      const list = m ? accountsFor(m) : [];
+      const sel = document.getElementById('f-pay-account');
+      sel.classList.toggle('hidden', list.length < 2);
+      if (list.length >= 2 && !list.some(a => a.id === sel.value)) {
+        sel.innerHTML = list.map(a => `<option value="${a.id}">${esc(a.codigo)} — ${esc(a.nombre)}</option>`).join('');
+      }
+    };
+    const resolvePaymentAccount = () => {
+      const m = PAY_METHODS.find(x => x.key === payMethod);
+      if (!m) return null;
+      const list = accountsFor(m);
+      if (list.length >= 2) return list.find(a => a.id === document.getElementById('f-pay-account').value) || list[0];
+      return list[0] || Store.ensureCatalogAccount(m.codigo);
+    };
 
     const recentSales = () => {
       const byRef = new Map();
@@ -141,19 +175,16 @@ const Sales = {
             <input id="f-date" type="date" value="${new Date().toISOString().slice(0, 10)}" class="${input}">
           </div>
           <div>
-            <label class="${label}">Forma de pago *</label>
-            <select id="f-payment" class="${input}">
-              <option value="">— Elegir —</option>
-              <optgroup label="Efectivo">${accountOptions(byTipoEspecifico('Efectivo'))}</optgroup>
-              <optgroup label="Banco">${accountOptions(byTipoEspecifico('Banco'))}</optgroup>
-              <optgroup label="Crédito (por cobrar)">${accountOptions(byTipoEspecifico('Clientes'))}</optgroup>
-            </select>
+            <label class="${label}">Concepto</label>
+            <input id="f-concepto" type="text" placeholder="Venta" class="${input}">
           </div>
         </div>
         <div>
-          <label class="${label}">Concepto</label>
-          <input id="f-concepto" type="text" placeholder="Venta" class="${input}">
-        </div>`,
+          <label class="${label}">Forma de pago *</label>
+          <div id="f-pay-methods" class="grid grid-cols-3 gap-2"></div>
+          <select id="f-pay-account" class="${input} hidden mt-2"></select>
+        </div>
+`,
       onCartChange: (cart) => {
         if (!sourceQuote) savedCart = cart.map(l => ({ productId: l.product.id, qty: l.qty, unitPrice: l.unitPrice }));
       }
@@ -165,7 +196,6 @@ const Sales = {
     pos.onAction(() => {
       const cart = pos.getCart();
       const date = document.getElementById('f-date').value;
-      const paymentId = document.getElementById('f-payment').value;
       const contactId = document.getElementById('f-contact').value;
       const concepto = document.getElementById('f-concepto').value.trim() || 'Venta';
 
@@ -175,11 +205,13 @@ const Sales = {
       const over = cart.find(l => l.qty > (Number((Store.getById('products', l.product.id) || l.product).stock) || 0));
       if (over) { pos.flash(`La existencia de "${over.product.name}" cambió; revisa la cantidad.`); return; }
       if (!date) { pos.flash('La fecha es obligatoria.'); return; }
-      if (!paymentId) { pos.flash('Selecciona la forma de pago (Efectivo, Banco o Crédito).'); return; }
+      if (!payMethod) { pos.flash('Elige la forma de pago: Efectivo, Banco o Crédito.'); return; }
+      if (payMethod === 'credito' && !contactId) { pos.flash('Una venta a crédito necesita un cliente (queda en Cuentas por Cobrar).'); return; }
 
       const contact = contacts.find(c => c.id === contactId);
       const entidad = contact ? contact.name : '';
-      const paymentAccount = accounts.find(a => a.id === paymentId);
+      const paymentAccount = resolvePaymentAccount();
+      if (!paymentAccount) { pos.flash('No se encontró la cuenta de la forma de pago.'); return; }
       const revAccount = revenueAccount();
       if (!revAccount) { pos.flash('Falta la cuenta "Ingresos por Ventas" en el Plan de Cuentas.'); return; }
 
@@ -205,6 +237,8 @@ const Sales = {
       document.getElementById('f-contact').value = '';
       document.getElementById('f-concepto').value = '';
       pos.setCart([]);
+      payMethod = '';
+      renderPayMethods();
       pos.refresh();
       pos.success(`
         <div class="flex items-center justify-between gap-2">
@@ -223,6 +257,7 @@ const Sales = {
     }, { signal });
     document.getElementById('btn-business').addEventListener('click', () => openBusinessProfileModal(Store), { signal });
 
+    renderPayMethods();
     renderRecentSales();
     return () => destroy.abort();
   }

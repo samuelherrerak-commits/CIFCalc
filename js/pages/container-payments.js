@@ -1,6 +1,6 @@
 import Store from '../store.js';
 import { fmtNum, esc, num } from '../utils.js';
-import { buildPayableSettlementLines, withRoundingPlug } from '../accounting.js';
+import { buildPayableSettlementLines, withRoundingPlug, inferirTipo } from '../accounting.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { btnPrimary, card, input, label } from '../components/accounting-shell.js';
 
@@ -13,7 +13,13 @@ const ContainerPayments = {
     const accountsByCodigo = new Map(accounts.map(a => [a.codigo, a]));
     const byTipoEspecifico = (te) => accounts.filter(a => a.tipo_especifico === te).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
     const accountOptions = (list) => list.map(a => `<option value="${a.id}">${esc(a.codigo)} — ${esc(a.nombre)}</option>`).join('');
-    const diffAccount = () => accounts.find(a => a.codigo === '6.9.01.01');
+    const diffAccount = () => accounts.find(a => a.codigo === '6.9.01.01') || Store.ensureCatalogAccount('6.9.01.01');
+    // Si no hay cuenta de ese tipo (plan de cuentas borrado), se ofrece la del
+    // catálogo y se crea recién al confirmar el pago.
+    const paymentOptions = (te, codigo, nombre) => {
+      const list = byTipoEspecifico(te);
+      return list.length ? accountOptions(list) : `<option value="new:${codigo}">${codigo} — ${nombre}</option>`;
+    };
 
     let activePaymentId = null;
 
@@ -26,13 +32,16 @@ const ContainerPayments = {
       const movements = Store.getAll('movements').filter(m => m.source === 'container_close' || m.source === 'container_payment');
       return containers.map(c => {
         const lines = movements.filter(m => m.source_ref === c.id);
-        const pasivoLines = lines.filter(m => accountsByCodigo.get(m.codigo_cuenta)?.tipo === 'Pasivo');
+        // Pasivo por el tipo de la cuenta o, si la cuenta ya no existe, por su código (2.x).
+        const isPasivo = (m) => (accountsByCodigo.get(m.codigo_cuenta)?.tipo || inferirTipo(m.codigo_cuenta)) === 'Pasivo';
+        const pasivoLines = lines.filter(isPasivo);
+        const hasClosing = lines.some(m => m.source === 'container_close');
         const original = pasivoLines.filter(m => m.source === 'container_close').reduce((s, m) => s + (Number(m.credit) || 0), 0);
         const paid = pasivoLines.filter(m => m.source === 'container_payment').reduce((s, m) => s + (Number(m.debit) || 0), 0);
         const balance = Math.round((original - paid) * 100) / 100;
         const payableCodigo = pasivoLines[0] ? pasivoLines[0].codigo_cuenta : '';
-        const payableAccount = accountsByCodigo.get(payableCodigo);
-        return { container: c, original, paid, balance, payableAccount };
+        const payableAccount = accountsByCodigo.get(payableCodigo) || null;
+        return { container: c, original, paid, balance, payableAccount, payableCodigo, hasClosing };
       }).sort((a, b) => new Date(b.container.operation_date || 0) - new Date(a.container.operation_date || 0));
     };
 
@@ -49,9 +58,13 @@ const ContainerPayments = {
             <td class="p-2 text-right font-mono text-emerald-600">$${fmtNum(r.paid)}</td>
             <td class="p-2 text-right font-mono font-bold ${r.balance > 0.01 ? 'text-amber-600' : 'text-slate-400'}">$${fmtNum(r.balance)}</td>
             <td class="p-2 text-center">
-              ${r.balance > 0.01
-                ? `<button data-pay="${r.container.id}" class="text-blue-600 hover:text-blue-800 font-semibold text-xs">Registrar Pago</button>`
-                : '<span class="text-xs text-emerald-600 font-semibold">✓ Pagado</span>'}
+              ${!r.hasClosing
+                ? `<div class="text-[10px] text-red-600 font-semibold mb-1">⚠ Sin asiento de cierre</div>
+                   <button data-gen="${r.container.id}" class="text-blue-600 hover:text-blue-800 font-semibold text-xs">Generar asiento</button>`
+                : r.balance > 0.01
+                  ? `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold text-amber-700 bg-amber-100 mb-1">Por pagar</span><br>
+                     <button data-pay="${r.container.id}" class="text-blue-600 hover:text-blue-800 font-semibold text-xs">Registrar Pago</button>`
+                  : '<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold text-emerald-700 bg-emerald-100">✓ Pagado</span>'}
             </td>
           </tr>
           <tr id="pay-form-${r.container.id}" class="hidden">
@@ -69,8 +82,8 @@ const ContainerPayments = {
                   <label class="${label}">Cuenta *</label>
                   <select id="pf-account-${r.container.id}" class="${input}">
                     <option value="">— Cuenta —</option>
-                    <optgroup label="Efectivo">${accountOptions(byTipoEspecifico('Efectivo'))}</optgroup>
-                    <optgroup label="Banco">${accountOptions(byTipoEspecifico('Banco'))}</optgroup>
+                    <optgroup label="Efectivo">${paymentOptions('Efectivo', '1.1.01.01', 'Caja')}</optgroup>
+                    <optgroup label="Banco">${paymentOptions('Banco', '1.1.01.02', 'Bancos')}</optgroup>
                   </select>
                 </div>
               </div>
@@ -86,6 +99,12 @@ const ContainerPayments = {
       tbody.querySelectorAll('[data-pay]').forEach(btn => btn.addEventListener('click', () => {
         activePaymentId = btn.dataset.pay;
         document.getElementById(`pay-form-${activePaymentId}`).classList.remove('hidden');
+      }));
+      tbody.querySelectorAll('[data-gen]').forEach(btn => btn.addEventListener('click', () => {
+        const c = Store.getById('containers', btn.dataset.gen);
+        const res = Store.postClosingJournalForContainer(c, Store.getItemsByContainer(c.id));
+        if (res && res.ok === false) alert(res.reason === 'sin-landed' ? 'Este contenedor no tiene costos calculados (landed en 0).' : 'No se pudo generar el asiento: ' + res.reason);
+        renderList();
       }));
       tbody.querySelectorAll('[data-cancel]').forEach(btn => btn.addEventListener('click', () => {
         document.getElementById(`pay-form-${btn.dataset.cancel}`).classList.add('hidden');
@@ -104,13 +123,15 @@ const ContainerPayments = {
       if (!date) { msgEl.textContent = 'La fecha es obligatoria.'; return; }
       if (amount <= 0 || amount > row.balance + 0.01) { msgEl.textContent = `Monto inválido (saldo disponible: $${fmtNum(row.balance)}).`; return; }
       if (!accountId) { msgEl.textContent = 'Selecciona la cuenta de pago (Efectivo/Banco).'; return; }
-      if (!row.payableAccount) { msgEl.textContent = 'No se encontró la cuenta del pasivo de este contenedor.'; return; }
+      const payableCodigo = row.payableCodigo || '2.1.01.01';
+      const payableAccount = row.payableAccount || Store.ensureCatalogAccount(payableCodigo);
+      if (!payableAccount) { msgEl.textContent = 'No se encontró la cuenta del pasivo de este contenedor.'; return; }
 
-      const paymentAccount = accounts.find(a => a.id === accountId);
+      const paymentAccount = accountId.startsWith('new:') ? Store.ensureCatalogAccount(accountId.slice(4)) : accounts.find(a => a.id === accountId);
       const refDoc = `PAG-${Date.now().toString().slice(-6)}`;
       const data = {
         date, total: amount, concepto: `Pago contenedor ${row.container.bl_number || ''}`, entidad: '', refDoc,
-        payableAccount: row.payableAccount, paymentAccount
+        payableAccount, paymentAccount
       };
       const lines = withRoundingPlug(buildPayableSettlementLines(data), diffAccount(), date, refDoc);
       Store.postJournalRows(lines, { source: 'container_payment', sourceRef: containerId });

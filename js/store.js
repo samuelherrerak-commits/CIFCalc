@@ -2,7 +2,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase-config.js';
 import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
 import { computeContainer } from './utils.js';
-import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping } from './accounting.js';
+import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping, CHART_OF_ACCOUNTS, inferirTipo, naturalezaForTipo, DEFAULT_CLOSING_MAPPING_CODES } from './accounting.js';
 
 // ============================================
 // Supabase client (singleton) — backend primario
@@ -160,7 +160,9 @@ function mergeRecords(local, remote) {
     } else {
       const lt = new Date(r.updated_at || r.created_at || 0).getTime();
       const rt = new Date(existing.updated_at || existing.created_at || 0).getTime();
-      map.set(r.id, lt >= rt ? r : existing);
+      // A igual versión gana Sheets (fuente principal): corrige copias locales
+      // que se leyeron mal (p. ej. un booleano) sin que nadie las editara.
+      map.set(r.id, lt > rt ? r : existing);
     }
   }
   return [...map.values()];
@@ -745,6 +747,17 @@ const Store = {
     return { ...record, updated_at: ts };
   },
 
+  // Varias filas en una sola escritura a la nube (lotes de 100 en Sheets),
+  // para no disparar una petición por fila.
+  updateMany(entity, records) {
+    if (!records.length) return;
+    const ts = now();
+    const byId = new Map(records.map(r => [r.id, r]));
+    const list = readAll(STORE_KEYS[entity]).map(x => byId.has(x.id) ? { ...x, ...byId.get(x.id), updated_at: ts } : x);
+    writeAll(STORE_KEYS[entity], list);
+    cloudUpsert(entity, records.map(r => ({ ...r, updated_at: ts })));
+  },
+
   upsert(entity, record) {
     if (record.id && readAll(STORE_KEYS[entity]).some(x => x.id === record.id)) {
       return this.update(entity, record);
@@ -839,6 +852,9 @@ const Store = {
       const { summary } = computeContainer(container, items);
       if (!summary.landed || summary.landed <= 0) return { ok: false, reason: 'sin-landed' };
 
+      // Si el plan de cuentas se borró, se recrean las cuentas del cierre
+      // (costos, IVA y Contenedores por Pagar) para que el asiento siempre salga.
+      for (const codigo of new Set(Object.values(DEFAULT_CLOSING_MAPPING_CODES))) this.ensureCatalogAccount(codigo);
       const mapping = this.getAccountMapping();
       if (!isClosingMappingComplete(mapping)) {
         console.warn('Maestro de Costo: no se generó el asiento de cierre — falta configurar el mapeo contable en Contabilidad > Cuentas.');
@@ -1048,6 +1064,47 @@ const Store = {
 
   saveAccountMapping(map) {
     return this.upsert('accounting_settings', { ...map, id: 'default' });
+  },
+
+  // Devuelve la cuenta del catálogo con ese código; si no existe (p. ej. se
+  // borró la hoja de cuentas) la crea igual que "Cargar catálogo sugerido",
+  // para que una venta o un cierre nunca se queden sin cuenta.
+  ensureCatalogAccount(codigo) {
+    const existing = readAll(STORE_KEYS.accounts).find(a => a.codigo === codigo);
+    if (existing) return existing;
+    const seed = CHART_OF_ACCOUNTS.find(s => s.codigo === codigo);
+    if (!seed) return null;
+    const tipo = inferirTipo(codigo);
+    return this.insert('accounts', {
+      codigo, nombre: seed.nombre, tipo, tipo_especifico: seed.tipo_especifico,
+      naturaleza: naturalezaForTipo(tipo), is_active: true
+    });
+  },
+
+  // Deja el inventario en cero y los contenedores completos como "En proceso"
+  // para volver a completarlos uno a uno: se borran sus asientos de cierre y
+  // sus pagos (todas las líneas con source_ref = id del contenedor), se
+  // limpia inventory_posted y se ponen en 0 existencia y costo promedio de
+  // todos los productos. Opcionalmente borra también las ventas registradas.
+  resetInventoryAndContainers({ deleteSales = false } = {}) {
+    const closed = readAll(STORE_KEYS.containers).filter(c => c.status === 'closed' || c.inventory_posted);
+    const ids = new Set(closed.map(c => c.id));
+    const movements = readAll(STORE_KEYS.movements);
+    const keep = movements.filter(m => !(m.source_ref && ids.has(m.source_ref)) && !(deleteSales && m.source === 'sale'));
+    const removed = movements.length - keep.length;
+    writeAll(STORE_KEYS.movements, keep);
+    for (const id of ids) cloudDeleteWhere('movements', 'source_ref', id);
+    if (deleteSales) cloudDeleteWhere('movements', 'source', 'sale');
+
+    this.updateMany('containers', closed.map(c => ({ id: c.id, status: 'in_transit', inventory_posted: false })));
+    const products = readAll(STORE_KEYS.products).filter(p => Number(p.stock) !== 0 || Number(p.avg_cost) !== 0);
+    this.updateMany('products', products.map(p => ({ id: p.id, stock: 0, avg_cost: 0 })));
+    if (deleteSales) {
+      const sold = readAll(STORE_KEYS.quotes).filter(q => q.status === 'convertido');
+      this.updateMany('quotes', sold.map(q => ({ id: q.id, status: 'aprobado', converted_ref: '' })));
+    }
+    notifyDataUpdated();
+    return { containers: closed.length, movements: removed, products: products.length };
   },
 
   // Datos de la empresa que aparecen en presupuestos y notas de venta. Viven
