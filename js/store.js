@@ -1081,30 +1081,75 @@ const Store = {
     });
   },
 
-  // Deja el inventario en cero y los contenedores completos como "En proceso"
-  // para volver a completarlos uno a uno: se borran sus asientos de cierre y
-  // sus pagos (todas las líneas con source_ref = id del contenedor), se
-  // limpia inventory_posted y se ponen en 0 existencia y costo promedio de
-  // todos los productos. Opcionalmente borra también las ventas registradas.
-  resetInventoryAndContainers({ deleteSales = false } = {}) {
-    const closed = readAll(STORE_KEYS.containers).filter(c => c.status === 'closed' || c.inventory_posted);
-    const ids = new Set(closed.map(c => c.id));
+  // Elimina contenedores COMPLETADOS (p. ej. de prueba) con todo lo que
+  // generaron: sus ítems, su asiento de cierre y sus pagos (líneas con
+  // source_ref = id) y la mercancía que sumaron al inventario. Solo actúa
+  // sobre status 'closed': los borradores y "En proceso" nunca se tocan,
+  // aunque se pasen sus ids. Opcionalmente borra también las ventas.
+  deleteCompletedContainers(ids, { deleteSales = false } = {}) {
+    const wanted = new Set(ids);
+    const targets = readAll(STORE_KEYS.containers).filter(c => wanted.has(c.id) && c.status === 'closed');
+    const targetIds = new Set(targets.map(c => c.id));
+    const allItems = readAll(STORE_KEYS.items);
+
+    // 1) Restar del stock lo que cada contenedor sumó al completarse.
+    const minus = new Map();
+    for (const c of targets) {
+      if (!c.inventory_posted) continue;
+      for (const it of allItems.filter(i => i.container_id === c.id && i.product_id)) {
+        minus.set(it.product_id, (minus.get(it.product_id) || 0) + (Number(it.qty) || 0));
+      }
+    }
+
+    // 2) Diario: asientos de cierre y pagos de esos contenedores (y ventas si se pide).
     const movements = readAll(STORE_KEYS.movements);
-    const keep = movements.filter(m => !(m.source_ref && ids.has(m.source_ref)) && !(deleteSales && m.source === 'sale'));
-    const removed = movements.length - keep.length;
+    const keep = movements.filter(m => !(m.source_ref && targetIds.has(m.source_ref)) && !(deleteSales && m.source === 'sale'));
+    const removedLines = movements.length - keep.length;
     writeAll(STORE_KEYS.movements, keep);
-    for (const id of ids) cloudDeleteWhere('movements', 'source_ref', id);
+    for (const id of targetIds) cloudDeleteWhere('movements', 'source_ref', id);
     if (deleteSales) cloudDeleteWhere('movements', 'source', 'sale');
 
-    this.updateMany('containers', closed.map(c => ({ id: c.id, status: 'in_transit', inventory_posted: false })));
-    const products = readAll(STORE_KEYS.products).filter(p => Number(p.stock) !== 0 || Number(p.avg_cost) !== 0);
-    this.updateMany('products', products.map(p => ({ id: p.id, stock: 0, avg_cost: 0 })));
+    // 3) Contenedores e ítems.
+    for (const id of targetIds) this.removeContainer(id);
+
+    // 4) Recalcular existencia y costo promedio de los productos afectados con
+    //    los contenedores completos que quedan (las ventas no cambian el costo).
+    const remaining = readAll(STORE_KEYS.containers).filter(c => c.status === 'closed' && c.inventory_posted);
+    const costAcc = new Map(); // product_id → { qty, cost }
+    for (const c of remaining) {
+      for (const calc of computeContainer(c, this.getItemsByContainer(c.id)).calculated) {
+        const pid = calc.item.product_id;
+        if (!pid || calc.qty <= 0) continue;
+        const a = costAcc.get(pid) || { qty: 0, cost: 0 };
+        a.qty += calc.qty; a.cost += calc.qty * calc.costNoVat;
+        costAcc.set(pid, a);
+      }
+    }
+    const products = readAll(STORE_KEYS.products);
+    const soldByName = new Map();
+    if (deleteSales) {
+      for (const m of movements.filter(x => x.source === 'sale' && Number(x.cantidad) > 0 && Number(x.precio_venta) > 0 && Number(x.credit) > 0)) {
+        const name = (String(m.concepto || '').split('|')[1] || '').trim();
+        soldByName.set(name, (soldByName.get(name) || 0) + Number(m.cantidad));
+      }
+    }
+    const patches = [];
+    for (const p of products) {
+      const back = deleteSales ? (soldByName.get(p.name) || 0) : 0;
+      if (!minus.has(p.id) && !back) continue;
+      const stock = Math.max(0, (Number(p.stock) || 0) - (minus.get(p.id) || 0) + back);
+      const a = costAcc.get(p.id);
+      const avg = stock > 0 && a && a.qty > 0 ? Math.round((a.cost / a.qty) * 100) / 100 : (stock > 0 ? Number(p.avg_cost) || 0 : 0);
+      patches.push({ id: p.id, stock, avg_cost: avg });
+    }
+    this.updateMany('products', patches);
+
     if (deleteSales) {
       const sold = readAll(STORE_KEYS.quotes).filter(q => q.status === 'convertido');
       this.updateMany('quotes', sold.map(q => ({ id: q.id, status: 'aprobado', converted_ref: '' })));
     }
     notifyDataUpdated();
-    return { containers: closed.length, movements: removed, products: products.length };
+    return { containers: targets.length, movements: removedLines, products: patches.length };
   },
 
   // Datos de la empresa que aparecen en presupuestos y notas de venta. Viven
