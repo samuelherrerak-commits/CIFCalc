@@ -112,7 +112,8 @@ const SCHEMAS = {
   // JSON string con las líneas del carrito (producto, cantidad, precio).
   quotes: [
     'id', 'quote_number', 'date', 'contact_id', 'contact_name', 'concepto',
-    'items', 'total', 'status', 'converted_ref', 'created_at', 'updated_at'
+    'items', 'total', 'status', 'converted_ref', 'created_at', 'updated_at',
+    'valid_until'
   ],
   // Mapeo contable del cierre de contenedores (una sola fila, id = 'default').
   // Cada columna guarda el id de la cuenta a la que va ese concepto; si una
@@ -121,7 +122,10 @@ const SCHEMAS = {
     'id', 'fob_account_id', 'ocean_freight_account_id', 'insurance_account_id',
     'tariff_account_id', 'port_fee_account_id', 'customs_broker_account_id',
     'other_account_id', 'vat_account_id', 'payable_account_id',
-    'created_at', 'updated_at'
+    'created_at', 'updated_at',
+    // Datos de la empresa para los presupuestos y notas de venta impresos.
+    'issuer_name', 'issuer_rif', 'issuer_address', 'issuer_phone',
+    'issuer_email', 'issuer_logo', 'quote_terms'
   ]
 };
 

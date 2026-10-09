@@ -1050,6 +1050,32 @@ const Store = {
     return this.upsert('accounting_settings', { ...map, id: 'default' });
   },
 
+  // Datos de la empresa que aparecen en presupuestos y notas de venta. Viven
+  // en la misma fila 'default' de accounting_settings (respaldada en Sheets);
+  // si están vacíos se usa la primera compañía registrada.
+  getBusinessProfile() {
+    const s = this.getById('accounting_settings', 'default') || {};
+    const company = readAll(STORE_KEYS.companies)[0] || {};
+    return {
+      name: s.issuer_name || company.name || '',
+      rif: s.issuer_rif || company.tax_id || '',
+      address: s.issuer_address || '',
+      phone: s.issuer_phone || '',
+      email: s.issuer_email || '',
+      logo: s.issuer_logo || '',
+      terms: s.quote_terms || ''
+    };
+  },
+
+  saveBusinessProfile(p) {
+    return this.upsert('accounting_settings', {
+      id: 'default',
+      issuer_name: p.name || '', issuer_rif: p.rif || '', issuer_address: p.address || '',
+      issuer_phone: p.phone || '', issuer_email: p.email || '', issuer_logo: p.logo || '',
+      quote_terms: p.terms || ''
+    });
+  },
+
   // ============================================
   // Contactos — directorio único de clientes/proveedores (CRM)
   // ============================================
@@ -1075,9 +1101,11 @@ const Store = {
   // haya diferencia entre lo que trae localStorage y lo que vuelve de Sheets.
   // ============================================
   newQuote(overrides = {}) {
+    const validUntil = new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10);
     return {
       quote_number: `COT-${Date.now().toString().slice(-6)}`,
       date: new Date().toISOString().slice(0, 10),
+      valid_until: validUntil,
       contact_id: '', contact_name: '', concepto: '',
       items: '[]', total: 0, status: 'pendiente', converted_ref: '',
       ...overrides
