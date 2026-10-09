@@ -24,13 +24,13 @@ const Costs = {
       const tbody = document.getElementById('costs-tbody');
       const list = recentCosts();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="4" class="py-4 text-center text-slate-500">Sin costos registrados todavía.</td></tr>`
+        ? `<tr><td colspan="4" class="p-4 text-center text-slate-400">Sin costos registrados todavía.</td></tr>`
         : list.map(m => `
-          <tr class="border-t border-slate-700/30 hover:bg-slate-800/30">
-            <td class="py-1.5">${esc(m.entry_date)}</td>
-            <td class="py-1.5">${esc(m.ref_doc)} — ${esc(m.concepto)}</td>
-            <td class="py-1.5 text-right font-mono">${m.debit > 0 ? '$' + fmtNum(m.debit) : ''}</td>
-            <td class="py-1.5 text-slate-400">${esc(m.entidad)}</td>
+          <tr class="border-b border-slate-100 hover:bg-slate-50">
+            <td class="p-2">${esc(m.entry_date)}</td>
+            <td class="p-2">${esc(m.ref_doc)} — ${esc(m.concepto)}</td>
+            <td class="p-2 text-right font-mono">${m.debit > 0 ? '$' + fmtNum(m.debit) : ''}</td>
+            <td class="p-2 text-slate-500">${esc(m.entidad)}</td>
           </tr>
         `).join('');
     };
@@ -69,8 +69,8 @@ const Costs = {
 
     const body = `
       <div class="${card} space-y-3">
-        <h2 class="text-sm font-black uppercase tracking-wide text-slate-300">Registrar Costo</h2>
-        <p class="text-xs text-slate-500">Un costo no mueve caja ni banco de inmediato — se registra contra una cuenta contrapartida (Inventario, Proveedores, etc.), a diferencia de un Gasto.</p>
+        <h2 class="text-sm font-bold text-slate-700">Registrar Costo</h2>
+        <p class="text-xs text-slate-400">Un costo no mueve caja ni banco de inmediato — se registra contra una cuenta contrapartida (Proveedores, Contenedores por Pagar, etc.), a diferencia de un Gasto.</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label class="${label}">Fecha *</label>
@@ -100,14 +100,14 @@ const Costs = {
             <input id="f-concepto" type="text" class="${input}">
           </div>
         </div>
-        <div id="cost-msg" class="text-xs text-rose-400"></div>
+        <div id="cost-msg" class="text-xs text-red-600"></div>
         <button id="btn-save-cost" class="${btnPrimary}">Registrar Costo</button>
       </div>
 
       <div class="${card}">
-        <h2 class="text-sm font-black uppercase tracking-wide text-slate-300 mb-3">Costos Registrados</h2>
+        <h2 class="text-sm font-bold text-slate-700 mb-3">Costos Registrados</h2>
         <table class="w-full text-left text-xs">
-          <thead><tr class="text-[9px] font-black text-slate-500 uppercase tracking-wider"><th class="py-1.5">Fecha</th><th class="py-1.5">Referencia</th><th class="py-1.5 text-right">Monto</th><th class="py-1.5">Contraparte</th></tr></thead>
+          <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2 text-right">Monto</th><th class="p-2">Contraparte</th></tr></thead>
           <tbody id="costs-tbody"></tbody>
         </table>
       </div>

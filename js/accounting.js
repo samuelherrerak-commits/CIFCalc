@@ -23,11 +23,12 @@ export function naturalezaForTipo(tipo) {
   return t ? t.nature : 'Deudora';
 }
 
-// tipo_especifico: lo que usan Ingresos/Gastos/Inventario para filtrar qué
+// tipo_especifico: lo que usan Ingresos/Gastos/Ventas/Costos para filtrar qué
 // cuentas mostrar en cada selector (cuentas de pago = Efectivo/Banco,
-// por cobrar = Clientes, por pagar = Proveedores).
+// por cobrar = Clientes, por pagar = Proveedores). El stock del inventario es
+// solo de referencia (campo en products), no una cuenta contable.
 export const TIPO_ESPECIFICO_OPTIONS = {
-  Activo: ['Efectivo', 'Banco', 'Clientes', 'Inventario', 'Otros'],
+  Activo: ['Efectivo', 'Banco', 'Clientes', 'Otros'],
   Pasivo: ['Proveedores', 'Otros'],
   Patrimonio: ['Otros'],
   Ingreso: ['Otros'],
@@ -40,9 +41,7 @@ export const CHART_OF_ACCOUNTS = [
   { codigo: '1.1.01.01', nombre: 'Caja', tipo_especifico: 'Efectivo' },
   { codigo: '1.1.01.02', nombre: 'Bancos', tipo_especifico: 'Banco' },
   { codigo: '1.1.02.01', nombre: 'Cuentas por Cobrar Clientes', tipo_especifico: 'Clientes' },
-  { codigo: '1.1.03.01', nombre: 'Inventario de Mercancía', tipo_especifico: 'Inventario' },
-  { codigo: '1.1.04.01', nombre: 'Inventario de Mercancías en Tránsito (Importaciones)', tipo_especifico: 'Inventario' },
-  { codigo: '1.1.05.01', nombre: 'Anticipo a Proveedores', tipo_especifico: 'Otros' },
+  { codigo: '1.1.03.01', nombre: 'Anticipo a Proveedores', tipo_especifico: 'Otros' },
   { codigo: '2.1.01.01', nombre: 'Proveedores por Pagar', tipo_especifico: 'Proveedores' },
   { codigo: '2.1.02.01', nombre: 'Acreedores por Importación', tipo_especifico: 'Proveedores' },
   { codigo: '2.1.03.01', nombre: 'Préstamos por Pagar', tipo_especifico: 'Otros' },
@@ -176,22 +175,16 @@ function line(entryDate, account, debit, credit, concepto, refDoc, entidad, extr
 }
 
 // data = { date, total, concepto, entidad, refDoc, paymentAccount (Efectivo/Banco/Clientes), revenueAccount }
-// Si incluye venta de inventario: data.inventory = { qty, unitCost, unitPrice, unidad, costAccount, inventoryAccount }
+// Una venta SIEMPRE son solo estas 2 líneas — el inventario es de referencia
+// (stock/avg_cost en products), nunca una cuenta de activo que se toque aquí.
+// data.sale = { qty, unidad, unitPrice } solo aporta metadata (cantidad/precio)
+// a la línea de ingreso, para "Top Vendidos" en el Resumen — no genera líneas.
 export function buildIncomeLines(data) {
-  const lines = [
+  return [
     line(data.date, data.paymentAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
     line(data.date, data.revenueAccount, 0, data.total, data.concepto, data.refDoc, data.entidad,
-      data.inventory ? { cantidad: data.inventory.qty, unidad: data.inventory.unidad || 'unidades', precio_venta: data.inventory.unitPrice } : null)
+      data.sale ? { cantidad: data.sale.qty, unidad: data.sale.unidad || 'unidades', precio_venta: data.sale.unitPrice } : null)
   ];
-  if (data.inventory) {
-    const costTotal = round2(data.inventory.qty * data.inventory.unitCost);
-    if (costTotal > 0) {
-      const invExtra = { cantidad: data.inventory.qty, unidad: data.inventory.unidad || 'unidades' };
-      lines.push(line(data.date, data.inventory.costAccount, costTotal, 0, `Costo de venta — ${data.concepto}`, data.refDoc, data.entidad, invExtra));
-      lines.push(line(data.date, data.inventory.inventoryAccount, 0, costTotal, `Costo de venta — ${data.concepto}`, data.refDoc, data.entidad, invExtra));
-    }
-  }
-  return lines;
 }
 
 // data = { date, total, concepto, entidad, refDoc, paymentAccount (Efectivo/Banco/Proveedores), expenseAccount }
@@ -202,11 +195,22 @@ export function buildExpenseLines(data) {
   ];
 }
 
-// data = { date, total, concepto, entidad, refDoc, paymentAccount (Efectivo/Banco/Proveedores), inventoryAccount, qty, unidad, codigo_barra }
+// Recepción de mercancía: debita una cuenta de Costo (el inventario físico es
+// solo de referencia, no una cuenta de activo) y acredita la forma de pago.
+// data = { date, total, concepto, entidad, refDoc, paymentAccount (Efectivo/Banco/Proveedores), costAccount, qty, unidad, codigo_barra }
 export function buildReceptionLines(data) {
-  const invExtra = { cantidad: data.qty || 0, unidad: data.unidad || 'unidades', codigo_barra: data.codigo_barra || '' };
+  const costExtra = { cantidad: data.qty || 0, unidad: data.unidad || 'unidades', codigo_barra: data.codigo_barra || '' };
   return [
-    line(data.date, data.inventoryAccount, data.total, 0, data.concepto, data.refDoc, data.entidad, invExtra),
+    line(data.date, data.costAccount, data.total, 0, data.concepto, data.refDoc, data.entidad, costExtra),
+    line(data.date, data.paymentAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
+  ];
+}
+
+// Pago de un pasivo (p. ej. Contenedores por Pagar) contra Caja/Banco.
+// data = { date, total, concepto, entidad, refDoc, payableAccount, paymentAccount }
+export function buildPayableSettlementLines(data) {
+  return [
+    line(data.date, data.payableAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
     line(data.date, data.paymentAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
   ];
 }

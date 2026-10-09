@@ -1,26 +1,25 @@
-// Envoltorio de tema oscuro para el módulo de Contabilidad (estilo LegalYa).
-// El resto de CIFCalc (Dashboard, Productos, Calculadora) se queda con el tema
-// claro de siempre — este wrapper solo aplica dentro de las páginas de
-// Contabilidad, que lo usan para envolver su contenido.
+// Envoltorio de estilo para el módulo de Contabilidad — mismo tema claro y
+// colorido que el resto de CIFCalc (Dashboard, Productos, Calculadora), no un
+// tema oscuro aparte.
 
-export const btnPrimary = 'bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-wide py-2.5 px-5 rounded-xl transition-all';
-export const btnSecondary = 'bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-black uppercase tracking-wide py-2.5 px-5 rounded-xl transition-all border border-slate-700';
-export const card = 'bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5';
-export const input = 'w-full p-2.5 bg-slate-900 border border-slate-700 rounded-xl text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 outline-none';
-export const label = 'block text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1.5';
+export const btnPrimary = 'bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition';
+export const btnSecondary = 'bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-semibold py-2 px-4 rounded-lg border border-slate-200 transition';
+export const card = 'bg-white border border-slate-200 rounded-xl shadow-sm p-4';
+export const input = 'w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none';
+export const label = 'block text-xs font-semibold text-slate-600 mb-1';
 
 export function badge(colorName, text) {
-  return `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide text-${colorName}-400 bg-${colorName}-500/10 border border-${colorName}-500/20">${text}</span>`;
+  return `<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold text-${colorName}-700 bg-${colorName}-100">${text}</span>`;
 }
 
 const AccountingShell = {
   // tabs: HTML ya renderizado de AccountingTabs.render(active)
   wrap(tabsHtml, bodyHtml) {
     return `
-      <div class="bg-slate-950 text-slate-100 rounded-2xl p-5 md:p-6 -mx-4 md:mx-0 min-h-[70vh]">
-        <header class="mb-5">
-          <h1 class="text-xl font-black uppercase tracking-wide">Contabilidad</h1>
-          <p class="text-xs text-slate-500">Partida doble en USD, integrada con el Maestro de Costo</p>
+      <div class="space-y-4">
+        <header>
+          <h1 class="text-2xl font-bold text-slate-900">Contabilidad</h1>
+          <p class="text-sm text-slate-500">Partida doble en USD, integrada con el Maestro de Costo</p>
         </header>
         ${tabsHtml}
         <div class="space-y-5">

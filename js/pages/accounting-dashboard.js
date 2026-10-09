@@ -1,7 +1,7 @@
 import Store from '../store.js';
 import { fmtNum, esc } from '../utils.js';
 import AccountingTabs from '../components/accounting-tabs.js';
-import AccountingShell, { card, badge } from '../components/accounting-shell.js';
+import AccountingShell, { card } from '../components/accounting-shell.js';
 
 // Prefijo del ref_doc → tipo de actividad (igual patrón que recentActivity de LegalYa).
 const DOC_TYPES = {
@@ -10,6 +10,7 @@ const DOC_TYPES = {
   GST: { label: 'Gasto', color: 'rose', icon: '↓' },
   REC: { label: 'Recepción', color: 'blue', icon: '📦' },
   COS: { label: 'Costo', color: 'amber', icon: '⚙' },
+  PAG: { label: 'Pago Contenedor', color: 'blue', icon: '💳' },
   CIE: { label: 'Cierre de Contenedor', color: 'slate', icon: '🧾' },
   MAN: { label: 'Asiento Manual', color: 'slate', icon: '✎' }
 };
@@ -26,7 +27,6 @@ const AccountingDashboard = {
 
     const accounts = Store.getAll('accounts');
     const movements = Store.getAll('movements');
-    const accountsByCodigo = new Map(accounts.map(a => [a.codigo, a]));
 
     const codesFor = (tipoEspecifico) => new Set(accounts.filter(a => a.tipo_especifico === tipoEspecifico).map(a => a.codigo));
     const codesForTipos = (tipos) => new Set(accounts.filter(a => tipos.includes(a.tipo)).map(a => a.codigo));
@@ -79,13 +79,12 @@ const AccountingDashboard = {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3);
 
-    // Top vendidos: líneas de ingreso con inventario, cantidad agregada por producto
-    // (el concepto se guarda como "<concepto> | <nombre producto>" al vender inventario).
+    // Top vendidos: líneas de venta, cantidad agregada por producto (el
+    // concepto se guarda como "<concepto> | <nombre producto>").
     const productQty = new Map();
     for (const m of movements) {
-      // precio_venta > 0 aísla la línea de Ingresos por Ventas (credit): la de
-      // costo y la de inventario también llevan cantidad/unidad pero sin precio,
-      // y contarlas también triplicaría la cantidad vendida.
+      // precio_venta > 0 aísla la línea de Ingresos por Ventas (credit) de cada
+      // producto — el resto de las líneas de la venta no llevan precio.
       if (m.source !== 'sale' || !(Number(m.cantidad) > 0) || m.unidad !== 'unidades' || !(Number(m.precio_venta) > 0)) continue;
       const parts = String(m.concepto || '').split('|');
       const productName = (parts[1] || parts[0] || 'Producto').trim();
@@ -93,21 +92,21 @@ const AccountingDashboard = {
     }
     const topProducts = [...productQty.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-    const statCard = (label, value, colorName) => `
+    const statCard = (lbl, value, colorName) => `
       <div class="${card}">
-        <div class="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-1">${esc(label)}</div>
-        <div class="text-2xl font-black text-${colorName}-400">$${fmtNum(value)}</div>
+        <div class="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">${esc(lbl)}</div>
+        <div class="text-2xl font-bold text-${colorName}-600">$${fmtNum(value)}</div>
       </div>
     `;
 
     const activityRow = (a) => `
-      <div class="flex items-center gap-3 py-2.5 border-t border-slate-700/30 first:border-t-0">
-        <div class="w-8 h-8 rounded-full bg-${a.type.color}-500/10 border border-${a.type.color}-500/20 flex items-center justify-center text-${a.type.color}-400 text-sm shrink-0">${a.type.icon}</div>
+      <div class="flex items-center gap-3 py-2.5 border-t border-slate-100 first:border-t-0">
+        <div class="w-8 h-8 rounded-full bg-${a.type.color}-100 flex items-center justify-center text-${a.type.color}-600 text-sm shrink-0">${a.type.icon}</div>
         <div class="flex-1 min-w-0">
-          <div class="text-xs font-bold text-slate-200 truncate">${esc(a.desc) || esc(a.type.label)}</div>
-          <div class="text-[10px] text-slate-500 truncate">${esc(a.refDoc)} ${a.entidad ? '· ' + esc(a.entidad) : ''} · ${esc(a.date || '')}</div>
+          <div class="text-xs font-bold text-slate-700 truncate">${esc(a.desc) || esc(a.type.label)}</div>
+          <div class="text-[10px] text-slate-400 truncate">${esc(a.refDoc)} ${a.entidad ? '· ' + esc(a.entidad) : ''} · ${esc(a.date || '')}</div>
         </div>
-        <div class="text-xs font-mono font-black text-slate-300 shrink-0">$${fmtNum(a.amount)}</div>
+        <div class="text-xs font-mono font-bold text-slate-700 shrink-0">$${fmtNum(a.amount)}</div>
       </div>
     `;
 
@@ -122,34 +121,34 @@ const AccountingDashboard = {
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="lg:col-span-2 space-y-4">
           <div class="${card}">
-            <h2 class="text-sm font-black uppercase tracking-wide text-slate-300 mb-1">Top Vendidos</h2>
+            <h2 class="text-sm font-bold text-slate-700 mb-1">Top Vendidos</h2>
             ${topProducts.length === 0
-              ? '<p class="text-xs text-slate-500 py-3">Sin ventas de inventario registradas todavía.</p>'
+              ? '<p class="text-xs text-slate-400 py-3">Sin ventas registradas todavía.</p>'
               : `<div class="space-y-1.5 pt-1">${topProducts.map(([name, qty], i) => `
                   <div class="flex items-center justify-between text-xs py-1">
-                    <span class="text-slate-300 truncate">${i + 1}. ${esc(name)}</span>
-                    <span class="font-mono font-black text-slate-400">${fmtNum(qty)} u.</span>
+                    <span class="text-slate-600 truncate">${i + 1}. ${esc(name)}</span>
+                    <span class="font-mono font-bold text-slate-500">${fmtNum(qty)} u.</span>
                   </div>
                 `).join('')}</div>`
             }
           </div>
           <div class="${card}">
-            <h2 class="text-sm font-black uppercase tracking-wide text-slate-300 mb-1">Mayores Deudores</h2>
+            <h2 class="text-sm font-bold text-slate-700 mb-1">Mayores Deudores</h2>
             ${topDebtors.length === 0
-              ? '<p class="text-xs text-slate-500 py-3">Sin cuentas por cobrar pendientes.</p>'
+              ? '<p class="text-xs text-slate-400 py-3">Sin cuentas por cobrar pendientes.</p>'
               : `<div class="space-y-1.5 pt-1">${topDebtors.map(([name, bal], i) => `
                   <div class="flex items-center justify-between text-xs py-1">
-                    <span class="text-slate-300 truncate">${i + 1}. ${esc(name)}</span>
-                    <span class="font-mono font-black text-amber-400">$${fmtNum(bal)}</span>
+                    <span class="text-slate-600 truncate">${i + 1}. ${esc(name)}</span>
+                    <span class="font-mono font-bold text-amber-600">$${fmtNum(bal)}</span>
                   </div>
                 `).join('')}</div>`
             }
           </div>
         </div>
         <div class="${card}">
-          <h2 class="text-sm font-black uppercase tracking-wide text-slate-300 mb-1">Actividad Reciente</h2>
+          <h2 class="text-sm font-bold text-slate-700 mb-1">Actividad Reciente</h2>
           ${recentActivity.length === 0
-            ? '<p class="text-xs text-slate-500 py-3">Sin movimientos registrados todavía.</p>'
+            ? '<p class="text-xs text-slate-400 py-3">Sin movimientos registrados todavía.</p>'
             : recentActivity.map(activityRow).join('')
           }
         </div>
