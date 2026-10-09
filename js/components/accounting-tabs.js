@@ -6,6 +6,7 @@ const AccountingTabs = {
       { path: '#/contabilidad/cuentas', key: 'accounts', label: 'Cuentas' },
       { path: '#/contabilidad/ingresos', key: 'income', label: 'Ingresos' },
       { path: '#/contabilidad/costos', key: 'costs', label: 'Costos' },
+      { path: '#/contabilidad/ventas', key: 'sales', label: 'Ventas' },
       { path: '#/contabilidad/gastos', key: 'expenses', label: 'Gastos' },
       { path: '#/contabilidad/inventario', key: 'inventory', label: 'Inventario' },
       { path: '#/contabilidad/diario', key: 'journal', label: 'Diario' },

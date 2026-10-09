@@ -8,6 +8,7 @@ import Accounts from './pages/accounts.js';
 import AccountingDashboard from './pages/accounting-dashboard.js';
 import Income from './pages/income.js';
 import Costs from './pages/costs.js';
+import Sales from './pages/sales.js';
 import Expenses from './pages/expenses.js';
 import Inventory from './pages/inventory.js';
 import Journal from './pages/journal.js';
@@ -21,6 +22,7 @@ const routes = [
   { pattern: /^#\/contabilidad\/cuentas\/?$/, handler: 'accounts', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/ingresos\/?$/, handler: 'income', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/costos\/?$/, handler: 'costs', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/ventas\/?$/, handler: 'sales', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/gastos\/?$/, handler: 'expenses', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/inventario\/?$/, handler: 'inventory', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/diario\/?$/, handler: 'journal', key: 'contabilidad' },
@@ -35,6 +37,7 @@ const pages = {
   accountingDashboard: AccountingDashboard,
   income: Income,
   costs: Costs,
+  sales: Sales,
   expenses: Expenses,
   inventory: Inventory,
   journal: Journal,

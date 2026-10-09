@@ -6,6 +6,7 @@ import AccountingShell, { card, badge } from '../components/accounting-shell.js'
 // Prefijo del ref_doc → tipo de actividad (igual patrón que recentActivity de LegalYa).
 const DOC_TYPES = {
   ING: { label: 'Ingreso', color: 'emerald', icon: '↑' },
+  VTA: { label: 'Venta', color: 'emerald', icon: '🛒' },
   GST: { label: 'Gasto', color: 'rose', icon: '↓' },
   REC: { label: 'Recepción', color: 'blue', icon: '📦' },
   COS: { label: 'Costo', color: 'amber', icon: '⚙' },
@@ -82,7 +83,10 @@ const AccountingDashboard = {
     // (el concepto se guarda como "<concepto> | <nombre producto>" al vender inventario).
     const productQty = new Map();
     for (const m of movements) {
-      if (m.source !== 'income' || !(Number(m.cantidad) > 0) || m.unidad !== 'unidades') continue;
+      // precio_venta > 0 aísla la línea de Ingresos por Ventas (credit): la de
+      // costo y la de inventario también llevan cantidad/unidad pero sin precio,
+      // y contarlas también triplicaría la cantidad vendida.
+      if (m.source !== 'sale' || !(Number(m.cantidad) > 0) || m.unidad !== 'unidades' || !(Number(m.precio_venta) > 0)) continue;
       const parts = String(m.concepto || '').split('|');
       const productName = (parts[1] || parts[0] || 'Producto').trim();
       productQty.set(productName, (productQty.get(productName) || 0) + Number(m.cantidad));
