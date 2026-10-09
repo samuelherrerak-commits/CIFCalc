@@ -80,7 +80,8 @@ const SCHEMAS = {
     'id', 'sku_briggs', 'sku', 'name', 'supplier_id', 'origin_country',
     'units_per_box', 'box_volume', 'weight_kg', 'hs_code', 'fob_unit',
     'tariff_rate', 'created_at', 'updated_at', 'foto_url', 'foto_file_id',
-    'stock', 'avg_cost', 'sale_price'
+    'stock', 'avg_cost', 'sale_price',
+    'brand', 'collection', 'category', 'color'
   ],
   // Catálogo de cuentas unificado (estilo LegalYa): códigos jerárquicos con punto,
   // tipo inferido del primer dígito (1=Activo..6=Gasto). tipo_especifico es lo que

@@ -214,6 +214,20 @@ function isRetryableError(e) {
   return true;
 }
 
+// El catálogo de productos se recargó completo desde el Maestro de Códigos
+// directamente en Sheets. Cada navegador descarta UNA vez su copia local de
+// productos (y los reintentos pendientes de productos) para no volver a subir
+// productos viejos o duplicados: la sincronización sin borrados los
+// resucitaría. Los contenedores e ítems no se tocan.
+const CATALOG_VERSION = '2026-10-09-maestro';
+function resetLocalCatalogOnce() {
+  if (localStorage.getItem('cif_catalog_version') === CATALOG_VERSION) return;
+  writeAll(STORE_KEYS.products, []);
+  const queue = getRetryQueue().filter(op => op.table !== 'products');
+  localStorage.setItem(RETRY_KEY, JSON.stringify(queue));
+  localStorage.setItem('cif_catalog_version', CATALOG_VERSION);
+}
+
 function getRetryQueue() {
   try {
     const raw = localStorage.getItem(RETRY_KEY);
@@ -690,6 +704,7 @@ function seed() {
   purgeDroppedColumns();
   localStorage.setItem(RETRY_KEY, JSON.stringify(getRetryQueue()));
   purgeLegacyAccounts();
+  resetLocalCatalogOnce();
 
   if (!seedDone) {
     seedDone = true;
