@@ -10,9 +10,11 @@ const Income = {
     const { signal } = destroy;
 
     let accounts = Store.getAll('accounts').filter(a => a.is_active !== false);
-    let includeInventory = false;
 
-    const byTipo = (tipo) => accounts.filter(a => a.tipo === tipo).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
+    // "Ingresos por Ventas" queda reservada al módulo de Ventas (vinculado al
+    // inventario) — aquí solo se registran ingresos que no vienen de vender
+    // un producto del catálogo (préstamos, otros ingresos).
+    const byTipo = (tipo) => accounts.filter(a => a.tipo === tipo && a.nombre !== 'Ingresos por Ventas').sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
     const byTipoEspecifico = (te) => accounts.filter(a => a.tipo_especifico === te).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
     const accountOptions = (list) => list.map(a => `<option value="${a.id}">${esc(a.codigo)} — ${esc(a.nombre)}</option>`).join('');
     const diffAccount = () => accounts.find(a => a.codigo === '6.9.01.01');
@@ -35,24 +37,6 @@ const Income = {
             <td class="py-1.5 text-slate-400">${esc(m.entidad)}</td>
           </tr>
         `).join('');
-    };
-
-    const renderProductOptions = () => {
-      const sel = document.getElementById('f-product');
-      const products = Store.getAll('products').filter(p => Number(p.stock) > 0);
-      sel.innerHTML = products.length
-        ? `<option value="">— Producto —</option>` + products.map(p => `<option value="${p.id}">${esc(p.sku_briggs)} — ${esc(p.name)} (stock: ${fmtNum(p.stock)})</option>`).join('')
-        : `<option value="">— Sin productos con stock —</option>`;
-    };
-
-    const toggleInventory = () => {
-      includeInventory = document.getElementById('f-inventory-toggle').checked;
-      document.getElementById('inventory-fields').classList.toggle('hidden', !includeInventory);
-      if (includeInventory) {
-        renderProductOptions();
-        const defaultCost = accounts.find(a => a.nombre === 'Costo de Venta' && a.tipo === 'Costo');
-        if (defaultCost) document.getElementById('f-cost-account').value = defaultCost.id;
-      }
     };
 
     const saveIncome = () => {
@@ -78,31 +62,8 @@ const Income = {
         revenueAccount: accounts.find(a => a.id === revenueId)
       };
 
-      let product = null;
-      if (includeInventory) {
-        const productId = document.getElementById('f-product').value;
-        const qty = num(document.getElementById('f-qty'));
-        const costAccountId = document.getElementById('f-cost-account').value;
-        product = Store.getById('products', productId);
-        if (!product) { msgEl.textContent = 'Selecciona el producto vendido.'; return; }
-        if (qty <= 0 || qty > Number(product.stock)) { msgEl.textContent = `Cantidad inválida (stock disponible: ${fmtNum(product.stock)}).`; return; }
-        const costAccount = accounts.find(a => a.id === costAccountId) || accounts.find(a => a.tipo === 'Costo');
-        const inventoryAccount = accounts.find(a => a.tipo_especifico === 'Inventario');
-        if (!costAccount || !inventoryAccount) { msgEl.textContent = 'Crea una cuenta de tipo Costo y una de Inventario en el Plan de Cuentas antes de vender inventario.'; return; }
-        data.inventory = {
-          qty, unitCost: Number(product.avg_cost) || 0, unitPrice: qty > 0 ? Math.round((total / qty) * 100) / 100 : 0,
-          unidad: 'unidades', costAccount, inventoryAccount
-        };
-        data.concepto = `${concepto} | ${product.name}`;
-      }
-
       const lines = withRoundingPlug(buildIncomeLines(data), diffAccount(), date, refDoc);
       Store.postJournalRows(lines, { source: 'income' });
-
-      if (product) {
-        const qty = data.inventory.qty;
-        Store.update('products', { id: product.id, stock: Number(product.stock) - qty });
-      }
 
       document.getElementById('f-total').value = '';
       document.getElementById('f-concepto').value = '';
@@ -113,6 +74,7 @@ const Income = {
     const body = `
       <div class="${card} space-y-3">
         <h2 class="text-sm font-black uppercase tracking-wide text-slate-300">Registrar Ingreso</h2>
+        <p class="text-xs text-slate-500">Para vender un producto del inventario usa el módulo de Ventas — aquí solo van préstamos recibidos u otros ingresos que no sean venta de mercancía.</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label class="${label}">Fecha *</label>
@@ -144,23 +106,6 @@ const Income = {
             <input id="f-concepto" type="text" class="${input}">
           </div>
         </div>
-        <label class="flex items-center gap-2 text-xs text-slate-400">
-          <input id="f-inventory-toggle" type="checkbox" class="accent-blue-600 w-4 h-4"> ¿Es venta de un producto del inventario?
-        </label>
-        <div id="inventory-fields" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-700/30">
-          <div>
-            <label class="${label}">Producto</label>
-            <select id="f-product" class="${input}"></select>
-          </div>
-          <div>
-            <label class="${label}">Cantidad</label>
-            <input id="f-qty" type="number" min="0" step="1" class="${input}">
-          </div>
-          <div>
-            <label class="${label}">Cuenta de Costo</label>
-            <select id="f-cost-account" class="${input}">${accountOptions(byTipo('Costo'))}</select>
-          </div>
-        </div>
         <div id="income-msg" class="text-xs text-rose-400"></div>
         <button id="btn-save-income" class="${btnPrimary}">Registrar Ingreso</button>
       </div>
@@ -176,7 +121,6 @@ const Income = {
 
     app.innerHTML = AccountingShell.wrap(AccountingTabs.render('income'), body);
 
-    document.getElementById('f-inventory-toggle').addEventListener('change', toggleInventory);
     document.getElementById('btn-save-income').addEventListener('click', saveIncome);
 
     renderList();

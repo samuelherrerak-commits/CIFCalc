@@ -4,7 +4,7 @@ import { withRoundingPlug, totalsFor } from '../accounting.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { btnPrimary, btnSecondary, card, input, label } from '../components/accounting-shell.js';
 
-const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', income: 'Ingreso', expense: 'Gasto', cost: 'Costo', inventory_reception: 'Recepción' };
+const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', income: 'Ingreso', expense: 'Gasto', cost: 'Costo', sale: 'Venta', inventory_reception: 'Recepción' };
 const MAX_ROWS = 200;
 
 const Journal = {

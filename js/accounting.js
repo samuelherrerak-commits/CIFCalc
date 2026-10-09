@@ -105,7 +105,7 @@ export const CLOSING_MAPPING_FIELDS = [
   { key: 'customs_broker_account_id', label: 'Agente aduanal' },
   { key: 'other_account_id', label: 'Otros gastos (flete terrestre, aduana, operación)' },
   { key: 'vat_account_id', label: 'IVA de importación (acreditable)' },
-  { key: 'payable_account_id', label: 'Contrapartida — Acreedores por Importación' }
+  { key: 'payable_account_id', label: 'Contrapartida — Contenedores por Pagar' }
 ];
 
 export function isClosingMappingComplete(mapping) {

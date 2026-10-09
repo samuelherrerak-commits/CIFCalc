@@ -749,15 +749,19 @@ const Store = {
     return { container: c, items: newItems };
   },
 
-  // Genera automáticamente el asiento contable de cierre de un contenedor.
-  // Nunca lanza: un error aquí no debe romper el guardado del contenedor.
+  // Genera automáticamente el asiento contable de cierre de un contenedor y
+  // registra en el catálogo el inventario que entró (stock/avg_cost por
+  // producto). Ambos pasos quedan atados al mismo guard "already" — un
+  // contenedor solo se cierra una vez, así que esto no necesita un campo
+  // propio de idempotencia. Nunca lanza: un error aquí no debe romper el
+  // guardado del contenedor.
   generateClosingEntryForContainer(container, items) {
     try {
       const already = readAll(STORE_KEYS.movements)
         .some(m => m.source === 'container_close' && m.source_ref === container.id);
       if (already) return;
 
-      const { summary } = computeContainer(container, items);
+      const { summary, calculated } = computeContainer(container, items);
       if (!summary.landed || summary.landed <= 0) return;
 
       const mapping = this.getAccountMapping();
@@ -773,6 +777,21 @@ const Store = {
       const diffAccount = readAll(STORE_KEYS.accounts).find(a => a.codigo === '6.9.01.01');
       const finalLines = withRoundingPlug(lines, diffAccount, container.operation_date, lines[0].ref_doc);
       this.postJournalRows(finalLines, { source: 'container_close', sourceRef: container.id });
+
+      // Entrada de inventario: solo ítems vinculados a un producto del catálogo
+      // (costNoVat porque el IVA se mapea aparte a una cuenta de IVA acreditable,
+      // no forma parte del costo de inventario) — mismo promedio ponderado que
+      // usa la Recepción manual de Inventario.
+      for (const c of calculated) {
+        if (!c.item.product_id || c.qty <= 0) continue;
+        const product = this.getById('products', c.item.product_id);
+        if (!product) continue;
+        const prevQty = Number(product.stock) || 0;
+        const prevCost = Number(product.avg_cost) || 0;
+        const newQty = prevQty + c.qty;
+        const newAvgCost = newQty > 0 ? ((prevQty * prevCost) + (c.qty * c.costNoVat)) / newQty : 0;
+        this.update('products', { id: product.id, stock: newQty, avg_cost: Math.round(newAvgCost * 100) / 100 });
+      }
     } catch (e) {
       console.error('Maestro de Costo: error generando asiento de cierre (el contenedor se guardó igual).', e);
     }
