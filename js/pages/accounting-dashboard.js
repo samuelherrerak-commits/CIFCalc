@@ -11,6 +11,8 @@ const DOC_TYPES = {
   REC: { label: 'Recepción', color: 'blue', icon: '📦' },
   COS: { label: 'Costo', color: 'amber', icon: '⚙' },
   PAG: { label: 'Pago Contenedor', color: 'blue', icon: '💳' },
+  COB: { label: 'Cobro', color: 'emerald', icon: '💰' },
+  ABP: { label: 'Abono a Proveedor', color: 'blue', icon: '💳' },
   CIE: { label: 'Cierre de Contenedor', color: 'slate', icon: '🧾' },
   MAN: { label: 'Asiento Manual', color: 'slate', icon: '✎' }
 };

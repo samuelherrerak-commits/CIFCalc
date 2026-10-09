@@ -14,6 +14,10 @@ import ContainerPayments from './pages/container-payments.js';
 import Inventory from './pages/inventory.js';
 import Journal from './pages/journal.js';
 import Ledger from './pages/ledger.js';
+import Contacts from './pages/contacts.js';
+import Quotes from './pages/quotes.js';
+import Receivables from './pages/receivables.js';
+import Payables from './pages/payables.js';
 
 const routes = [
   { pattern: /^#\/?$/, handler: 'dashboard', key: 'dashboard' },
@@ -24,9 +28,14 @@ const routes = [
   { pattern: /^#\/contabilidad\/ingresos\/?$/, handler: 'income', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/costos\/?$/, handler: 'costs', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/ventas\/?$/, handler: 'sales', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/ventas\/([^/]+)$/, handler: 'sales', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/presupuestos\/?$/, handler: 'quotes', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/gastos\/?$/, handler: 'expenses', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/pagos\/?$/, handler: 'payments', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/por-cobrar\/?$/, handler: 'receivables', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/por-pagar\/?$/, handler: 'payables', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/inventario\/?$/, handler: 'inventory', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/contactos\/?$/, handler: 'contacts', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/diario\/?$/, handler: 'journal', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/mayor\/?$/, handler: 'ledger', key: 'contabilidad' }
 ];
@@ -44,7 +53,11 @@ const pages = {
   payments: ContainerPayments,
   inventory: Inventory,
   journal: Journal,
-  ledger: Ledger
+  ledger: Ledger,
+  contacts: Contacts,
+  quotes: Quotes,
+  receivables: Receivables,
+  payables: Payables
 };
 
 let currentCleanup = null;

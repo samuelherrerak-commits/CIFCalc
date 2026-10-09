@@ -40,20 +40,22 @@ export const TIPO_ESPECIFICO_OPTIONS = {
 export const CHART_OF_ACCOUNTS = [
   { codigo: '1.1.01.01', nombre: 'Caja', tipo_especifico: 'Efectivo' },
   { codigo: '1.1.01.02', nombre: 'Bancos', tipo_especifico: 'Banco' },
-  { codigo: '1.1.02.01', nombre: 'Cuentas por Cobrar Clientes', tipo_especifico: 'Clientes' },
-  { codigo: '1.1.03.01', nombre: 'Anticipo a Proveedores', tipo_especifico: 'Otros' },
-  { codigo: '2.1.01.01', nombre: 'Proveedores por Pagar', tipo_especifico: 'Proveedores' },
-  { codigo: '2.1.02.01', nombre: 'Acreedores por Importación', tipo_especifico: 'Proveedores' },
+  { codigo: '1.1.02.01', nombre: 'Cuentas por Cobrar', tipo_especifico: 'Clientes' },
+  { codigo: '1.1.03.01', nombre: 'IVA Acreditable', tipo_especifico: 'Otros' },
+  { codigo: '2.1.01.01', nombre: 'Contenedores por Pagar', tipo_especifico: 'Proveedores' },
+  { codigo: '2.1.02.01', nombre: 'Proveedores por Pagar', tipo_especifico: 'Proveedores' },
   { codigo: '2.1.03.01', nombre: 'Préstamos por Pagar', tipo_especifico: 'Otros' },
   { codigo: '3.1.01.01', nombre: 'Capital Social', tipo_especifico: 'Otros' },
-  { codigo: '3.1.02.01', nombre: 'Utilidades Retenidas', tipo_especifico: 'Otros' },
   { codigo: '4.1.01.01', nombre: 'Ingresos por Ventas', tipo_especifico: 'Otros' },
-  { codigo: '4.1.02.01', nombre: 'Préstamos Recibidos', tipo_especifico: 'Otros' },
-  { codigo: '4.1.03.01', nombre: 'Otros Ingresos', tipo_especifico: 'Otros' },
-  { codigo: '5.1.01.01', nombre: 'Costo de Venta', tipo_especifico: 'Otros' },
-  { codigo: '5.1.02.01', nombre: 'Costo de Producto', tipo_especifico: 'Otros' },
-  { codigo: '5.1.03.01', nombre: 'Costo Logístico', tipo_especifico: 'Otros' },
-  { codigo: '5.1.04.01', nombre: 'Otros Costos', tipo_especifico: 'Otros' },
+  { codigo: '4.1.02.01', nombre: 'Otros Ingresos', tipo_especifico: 'Otros' },
+  // Un costo por cada concepto de la Calculadora de Costos (mapeo de cierre de contenedores).
+  { codigo: '5.1.01.01', nombre: 'Costo FOB de Mercancía', tipo_especifico: 'Otros' },
+  { codigo: '5.1.02.01', nombre: 'Costo de Flete Marítimo', tipo_especifico: 'Otros' },
+  { codigo: '5.1.03.01', nombre: 'Costo de Seguro', tipo_especifico: 'Otros' },
+  { codigo: '5.1.04.01', nombre: 'Costo de Arancel', tipo_especifico: 'Otros' },
+  { codigo: '5.1.05.01', nombre: 'Costo de Tasa Portuaria', tipo_especifico: 'Otros' },
+  { codigo: '5.1.06.01', nombre: 'Costo de Agente Aduanal', tipo_especifico: 'Otros' },
+  { codigo: '5.1.07.01', nombre: 'Otros Costos (Flete Terrestre, Aduana, Operación)', tipo_especifico: 'Otros' },
   { codigo: '6.1.01.01', nombre: 'Gastos de Administración y Finanzas', tipo_especifico: 'Otros' },
   { codigo: '6.1.02.01', nombre: 'Gastos de Logística', tipo_especifico: 'Otros' },
   { codigo: '6.1.03.01', nombre: 'Gastos de Ventas', tipo_especifico: 'Otros' },
@@ -212,6 +214,17 @@ export function buildPayableSettlementLines(data) {
   return [
     line(data.date, data.payableAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
     line(data.date, data.paymentAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
+  ];
+}
+
+// Entrada genérica de 2 líneas: Debe debitAccount / Haber creditAccount. La
+// usan Cuentas por Cobrar (Debe Caja/Banco, Haber Cuentas por Cobrar) y
+// Cuentas por Pagar — Proveedores (Debe Proveedores por Pagar, Haber Caja/Banco).
+// data = { date, total, concepto, entidad, refDoc, debitAccount, creditAccount }
+export function buildTwoLineEntry(data) {
+  return [
+    line(data.date, data.debitAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
+    line(data.date, data.creditAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
   ];
 }
 
