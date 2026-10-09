@@ -2,7 +2,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase-config.js';
 import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
 import { computeContainer } from './utils.js';
-import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping } from './accounting.js';
+import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping, CHART_OF_ACCOUNTS, inferirTipo, naturalezaForTipo, DEFAULT_CLOSING_MAPPING_CODES } from './accounting.js';
 
 // ============================================
 // Supabase client (singleton) — backend primario
@@ -160,7 +160,9 @@ function mergeRecords(local, remote) {
     } else {
       const lt = new Date(r.updated_at || r.created_at || 0).getTime();
       const rt = new Date(existing.updated_at || existing.created_at || 0).getTime();
-      map.set(r.id, lt >= rt ? r : existing);
+      // A igual versión gana Sheets (fuente principal): corrige copias locales
+      // que se leyeron mal (p. ej. un booleano) sin que nadie las editara.
+      map.set(r.id, lt > rt ? r : existing);
     }
   }
   return [...map.values()];
@@ -745,6 +747,17 @@ const Store = {
     return { ...record, updated_at: ts };
   },
 
+  // Varias filas en una sola escritura a la nube (lotes de 100 en Sheets),
+  // para no disparar una petición por fila.
+  updateMany(entity, records) {
+    if (!records.length) return;
+    const ts = now();
+    const byId = new Map(records.map(r => [r.id, r]));
+    const list = readAll(STORE_KEYS[entity]).map(x => byId.has(x.id) ? { ...x, ...byId.get(x.id), updated_at: ts } : x);
+    writeAll(STORE_KEYS[entity], list);
+    cloudUpsert(entity, records.map(r => ({ ...r, updated_at: ts })));
+  },
+
   upsert(entity, record) {
     if (record.id && readAll(STORE_KEYS[entity]).some(x => x.id === record.id)) {
       return this.update(entity, record);
@@ -839,6 +852,9 @@ const Store = {
       const { summary } = computeContainer(container, items);
       if (!summary.landed || summary.landed <= 0) return { ok: false, reason: 'sin-landed' };
 
+      // Si el plan de cuentas se borró, se recrean las cuentas del cierre
+      // (costos, IVA y Contenedores por Pagar) para que el asiento siempre salga.
+      for (const codigo of new Set(Object.values(DEFAULT_CLOSING_MAPPING_CODES))) this.ensureCatalogAccount(codigo);
       const mapping = this.getAccountMapping();
       if (!isClosingMappingComplete(mapping)) {
         console.warn('Maestro de Costo: no se generó el asiento de cierre — falta configurar el mapeo contable en Contabilidad > Cuentas.');
@@ -1048,6 +1064,92 @@ const Store = {
 
   saveAccountMapping(map) {
     return this.upsert('accounting_settings', { ...map, id: 'default' });
+  },
+
+  // Devuelve la cuenta del catálogo con ese código; si no existe (p. ej. se
+  // borró la hoja de cuentas) la crea igual que "Cargar catálogo sugerido",
+  // para que una venta o un cierre nunca se queden sin cuenta.
+  ensureCatalogAccount(codigo) {
+    const existing = readAll(STORE_KEYS.accounts).find(a => a.codigo === codigo);
+    if (existing) return existing;
+    const seed = CHART_OF_ACCOUNTS.find(s => s.codigo === codigo);
+    if (!seed) return null;
+    const tipo = inferirTipo(codigo);
+    return this.insert('accounts', {
+      codigo, nombre: seed.nombre, tipo, tipo_especifico: seed.tipo_especifico,
+      naturaleza: naturalezaForTipo(tipo), is_active: true
+    });
+  },
+
+  // Elimina contenedores COMPLETADOS (p. ej. de prueba) con todo lo que
+  // generaron: sus ítems, su asiento de cierre y sus pagos (líneas con
+  // source_ref = id) y la mercancía que sumaron al inventario. Solo actúa
+  // sobre status 'closed': los borradores y "En proceso" nunca se tocan,
+  // aunque se pasen sus ids. Opcionalmente borra también las ventas.
+  deleteCompletedContainers(ids, { deleteSales = false } = {}) {
+    const wanted = new Set(ids);
+    const targets = readAll(STORE_KEYS.containers).filter(c => wanted.has(c.id) && c.status === 'closed');
+    const targetIds = new Set(targets.map(c => c.id));
+    const allItems = readAll(STORE_KEYS.items);
+
+    // 1) Restar del stock lo que cada contenedor sumó al completarse.
+    const minus = new Map();
+    for (const c of targets) {
+      if (!c.inventory_posted) continue;
+      for (const it of allItems.filter(i => i.container_id === c.id && i.product_id)) {
+        minus.set(it.product_id, (minus.get(it.product_id) || 0) + (Number(it.qty) || 0));
+      }
+    }
+
+    // 2) Diario: asientos de cierre y pagos de esos contenedores (y ventas si se pide).
+    const movements = readAll(STORE_KEYS.movements);
+    const keep = movements.filter(m => !(m.source_ref && targetIds.has(m.source_ref)) && !(deleteSales && m.source === 'sale'));
+    const removedLines = movements.length - keep.length;
+    writeAll(STORE_KEYS.movements, keep);
+    for (const id of targetIds) cloudDeleteWhere('movements', 'source_ref', id);
+    if (deleteSales) cloudDeleteWhere('movements', 'source', 'sale');
+
+    // 3) Contenedores e ítems.
+    for (const id of targetIds) this.removeContainer(id);
+
+    // 4) Recalcular existencia y costo promedio de los productos afectados con
+    //    los contenedores completos que quedan (las ventas no cambian el costo).
+    const remaining = readAll(STORE_KEYS.containers).filter(c => c.status === 'closed' && c.inventory_posted);
+    const costAcc = new Map(); // product_id → { qty, cost }
+    for (const c of remaining) {
+      for (const calc of computeContainer(c, this.getItemsByContainer(c.id)).calculated) {
+        const pid = calc.item.product_id;
+        if (!pid || calc.qty <= 0) continue;
+        const a = costAcc.get(pid) || { qty: 0, cost: 0 };
+        a.qty += calc.qty; a.cost += calc.qty * calc.costNoVat;
+        costAcc.set(pid, a);
+      }
+    }
+    const products = readAll(STORE_KEYS.products);
+    const soldByName = new Map();
+    if (deleteSales) {
+      for (const m of movements.filter(x => x.source === 'sale' && Number(x.cantidad) > 0 && Number(x.precio_venta) > 0 && Number(x.credit) > 0)) {
+        const name = (String(m.concepto || '').split('|')[1] || '').trim();
+        soldByName.set(name, (soldByName.get(name) || 0) + Number(m.cantidad));
+      }
+    }
+    const patches = [];
+    for (const p of products) {
+      const back = deleteSales ? (soldByName.get(p.name) || 0) : 0;
+      if (!minus.has(p.id) && !back) continue;
+      const stock = Math.max(0, (Number(p.stock) || 0) - (minus.get(p.id) || 0) + back);
+      const a = costAcc.get(p.id);
+      const avg = stock > 0 && a && a.qty > 0 ? Math.round((a.cost / a.qty) * 100) / 100 : (stock > 0 ? Number(p.avg_cost) || 0 : 0);
+      patches.push({ id: p.id, stock, avg_cost: avg });
+    }
+    this.updateMany('products', patches);
+
+    if (deleteSales) {
+      const sold = readAll(STORE_KEYS.quotes).filter(q => q.status === 'convertido');
+      this.updateMany('quotes', sold.map(q => ({ id: q.id, status: 'aprobado', converted_ref: '' })));
+    }
+    notifyDataUpdated();
+    return { containers: targets.length, movements: removedLines, products: patches.length };
   },
 
   // Datos de la empresa que aparecen en presupuestos y notas de venta. Viven

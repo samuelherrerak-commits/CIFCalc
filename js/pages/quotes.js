@@ -219,7 +219,7 @@ function renderBuilder(app, editId) {
         <a href="#/contabilidad/presupuestos" class="w-9 h-9 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-600">←</a>
         <div>
           <h2 class="text-lg font-bold text-slate-800">${editing ? `Editar presupuesto ${esc(editing.quote_number)}` : 'Nuevo presupuesto'}</h2>
-          <p class="text-xs text-slate-400">Elige los productos y cantidades. Al emitirlo queda pendiente; no toca la contabilidad ni el inventario.</p>
+          <p class="text-xs text-slate-400">Igual que una venta, con los productos disponibles. Al emitirlo queda pendiente; no toca la contabilidad ni el inventario.</p>
         </div>
       </div>
     </div>
@@ -230,7 +230,7 @@ function renderBuilder(app, editId) {
   const pos = mountPOS(document.getElementById('pos-root'), {
     products: () => products,
     cart: initialCart,
-    capToStock: false,
+    capToStock: true,
     title: 'Presupuesto',
     actionLabel: editing ? 'Guardar cambios' : 'Emitir presupuesto',
     headerFieldsHtml: `

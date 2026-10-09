@@ -24,9 +24,20 @@ const NUMERIC_FIELDS = {
 };
 
 const BOOL_FIELDS = {
-  containers: ['insurance_enabled'],
+  containers: ['insurance_enabled', 'inventory_posted'],
   accounts: ['is_active']
 };
+// Valor cuando la celda viene vacía (p. ej. una columna recién agregada a la
+// hoja): una cuenta sin marca se considera activa.
+const BOOL_DEFAULTS = { accounts: { is_active: true } };
+
+// Sheets puede devolver TRUE/FALSE (si la celda no quedó como texto) o
+// 'true'/'false'; se aceptan ambos.
+function parseBool(table, k, v) {
+  const s = String(v == null ? '' : v).trim().toLowerCase();
+  if (s === '') return !!(BOOL_DEFAULTS[table] && BOOL_DEFAULTS[table][k]);
+  return s === 'true' || s === 'verdadero' || s === '1' || s === 'sí' || s === 'si';
+}
 
 const MAX_SEARCH = 100;
 
@@ -38,7 +49,7 @@ function normalizeRow(table, row) {
     if (numFields.includes(k)) {
       out[k] = v === '' || v === null || v === undefined ? 0 : Number(v) || 0;
     } else if (boolFields.includes(k)) {
-      out[k] = v === 'true';
+      out[k] = parseBool(table, k, v);
     } else {
       out[k] = v === null || v === undefined ? '' : String(v);
     }

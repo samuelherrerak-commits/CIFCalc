@@ -37,7 +37,7 @@ const Inventory = {
     const products = Store.getAll('products');
     let subTab = 'stock';
     let query = '';
-    let onlyInStock = false;
+    let onlyInStock = true;
 
     const marginPct = (p) => {
       const price = Number(p.sale_price) || 0;
@@ -171,7 +171,7 @@ const Inventory = {
             <p class="text-xs text-slate-400">Entra al completar un contenedor, sale con cada venta. Es de referencia, no una cuenta contable.</p>
           </div>
           <div class="flex items-center gap-3">
-            <label class="flex items-center gap-1.5 text-xs text-slate-500 whitespace-nowrap"><input id="stock-only" type="checkbox"> Solo con existencia</label>
+            <label class="flex items-center gap-1.5 text-xs text-slate-500 whitespace-nowrap"><input id="stock-only" type="checkbox" checked> Solo con existencia</label>
             <input id="stock-search" type="text" placeholder="Buscar producto…" class="${input}" style="width:220px">
           </div>
         </div>
@@ -192,6 +192,22 @@ const Inventory = {
           <tbody id="history-tbody"></tbody>
         </table>
       </div>
+
+      <div class="bg-white border border-red-200 rounded-xl shadow-sm p-4 space-y-3">
+        <div>
+          <h2 class="text-sm font-bold text-red-700">Eliminar contenedores completados (de prueba)</h2>
+          <p class="text-xs text-slate-500 mt-1">Marca los contenedores <strong>completados</strong> que quieres borrar. Se elimina el contenedor con sus productos, su asiento de cierre, sus pagos y la mercancía que sumó al inventario. <strong>Los contenedores en Borrador o En proceso no aparecen aquí y no se tocan.</strong></p>
+          <p id="del-protected" class="text-xs text-emerald-700 mt-1"></p>
+        </div>
+        <div id="del-list" class="border border-slate-100 rounded-lg divide-y divide-slate-100 max-h-72 overflow-y-auto"></div>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex flex-col gap-1">
+            <label class="flex items-center gap-2 text-xs text-slate-600"><input id="del-all" type="checkbox"> Seleccionar todos</label>
+            <label class="flex items-center gap-2 text-xs text-slate-600"><input id="del-sales" type="checkbox"> También borrar las ventas registradas (<span id="del-sales-count">0</span>) y devolver su mercancía</label>
+          </div>
+          <button id="btn-delete-containers" class="flex-shrink-0 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm" disabled>Eliminar seleccionados</button>
+        </div>
+      </div>
     `;
 
     app.innerHTML = AccountingShell.wrap(AccountingTabs.render('inventory'), body);
@@ -203,6 +219,65 @@ const Inventory = {
     renderSummary();
     renderStock();
     renderHistory();
+
+    // --- Eliminar contenedores completados de prueba ---
+    const STATUS_TXT = { draft: 'borrador', in_transit: 'proceso' };
+    const renderDeletePanel = () => {
+      const all = Store.getAll('containers');
+      const closed = all.filter(c => c.status === 'closed')
+        .sort((a, b) => String(b.operation_date || '').localeCompare(String(a.operation_date || '')));
+      const protectedOnes = all.filter(c => c.status !== 'closed');
+      const byStatus = protectedOnes.reduce((m, c) => { const k = STATUS_TXT[c.status] || 'borrador'; m[k] = (m[k] || 0) + 1; return m; }, {});
+      document.getElementById('del-protected').textContent = protectedOnes.length
+        ? '🔒 Protegidos: ' + Object.entries(byStatus).map(([k, n]) => `${n} en ${k}`).join(', ') + '.'
+        : '';
+      const movs = Store.getAll('movements');
+      document.getElementById('del-sales-count').textContent = new Set(movs.filter(m => m.source === 'sale').map(m => m.ref_doc)).size;
+      const list = document.getElementById('del-list');
+      list.innerHTML = closed.length === 0
+        ? '<div class="p-4 text-center text-xs text-slate-400">No hay contenedores completados.</div>'
+        : closed.map(c => {
+          const items = Store.getItemsByContainer(c.id);
+          const units = items.reduce((s2, it) => s2 + (Number(it.qty) || 0), 0);
+          const close = movs.filter(m => m.source === 'container_close' && m.source_ref === c.id).reduce((s2, m) => s2 + (Number(m.debit) || 0), 0);
+          const paid = movs.some(m => m.source === 'container_payment' && m.source_ref === c.id);
+          return `
+          <label class="flex items-center gap-3 p-3 hover:bg-slate-50 cursor-pointer">
+            <input type="checkbox" data-del-id="${esc(c.id)}">
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-slate-800">${esc(c.bl_number) || 'Sin BL'} <span class="text-[10px] font-normal text-slate-400">${esc(c.operation_date || '')}</span></div>
+              <div class="text-[11px] text-slate-500">${items.length} producto(s) · ${fmtNum(units).replace(/\.00$/, '')} unid.${close ? ` · asiento $${fmtNum(close)}` : ' · sin asiento'}${paid ? ' · con pagos' : ''}</div>
+            </div>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-600 bg-slate-200">Completo</span>
+          </label>`;
+        }).join('');
+      const sync = () => {
+        const n = list.querySelectorAll('[data-del-id]:checked').length;
+        const btn = document.getElementById('btn-delete-containers');
+        btn.disabled = n === 0;
+        btn.textContent = n ? `Eliminar ${n} seleccionado(s)` : 'Eliminar seleccionados';
+      };
+      list.querySelectorAll('[data-del-id]').forEach(cb => cb.addEventListener('change', sync));
+      document.getElementById('del-all').checked = false;
+      sync();
+    };
+    renderDeletePanel();
+    document.getElementById('del-all').addEventListener('change', (e) => {
+      document.querySelectorAll('#del-list [data-del-id]').forEach(cb => { cb.checked = e.target.checked; cb.dispatchEvent(new Event('change')); });
+    }, { signal });
+    document.getElementById('btn-delete-containers').addEventListener('click', () => {
+      const ids = [...document.querySelectorAll('#del-list [data-del-id]:checked')].map(cb => cb.dataset.delId);
+      if (!ids.length) return;
+      const names = ids.map(id => (Store.getById('containers', id) || {}).bl_number || 'Sin BL');
+      const deleteSales = document.getElementById('del-sales').checked;
+      const msg = `Se van a ELIMINAR ${ids.length} contenedor(es) completado(s):\n\n${names.map(n => '• ' + n).join('\n')}\n\n` +
+        'Con sus productos, asiento de cierre, pagos y la mercancía que sumaron al inventario' +
+        (deleteSales ? ', y TODAS las ventas registradas' : '') +
+        '.\n\nLos contenedores en Borrador o En proceso no se tocan.\nTambién se borra en Google Sheets y no se puede deshacer. ¿Continuar?';
+      if (!confirm(msg)) return;
+      const res = Store.deleteCompletedContainers(ids, { deleteSales });
+      alert(`Listo: ${res.containers} contenedor(es) eliminado(s), ${res.movements} línea(s) de diario borradas, ${res.products} producto(s) con existencia ajustada.`);
+    }, { signal });
 
     return () => destroy.abort();
   }
