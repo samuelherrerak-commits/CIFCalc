@@ -1037,6 +1037,10 @@ const Store = {
     return resolveClosingMapping(this.getById('accounting_settings', 'default'), readAll(STORE_KEYS.accounts));
   },
 
+  getDefaultAccountMapping() {
+    return resolveClosingMapping(null, readAll(STORE_KEYS.accounts));
+  },
+
   saveAccountMapping(map) {
     return this.upsert('accounting_settings', { ...map, id: 'default' });
   },
