@@ -4,7 +4,7 @@ import { withRoundingPlug, totalsFor } from '../accounting.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { btnPrimary, btnSecondary, card, input, label } from '../components/accounting-shell.js';
 
-const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', income: 'Ingreso', expense: 'Gasto', cost: 'Costo', sale: 'Venta', inventory_reception: 'Recepción' };
+const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', container_payment: 'Pago Contenedor', income: 'Ingreso', expense: 'Gasto', cost: 'Costo', sale: 'Venta', inventory_reception: 'Recepción' };
 const MAX_ROWS = 200;
 
 const Journal = {
@@ -46,15 +46,15 @@ const Journal = {
       const shown = rows.slice(0, MAX_ROWS);
       const tbody = document.getElementById('journal-tbody');
       tbody.innerHTML = shown.length === 0
-        ? `<tr><td colspan="6" class="py-4 text-center text-slate-500">Sin asientos.</td></tr>`
+        ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin asientos.</td></tr>`
         : shown.map(m => `
-          <tr class="border-t border-slate-700/30 hover:bg-slate-800/30">
-            <td class="py-1.5">${esc(m.entry_date)}</td>
-            <td class="py-1.5 text-slate-200">${esc(m.concepto)}</td>
-            <td class="py-1.5" title="${esc(m.cuenta_contable)}"><span class="font-mono text-slate-300">${esc(m.codigo_cuenta)}</span></td>
-            <td class="py-1.5 text-right font-mono text-blue-400">${m.debit > 0 ? '$' + fmtNum(m.debit) : ''}</td>
-            <td class="py-1.5 text-right font-mono text-emerald-400">${m.credit > 0 ? '$' + fmtNum(m.credit) : ''}</td>
-            <td class="py-1.5 text-slate-500">${esc(m.ref_doc)}</td>
+          <tr class="border-b border-slate-100 hover:bg-slate-50">
+            <td class="p-2">${esc(m.entry_date)}</td>
+            <td class="p-2 text-slate-700">${esc(m.concepto)}</td>
+            <td class="p-2" title="${esc(m.cuenta_contable)}"><span class="font-mono text-slate-600">${esc(m.codigo_cuenta)}</span></td>
+            <td class="p-2 text-right font-mono text-blue-600">${m.debit > 0 ? '$' + fmtNum(m.debit) : ''}</td>
+            <td class="p-2 text-right font-mono text-emerald-600">${m.credit > 0 ? '$' + fmtNum(m.credit) : ''}</td>
+            <td class="p-2 text-slate-400">${esc(m.ref_doc)}</td>
           </tr>
         `).join('');
 
@@ -74,11 +74,11 @@ const Journal = {
       const tbody = document.getElementById('lines-tbody');
       tbody.innerHTML = lines.map((l, i) => `
         <tr>
-          <td class="p-1"><select data-line-acc="${i}" class="w-full p-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100">${accountOptions(l.account_id)}</select></td>
-          <td class="p-1"><input data-line-debit="${i}" type="number" min="0" step="0.01" value="${l.debit || 0}" class="w-24 p-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-right text-slate-100"></td>
-          <td class="p-1"><input data-line-credit="${i}" type="number" min="0" step="0.01" value="${l.credit || 0}" class="w-24 p-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-right text-slate-100"></td>
-          <td class="p-1"><input data-line-concepto="${i}" type="text" value="${esc(l.concepto || '')}" class="w-full p-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100"></td>
-          <td class="p-1 text-center"><button data-line-del="${i}" class="text-rose-400 hover:text-rose-300 font-bold px-1">✕</button></td>
+          <td class="p-1"><select data-line-acc="${i}" class="w-full p-1.5 border border-slate-300 rounded-lg text-xs bg-white">${accountOptions(l.account_id)}</select></td>
+          <td class="p-1"><input data-line-debit="${i}" type="number" min="0" step="0.01" value="${l.debit || 0}" class="w-24 p-1.5 border border-slate-300 rounded-lg text-xs text-right bg-white"></td>
+          <td class="p-1"><input data-line-credit="${i}" type="number" min="0" step="0.01" value="${l.credit || 0}" class="w-24 p-1.5 border border-slate-300 rounded-lg text-xs text-right bg-white"></td>
+          <td class="p-1"><input data-line-concepto="${i}" type="text" value="${esc(l.concepto || '')}" class="w-full p-1.5 border border-slate-300 rounded-lg text-xs bg-white"></td>
+          <td class="p-1 text-center"><button data-line-del="${i}" class="text-red-500 hover:text-red-700 font-bold px-1">✕</button></td>
         </tr>
       `).join('');
 
@@ -95,7 +95,7 @@ const Journal = {
       document.getElementById('entry-total-credit').textContent = `$${fmtNum(t.credit)}`;
       const diffEl = document.getElementById('entry-diff');
       diffEl.textContent = Math.abs(t.diff) < 0.01 ? '✓ Balanceado' : `Diferencia $${t.diff.toFixed(2)} (se ajusta sola con "Diferencias de Redondeo" si guardas)`;
-      diffEl.className = Math.abs(t.diff) < 0.01 ? 'text-xs font-black text-emerald-400' : 'text-xs font-black text-amber-400';
+      diffEl.className = Math.abs(t.diff) < 0.01 ? 'text-xs font-bold text-emerald-600' : 'text-xs font-bold text-amber-600';
     };
 
     const addLine = () => { lines.push({ account_id: '', debit: 0, credit: 0, concepto: '' }); renderLines(); renderTotals(); };
@@ -134,7 +134,7 @@ const Journal = {
     const body = `
       <div class="${card}">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-3">
-          <h2 class="text-sm font-black uppercase tracking-wide text-slate-300">Diario Contable <span class="text-slate-500" id="journal-count"></span></h2>
+          <h2 class="text-sm font-bold text-slate-700">Diario Contable <span class="text-slate-400" id="journal-count"></span></h2>
           <div class="flex items-center gap-2 flex-wrap">
             <input id="journal-search" type="text" placeholder="Buscar concepto o referencia…" class="${input}" style="width:220px">
             <select id="journal-account-filter" class="${input}" style="width:220px"></select>
@@ -142,42 +142,42 @@ const Journal = {
           </div>
         </div>
         <div class="flex gap-4 text-xs mb-2">
-          <span>Debe: <span id="journal-total-debit" class="font-black text-blue-400"></span></span>
-          <span>Haber: <span id="journal-total-credit" class="font-black text-emerald-400"></span></span>
+          <span>Debe: <span id="journal-total-debit" class="font-bold text-blue-600"></span></span>
+          <span>Haber: <span id="journal-total-credit" class="font-bold text-emerald-600"></span></span>
         </div>
         <table class="w-full text-left text-xs">
-          <thead><tr class="text-[9px] font-black text-slate-500 uppercase tracking-wider">
-            <th class="py-1.5">Fecha</th><th class="py-1.5">Concepto</th><th class="py-1.5">Cuenta</th>
-            <th class="py-1.5 text-right">Debe</th><th class="py-1.5 text-right">Haber</th><th class="py-1.5">Ref.</th>
+          <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
+            <th class="p-2">Fecha</th><th class="p-2">Concepto</th><th class="p-2">Cuenta</th>
+            <th class="p-2 text-right">Debe</th><th class="p-2 text-right">Haber</th><th class="p-2">Ref.</th>
           </tr></thead>
           <tbody id="journal-tbody"></tbody>
         </table>
-        <p id="journal-footer-note" class="text-xs text-slate-500 mt-2"></p>
+        <p id="journal-footer-note" class="text-xs text-slate-400 mt-2"></p>
       </div>
     `;
 
     app.innerHTML = AccountingShell.wrap(AccountingTabs.render('journal'), body) + `
       <!-- Modal Asiento Manual -->
-      <div id="journal-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto text-slate-100">
+      <div id="journal-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
           <div class="flex justify-between items-center">
-            <h3 class="text-sm font-black uppercase tracking-wide">Nuevo Asiento Manual</h3>
-            <button id="journal-close" class="text-slate-500 hover:text-slate-300 text-xl font-bold leading-none">✕</button>
+            <h3 class="text-lg font-bold text-slate-800">Nuevo Asiento Manual</h3>
+            <button id="journal-close" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div><label class="${label}">Fecha *</label><input id="f-date" type="date" class="${input}"></div>
             <div><label class="${label}">Referencia</label><input id="f-refdoc" type="text" class="${input}"></div>
           </div>
           <table class="w-full text-left text-xs">
-            <thead><tr class="text-[9px] font-black text-slate-500 uppercase tracking-wider">
+            <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
               <th class="p-1">Cuenta</th><th class="p-1 text-right">Debe</th><th class="p-1 text-right">Haber</th><th class="p-1">Concepto</th><th class="p-1"></th>
             </tr></thead>
             <tbody id="lines-tbody"></tbody>
           </table>
           <button id="btn-add-line" class="${btnSecondary}">+ Agregar línea</button>
-          <div class="flex justify-between items-center border-t border-slate-700/30 pt-3">
-            <div class="text-xs">Debe: <span id="entry-total-debit" class="font-black"></span> &nbsp; Haber: <span id="entry-total-credit" class="font-black"></span></div>
-            <span id="entry-diff" class="text-xs font-black"></span>
+          <div class="flex justify-between items-center border-t border-slate-100 pt-3">
+            <div class="text-xs">Debe: <span id="entry-total-debit" class="font-bold"></span> &nbsp; Haber: <span id="entry-total-credit" class="font-bold"></span></div>
+            <span id="entry-diff" class="text-xs font-bold"></span>
           </div>
           <div class="flex justify-end gap-2 pt-1">
             <button id="journal-cancel" class="${btnSecondary}">Cerrar</button>

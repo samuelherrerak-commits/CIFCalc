@@ -25,13 +25,13 @@ const Expenses = {
       const tbody = document.getElementById('expenses-tbody');
       const list = recentExpenses();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="4" class="py-4 text-center text-slate-500">Sin gastos registrados todavía.</td></tr>`
+        ? `<tr><td colspan="4" class="p-4 text-center text-slate-400">Sin gastos registrados todavía.</td></tr>`
         : list.map(m => `
-          <tr class="border-t border-slate-700/30 hover:bg-slate-800/30">
-            <td class="py-1.5">${esc(m.entry_date)}</td>
-            <td class="py-1.5">${esc(m.ref_doc)} — ${esc(m.concepto)}</td>
-            <td class="py-1.5 text-right font-mono">${m.debit > 0 ? '$' + fmtNum(m.debit) : ''}</td>
-            <td class="py-1.5 text-slate-400">${esc(m.entidad)}</td>
+          <tr class="border-b border-slate-100 hover:bg-slate-50">
+            <td class="p-2">${esc(m.entry_date)}</td>
+            <td class="p-2">${esc(m.ref_doc)} — ${esc(m.concepto)}</td>
+            <td class="p-2 text-right font-mono">${m.debit > 0 ? '$' + fmtNum(m.debit) : ''}</td>
+            <td class="p-2 text-slate-500">${esc(m.entidad)}</td>
           </tr>
         `).join('');
     };
@@ -70,7 +70,7 @@ const Expenses = {
 
     const body = `
       <div class="${card} space-y-3">
-        <h2 class="text-sm font-black uppercase tracking-wide text-slate-300">Registrar Gasto</h2>
+        <h2 class="text-sm font-bold text-slate-700">Registrar Gasto</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label class="${label}">Fecha *</label>
@@ -102,14 +102,14 @@ const Expenses = {
             <input id="f-concepto" type="text" class="${input}">
           </div>
         </div>
-        <div id="expense-msg" class="text-xs text-rose-400"></div>
+        <div id="expense-msg" class="text-xs text-red-600"></div>
         <button id="btn-save-expense" class="${btnPrimary}">Registrar Gasto</button>
       </div>
 
       <div class="${card}">
-        <h2 class="text-sm font-black uppercase tracking-wide text-slate-300 mb-3">Gastos Registrados</h2>
+        <h2 class="text-sm font-bold text-slate-700 mb-3">Gastos Registrados</h2>
         <table class="w-full text-left text-xs">
-          <thead><tr class="text-[9px] font-black text-slate-500 uppercase tracking-wider"><th class="py-1.5">Fecha</th><th class="py-1.5">Referencia</th><th class="py-1.5 text-right">Monto</th><th class="py-1.5">Beneficiario</th></tr></thead>
+          <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2 text-right">Monto</th><th class="p-2">Beneficiario</th></tr></thead>
           <tbody id="expenses-tbody"></tbody>
         </table>
       </div>

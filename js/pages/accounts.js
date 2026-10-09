@@ -22,8 +22,8 @@ const Accounts = {
       const wrap = document.getElementById('type-pills');
       const tipos = ['', ...ACCOUNT_TYPES.map(t => t.value)];
       wrap.innerHTML = tipos.map(t => `
-        <button data-type="${t}" class="px-3 py-1.5 text-[10px] font-black uppercase tracking-wide rounded-full transition-all ${
-          activeType === t ? 'bg-blue-600 text-white' : 'bg-slate-800/50 text-slate-400 hover:text-slate-200'
+        <button data-type="${t}" class="px-3 py-1.5 text-xs font-semibold rounded-full transition-all ${
+          activeType === t ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
         }">${t || 'Todos'}</button>
       `).join('');
       wrap.querySelectorAll('[data-type]').forEach(btn => btn.addEventListener('click', () => {
@@ -40,7 +40,7 @@ const Accounts = {
         .sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
 
       if (list.length === 0) {
-        wrap.innerHTML = `<div class="${card} text-center text-slate-500 text-sm">Sin cuentas. Crea una con "+ Nueva Cuenta" o carga el catálogo sugerido.</div>`;
+        wrap.innerHTML = `<div class="${card} text-center text-slate-400 text-sm">Sin cuentas. Crea una con "+ Nueva Cuenta" o carga el catálogo sugerido.</div>`;
         return;
       }
 
@@ -52,28 +52,28 @@ const Accounts = {
 
       wrap.innerHTML = [...byTipo.entries()].map(([tipo, accs]) => `
         <div class="${card}">
-          <h3 class="text-sm font-black uppercase tracking-wide text-slate-300 mb-3">${esc(tipo)} <span class="text-slate-500">(${accs.length})</span></h3>
+          <h3 class="text-sm font-bold text-slate-700 mb-3">${esc(tipo)} <span class="text-slate-400">(${accs.length})</span></h3>
           <table class="w-full text-left text-xs">
             <thead>
-              <tr class="text-[9px] font-black text-slate-500 uppercase tracking-wider">
-                <th class="py-1.5 pr-2">Código</th>
-                <th class="py-1.5 pr-2">Nombre</th>
-                <th class="py-1.5 pr-2">Tipo Específico</th>
-                <th class="py-1.5 pr-2">Naturaleza</th>
-                <th class="py-1.5 pr-2">Estado</th>
-                <th class="py-1.5 text-center">Acciones</th>
+              <tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
+                <th class="p-2">Código</th>
+                <th class="p-2">Nombre</th>
+                <th class="p-2">Tipo Específico</th>
+                <th class="p-2">Naturaleza</th>
+                <th class="p-2">Estado</th>
+                <th class="p-2 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody>
               ${accs.map(a => `
-                <tr class="border-t border-slate-700/30 hover:bg-slate-800/30 ${a.is_active === false ? 'opacity-40' : ''}">
-                  <td class="py-1.5 pr-2 font-mono text-slate-300">${esc(a.codigo)}</td>
-                  <td class="py-1.5 pr-2 text-slate-200">${esc(a.nombre)}</td>
-                  <td class="py-1.5 pr-2 text-slate-400">${esc(a.tipo_especifico || 'Otros')}</td>
-                  <td class="py-1.5 pr-2 text-slate-400">${esc(a.naturaleza)}</td>
-                  <td class="py-1.5 pr-2">${a.is_active === false ? '<span class="text-slate-500">Inactiva</span>' : '<span class="text-emerald-400">Activa</span>'}</td>
-                  <td class="py-1.5 text-center whitespace-nowrap">
-                    <button data-del="${a.id}" class="text-rose-400 hover:text-rose-300 font-bold px-1" title="Eliminar / Desactivar">🗑</button>
+                <tr class="border-b border-slate-100 hover:bg-slate-50 ${a.is_active === false ? 'opacity-40' : ''}">
+                  <td class="p-2 font-mono text-slate-700">${esc(a.codigo)}</td>
+                  <td class="p-2 text-slate-800">${esc(a.nombre)}</td>
+                  <td class="p-2 text-slate-500">${esc(a.tipo_especifico || 'Otros')}</td>
+                  <td class="p-2 text-slate-500">${esc(a.naturaleza)}</td>
+                  <td class="p-2">${a.is_active === false ? '<span class="text-slate-400">Inactiva</span>' : '<span class="text-emerald-600">Activa</span>'}</td>
+                  <td class="p-2 text-center whitespace-nowrap">
+                    <button data-del="${a.id}" class="text-red-500 hover:text-red-700 font-bold px-1" title="Eliminar / Desactivar">🗑</button>
                   </td>
                 </tr>
               `).join('')}
@@ -188,7 +188,7 @@ const Accounts = {
 
     const body = `
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-        <h2 class="text-sm font-black uppercase tracking-wide text-slate-300">Plan de Cuentas</h2>
+        <h2 class="text-sm font-bold text-slate-700">Plan de Cuentas</h2>
         <div class="flex items-center gap-2">
           <button id="btn-seed" class="${btnSecondary}">Cargar catálogo sugerido</button>
           <button id="btn-new-account" class="${btnPrimary}">+ Nueva Cuenta</button>
@@ -199,24 +199,24 @@ const Accounts = {
 
       <div class="${card} space-y-3">
         <div>
-          <h2 class="text-sm font-black uppercase tracking-wide text-slate-300">Mapeo Contable — Cierre de Contenedores</h2>
-          <p class="text-xs text-slate-500">Define a qué cuenta va cada concepto del Maestro de Costo cuando completas un contenedor. Si falta algún campo, no se genera el asiento automático hasta que completes el mapeo.</p>
+          <h2 class="text-sm font-bold text-slate-700">Mapeo Contable — Cierre de Contenedores</h2>
+          <p class="text-xs text-slate-400">Define a qué cuenta de tipo Costo va cada concepto del Maestro de Costo cuando completas un contenedor (el inventario es solo de referencia, no se mapea aquí). Si falta algún campo, no se genera el asiento automático hasta que completes el mapeo.</p>
         </div>
         <div id="mapping-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
         <div class="flex items-center gap-3">
           <button id="btn-save-mapping" class="${btnPrimary}">Guardar Mapeo</button>
-          <span id="mapping-saved" class="hidden text-xs font-black text-emerald-400">✓ Guardado</span>
+          <span id="mapping-saved" class="hidden text-xs font-bold text-emerald-600">✓ Guardado</span>
         </div>
       </div>
     `;
 
     app.innerHTML = AccountingShell.wrap(AccountingTabs.render('accounts'), body) + `
       <!-- Modal Cuenta -->
-      <div id="account-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4 text-slate-100">
+      <div id="account-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4">
           <div class="flex justify-between items-center">
-            <h3 class="text-sm font-black uppercase tracking-wide">Nueva Cuenta</h3>
-            <button id="acc-close" class="text-slate-500 hover:text-slate-300 text-xl font-bold leading-none">✕</button>
+            <h3 class="text-lg font-bold text-slate-800">Nueva Cuenta</h3>
+            <button id="acc-close" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
           </div>
           <div>
             <label class="${label}">Código *</label>

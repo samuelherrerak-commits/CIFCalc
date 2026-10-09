@@ -14,10 +14,10 @@ const Inventory = {
     let subTab = 'stock';
     let query = '';
 
+    const byTipo = (tipo) => accounts.filter(a => a.tipo === tipo).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
     const byTipoEspecifico = (te) => accounts.filter(a => a.tipo_especifico === te).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
     const accountOptions = (list) => list.map(a => `<option value="${a.id}">${esc(a.codigo)} — ${esc(a.nombre)}</option>`).join('');
     const diffAccount = () => accounts.find(a => a.codigo === '6.9.01.01');
-    const inventoryAccount = () => accounts.find(a => a.tipo_especifico === 'Inventario');
 
     const renderStock = () => {
       const tbody = document.getElementById('stock-tbody');
@@ -26,13 +26,13 @@ const Inventory = {
         .filter(p => !q || [p.sku_briggs, p.sku, p.name].some(v => String(v || '').toLowerCase().includes(q)))
         .sort((a, b) => String(a.sku_briggs).localeCompare(String(b.sku_briggs)));
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="4" class="py-4 text-center text-slate-500">Sin productos.</td></tr>`
+        ? `<tr><td colspan="4" class="p-4 text-center text-slate-400">Sin productos.</td></tr>`
         : list.map(p => `
-          <tr class="border-t border-slate-700/30 hover:bg-slate-800/30">
-            <td class="py-1.5 font-mono text-slate-300">${esc(p.sku_briggs)}</td>
-            <td class="py-1.5 text-slate-200">${esc(p.name)}</td>
-            <td class="py-1.5 text-right font-mono ${Number(p.stock) <= 0 ? 'text-rose-400' : 'text-slate-200'}">${fmtNum(p.stock)}</td>
-            <td class="py-1.5 text-right font-mono text-slate-400">$${fmtNum(p.avg_cost)}</td>
+          <tr class="border-b border-slate-100 hover:bg-slate-50">
+            <td class="p-2 font-mono text-slate-700">${esc(p.sku_briggs)}</td>
+            <td class="p-2 text-slate-800">${esc(p.name)}</td>
+            <td class="p-2 text-right font-mono ${Number(p.stock) <= 0 ? 'text-red-600' : 'text-slate-800'}">${fmtNum(p.stock)}</td>
+            <td class="p-2 text-right font-mono text-slate-500">$${fmtNum(p.avg_cost)}</td>
           </tr>
         `).join('');
     };
@@ -52,22 +52,25 @@ const Inventory = {
       const tbody = document.getElementById('reception-tbody');
       const list = recentReceptions();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="4" class="py-4 text-center text-slate-500">Sin recepciones registradas todavía.</td></tr>`
+        ? `<tr><td colspan="4" class="p-4 text-center text-slate-400">Sin recepciones registradas todavía.</td></tr>`
         : list.map(m => `
-          <tr class="border-t border-slate-700/30 hover:bg-slate-800/30">
-            <td class="py-1.5">${esc(m.entry_date)}</td>
-            <td class="py-1.5">${esc(m.ref_doc)} — ${esc(m.concepto)}</td>
-            <td class="py-1.5 text-right font-mono">${m.debit > 0 ? '$' + fmtNum(m.debit) : ''}</td>
-            <td class="py-1.5 text-slate-400">${esc(m.entidad)}</td>
+          <tr class="border-b border-slate-100 hover:bg-slate-50">
+            <td class="p-2">${esc(m.entry_date)}</td>
+            <td class="p-2">${esc(m.ref_doc)} — ${esc(m.concepto)}</td>
+            <td class="p-2 text-right font-mono">${m.debit > 0 ? '$' + fmtNum(m.debit) : ''}</td>
+            <td class="p-2 text-slate-500">${esc(m.entidad)}</td>
           </tr>
         `).join('');
     };
 
+    // Recepción de mercancía: debita una cuenta de Costo (el inventario físico
+    // solo es de referencia, no una cuenta de activo) y acredita la forma de pago.
     const saveReception = () => {
       const date = document.getElementById('f-date').value;
       const productId = document.getElementById('f-product').value;
       const qty = num(document.getElementById('f-qty'));
       const costTotal = num(document.getElementById('f-cost'));
+      const costAccountId = document.getElementById('f-cost-account').value;
       const paymentId = document.getElementById('f-payment').value;
       const entidad = document.getElementById('f-entidad').value.trim();
       const msgEl = document.getElementById('reception-msg');
@@ -78,16 +81,16 @@ const Inventory = {
       if (!product) { msgEl.textContent = 'Selecciona el producto recibido.'; return; }
       if (qty <= 0) { msgEl.textContent = 'La cantidad debe ser mayor a 0.'; return; }
       if (costTotal <= 0) { msgEl.textContent = 'El costo total debe ser mayor a 0.'; return; }
+      if (!costAccountId) { msgEl.textContent = 'Selecciona la cuenta de costo.'; return; }
       if (!paymentId) { msgEl.textContent = 'Selecciona la forma de pago (Efectivo/Banco/Proveedores).'; return; }
-      const invAccount = inventoryAccount();
-      if (!invAccount) { msgEl.textContent = 'Crea una cuenta con tipo específico "Inventario" en el Plan de Cuentas.'; return; }
+      const costAccount = accounts.find(a => a.id === costAccountId);
 
       const refDoc = `REC-${Date.now().toString().slice(-6)}`;
       const concepto = `Recepción: ${product.name} | Cant: ${qty}`;
       const data = {
         date, total: costTotal, concepto, entidad, refDoc,
         paymentAccount: accounts.find(a => a.id === paymentId),
-        inventoryAccount: invAccount,
+        costAccount,
         qty, unidad: 'unidades', codigo_barra: product.sku_briggs || ''
       };
       const lines = withRoundingPlug(buildReceptionLines(data), diffAccount(), date, refDoc);
@@ -110,8 +113,8 @@ const Inventory = {
     const renderSubTabs = () => {
       const wrap = document.getElementById('inventory-subtabs');
       wrap.innerHTML = ['stock', 'recepcion'].map(t => `
-        <button data-subtab="${t}" class="px-3 py-1.5 text-[10px] font-black uppercase tracking-wide rounded-full transition-all ${
-          subTab === t ? 'bg-blue-600 text-white' : 'bg-slate-800/50 text-slate-400 hover:text-slate-200'
+        <button data-subtab="${t}" class="px-3 py-1.5 text-xs font-semibold rounded-full transition-all ${
+          subTab === t ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
         }">${t === 'stock' ? 'Stock' : 'Recepción'}</button>
       `).join('');
       wrap.querySelectorAll('[data-subtab]').forEach(btn => btn.addEventListener('click', () => {
@@ -132,11 +135,11 @@ const Inventory = {
       <div id="panel-stock" class="space-y-4">
         <div class="${card}">
           <div class="flex justify-between items-center mb-3">
-            <h2 class="text-sm font-black uppercase tracking-wide text-slate-300">Existencias</h2>
+            <h2 class="text-sm font-bold text-slate-700">Existencias <span class="text-xs font-normal text-slate-400">(referencia — no son una cuenta contable)</span></h2>
             <input id="stock-search" type="text" placeholder="Buscar producto…" class="${input}" style="width:220px">
           </div>
           <table class="w-full text-left text-xs">
-            <thead><tr class="text-[9px] font-black text-slate-500 uppercase tracking-wider"><th class="py-1.5">SKU Briggs</th><th class="py-1.5">Nombre</th><th class="py-1.5 text-right">Existencia</th><th class="py-1.5 text-right">Costo Prom.</th></tr></thead>
+            <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">SKU Briggs</th><th class="p-2">Nombre</th><th class="p-2 text-right">Existencia</th><th class="p-2 text-right">Costo Prom.</th></tr></thead>
             <tbody id="stock-tbody"></tbody>
           </table>
         </div>
@@ -144,7 +147,7 @@ const Inventory = {
 
       <div id="panel-recepcion" class="hidden space-y-4">
         <div class="${card} space-y-3">
-          <h2 class="text-sm font-black uppercase tracking-wide text-slate-300">Registrar Recepción</h2>
+          <h2 class="text-sm font-bold text-slate-700">Registrar Recepción</h2>
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <div>
               <label class="${label}">Fecha *</label>
@@ -163,6 +166,10 @@ const Inventory = {
               <input id="f-cost" type="number" min="0" step="0.01" class="${input}">
             </div>
             <div>
+              <label class="${label}">Cuenta de Costo *</label>
+              <select id="f-cost-account" class="${input}">${accountOptions(byTipo('Costo'))}</select>
+            </div>
+            <div>
               <label class="${label}">Forma de Pago *</label>
               <select id="f-payment" class="${input}">
                 <option value="">— Cuenta —</option>
@@ -176,14 +183,14 @@ const Inventory = {
               <input id="f-entidad" type="text" class="${input}">
             </div>
           </div>
-          <div id="reception-msg" class="text-xs text-rose-400"></div>
+          <div id="reception-msg" class="text-xs text-red-600"></div>
           <button id="btn-save-reception" class="${btnPrimary}">Confirmar Recepción</button>
         </div>
 
         <div class="${card}">
-          <h2 class="text-sm font-black uppercase tracking-wide text-slate-300 mb-3">Recepciones Registradas</h2>
+          <h2 class="text-sm font-bold text-slate-700 mb-3">Recepciones Registradas</h2>
           <table class="w-full text-left text-xs">
-            <thead><tr class="text-[9px] font-black text-slate-500 uppercase tracking-wider"><th class="py-1.5">Fecha</th><th class="py-1.5">Referencia</th><th class="py-1.5 text-right">Monto</th><th class="py-1.5">Proveedor</th></tr></thead>
+            <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2 text-right">Monto</th><th class="p-2">Proveedor</th></tr></thead>
             <tbody id="reception-tbody"></tbody>
           </table>
         </div>
@@ -194,6 +201,9 @@ const Inventory = {
 
     document.getElementById('stock-search').addEventListener('input', (e) => { query = e.target.value; renderStock(); });
     document.getElementById('btn-save-reception').addEventListener('click', saveReception);
+
+    const defaultCost = accounts.find(a => a.nombre === 'Costo de Producto' && a.tipo === 'Costo');
+    if (defaultCost) document.getElementById('f-cost-account').value = defaultCost.id;
 
     renderSubTabs();
     renderPanels();

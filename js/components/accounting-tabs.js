@@ -1,4 +1,4 @@
-// Tab-strip oscuro (estilo LegalYa) para las vistas del módulo de Contabilidad.
+// Tab-strip claro (mismo estilo del resto de CIFCalc) para las vistas del módulo de Contabilidad.
 const AccountingTabs = {
   render(active) {
     const tabs = [
@@ -8,17 +8,18 @@ const AccountingTabs = {
       { path: '#/contabilidad/costos', key: 'costs', label: 'Costos' },
       { path: '#/contabilidad/ventas', key: 'sales', label: 'Ventas' },
       { path: '#/contabilidad/gastos', key: 'expenses', label: 'Gastos' },
+      { path: '#/contabilidad/pagos', key: 'payments', label: 'Pagos' },
       { path: '#/contabilidad/inventario', key: 'inventory', label: 'Inventario' },
       { path: '#/contabilidad/diario', key: 'journal', label: 'Diario' },
       { path: '#/contabilidad/mayor', key: 'ledger', label: 'Mayor' }
     ];
     return `
-      <div class="flex gap-2 flex-wrap mb-5">
+      <div class="flex gap-2 flex-wrap">
         ${tabs.map(t => `
-          <a href="${t.path}" class="px-4 py-2 text-xs font-black uppercase tracking-wide rounded-xl transition-all ${
+          <a href="${t.path}" class="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
             t.key === active
               ? 'bg-blue-600 text-white'
-              : 'bg-slate-800/50 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
           }">${t.label}</a>
         `).join('')}
       </div>

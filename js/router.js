@@ -10,6 +10,7 @@ import Income from './pages/income.js';
 import Costs from './pages/costs.js';
 import Sales from './pages/sales.js';
 import Expenses from './pages/expenses.js';
+import ContainerPayments from './pages/container-payments.js';
 import Inventory from './pages/inventory.js';
 import Journal from './pages/journal.js';
 import Ledger from './pages/ledger.js';
@@ -24,6 +25,7 @@ const routes = [
   { pattern: /^#\/contabilidad\/costos\/?$/, handler: 'costs', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/ventas\/?$/, handler: 'sales', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/gastos\/?$/, handler: 'expenses', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/pagos\/?$/, handler: 'payments', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/inventario\/?$/, handler: 'inventory', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/diario\/?$/, handler: 'journal', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/mayor\/?$/, handler: 'ledger', key: 'contabilidad' }
@@ -39,6 +41,7 @@ const pages = {
   costs: Costs,
   sales: Sales,
   expenses: Expenses,
+  payments: ContainerPayments,
   inventory: Inventory,
   journal: Journal,
   ledger: Ledger
