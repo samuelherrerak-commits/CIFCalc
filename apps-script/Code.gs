@@ -53,13 +53,16 @@ const SCHEMAS = {
     'id', 'name', 'country', 'contact_email', 'contact_phone',
     'created_at', 'updated_at'
   ],
+  // inventory_posted va al final a propósito (mismo motivo que foto_url en
+  // products): marca si ya se registró el stock de este contenedor en el
+  // catálogo, independiente de si el asiento contable se generó o no.
   containers: [
     'id', 'company_id', 'bl_number', 'operation_date',
     'container_capacity', 'container_max_weight',
     'insurance_rate', 'insurance_enabled', 'port_fee_rate', 'vat_rate',
     'ocean_freight', 'inland_freight', 'customs_expenses',
     'customs_broker_fee', 'op_expenses', 'status',
-    'created_at', 'updated_at'
+    'created_at', 'updated_at', 'inventory_posted'
   ],
   items: [
     'id', 'container_id', 'product_id', 'supplier_id', 'origin_country',

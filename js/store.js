@@ -98,7 +98,7 @@ const TABLE_DEFAULTS = {
     port_fee_rate: 0, vat_rate: 0,
     ocean_freight: 0, inland_freight: 0,
     customs_expenses: 0, customs_broker_fee: 0, op_expenses: 0,
-    status: 'draft', created_at: '', updated_at: ''
+    status: 'draft', created_at: '', updated_at: '', inventory_posted: false
   },
   items: {
     container_id: null,
@@ -753,39 +753,25 @@ const Store = {
     return { container: c, items: newItems };
   },
 
-  // Genera automáticamente el asiento contable de cierre de un contenedor y
-  // registra en el catálogo el inventario que entró (stock/avg_cost por
-  // producto). Ambos pasos quedan atados al mismo guard "already" — un
-  // contenedor solo se cierra una vez, así que esto no necesita un campo
-  // propio de idempotencia. Nunca lanza: un error aquí no debe romper el
-  // guardado del contenedor.
+  // Al completar un contenedor pasan 2 cosas independientes, cada una con su
+  // propio guard de idempotencia — el inventario debe llenarse de stock
+  // aunque el mapeo contable todavía no esté configurado (son cosas
+  // separadas: la mercancía sí llegó, haya o no asiento contable todavía).
+  // Nunca lanzan: un error aquí no debe romper el guardado del contenedor.
   generateClosingEntryForContainer(container, items) {
+    this.postInventoryForContainer(container, items);
+    this.postClosingJournalForContainer(container, items);
+  },
+
+  // Entrada de inventario: solo ítems vinculados a un producto del catálogo
+  // (costNoVat porque el IVA se mapea aparte a una cuenta de IVA acreditable,
+  // no forma parte del costo de inventario) — mismo promedio ponderado que
+  // usa la Recepción manual de Inventario. Se guarda con container.inventory_posted
+  // para no duplicar el stock si se vuelve a intentar el asiento contable después.
+  postInventoryForContainer(container, items) {
     try {
-      const already = readAll(STORE_KEYS.movements)
-        .some(m => m.source === 'container_close' && m.source_ref === container.id);
-      if (already) return;
-
-      const { summary, calculated } = computeContainer(container, items);
-      if (!summary.landed || summary.landed <= 0) return;
-
-      const mapping = this.getAccountMapping();
-      if (!isClosingMappingComplete(mapping)) {
-        console.warn('Maestro de Costo: no se generó el asiento de cierre — falta configurar el mapeo contable en Contabilidad > Cuentas.');
-        return;
-      }
-
-      const accountsById = this.getAccountsById();
-      const lines = buildContainerClosingLines(container, summary, mapping, accountsById);
-      if (lines.length === 0) return;
-
-      const diffAccount = readAll(STORE_KEYS.accounts).find(a => a.codigo === '6.9.01.01');
-      const finalLines = withRoundingPlug(lines, diffAccount, container.operation_date, lines[0].ref_doc);
-      this.postJournalRows(finalLines, { source: 'container_close', sourceRef: container.id });
-
-      // Entrada de inventario: solo ítems vinculados a un producto del catálogo
-      // (costNoVat porque el IVA se mapea aparte a una cuenta de IVA acreditable,
-      // no forma parte del costo de inventario) — mismo promedio ponderado que
-      // usa la Recepción manual de Inventario.
+      if (container.inventory_posted) return;
+      const { calculated } = computeContainer(container, items);
       for (const c of calculated) {
         if (!c.item.product_id || c.qty <= 0) continue;
         const product = this.getById('products', c.item.product_id);
@@ -796,9 +782,48 @@ const Store = {
         const newAvgCost = newQty > 0 ? ((prevQty * prevCost) + (c.qty * c.costNoVat)) / newQty : 0;
         this.update('products', { id: product.id, stock: newQty, avg_cost: Math.round(newAvgCost * 100) / 100 });
       }
+      this.update('containers', { id: container.id, inventory_posted: true });
+    } catch (e) {
+      console.error('Maestro de Costo: error registrando el inventario del contenedor (el contenedor se guardó igual).', e);
+    }
+  },
+
+  // Asiento contable de cierre — requiere el mapeo de Contabilidad > Cuentas
+  // completo. Si falta, no bloquea nada (el inventario ya se registró arriba);
+  // queda pendiente y se puede reintentar llamando este método de nuevo una
+  // vez el mapeo esté listo (p. ej. desde un botón "Generar asiento" en la
+  // Calculadora para contenedores ya cerrados sin asiento todavía).
+  postClosingJournalForContainer(container, items) {
+    try {
+      const already = readAll(STORE_KEYS.movements)
+        .some(m => m.source === 'container_close' && m.source_ref === container.id);
+      if (already) return { ok: true, already: true };
+
+      const { summary } = computeContainer(container, items);
+      if (!summary.landed || summary.landed <= 0) return { ok: false, reason: 'sin-landed' };
+
+      const mapping = this.getAccountMapping();
+      if (!isClosingMappingComplete(mapping)) {
+        console.warn('Maestro de Costo: no se generó el asiento de cierre — falta configurar el mapeo contable en Contabilidad > Cuentas.');
+        return { ok: false, reason: 'mapeo-incompleto' };
+      }
+
+      const accountsById = this.getAccountsById();
+      const lines = buildContainerClosingLines(container, summary, mapping, accountsById);
+      if (lines.length === 0) return { ok: false, reason: 'sin-lineas' };
+
+      const diffAccount = readAll(STORE_KEYS.accounts).find(a => a.codigo === '6.9.01.01');
+      const finalLines = withRoundingPlug(lines, diffAccount, container.operation_date, lines[0].ref_doc);
+      this.postJournalRows(finalLines, { source: 'container_close', sourceRef: container.id });
+      return { ok: true };
     } catch (e) {
       console.error('Maestro de Costo: error generando asiento de cierre (el contenedor se guardó igual).', e);
+      return { ok: false, reason: 'error' };
     }
+  },
+
+  hasClosingJournal(containerId) {
+    return readAll(STORE_KEYS.movements).some(m => m.source === 'container_close' && m.source_ref === containerId);
   },
 
   getItemsByContainer(containerId) {
@@ -839,7 +864,8 @@ const Store = {
       customs_expenses: 0,
       customs_broker_fee: 0,
       op_expenses: 0,
-      status: 'draft'
+      status: 'draft',
+      inventory_posted: false
     });
   },
 
