@@ -1,6 +1,7 @@
 import Store from '../store.js';
 import { fmtNum, esc, num } from '../utils.js';
 import { buildExpenseLines, withRoundingPlug } from '../accounting.js';
+import { contactOptions, quickAddContact } from '../components/contact-picker.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { btnPrimary, card, input, label } from '../components/accounting-shell.js';
 
@@ -10,6 +11,7 @@ const Expenses = {
     const { signal } = destroy;
 
     let accounts = Store.getAll('accounts').filter(a => a.is_active !== false);
+    let contacts = Store.getAll('contacts');
 
     const byTipo = (tipo) => accounts.filter(a => a.tipo === tipo).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
     const byTipoEspecifico = (te) => accounts.filter(a => a.tipo_especifico === te).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
@@ -36,11 +38,20 @@ const Expenses = {
         `).join('');
     };
 
+    const handleContactChange = (e) => {
+      if (e.target.value === '__new__') {
+        const c = quickAddContact(Store, 'proveedor');
+        contacts = Store.getAll('contacts');
+        e.target.innerHTML = contactOptions(contacts, 'proveedor', c ? c.id : '');
+      }
+    };
+
     const saveExpense = () => {
       const date = document.getElementById('f-date').value;
       const expenseId = document.getElementById('f-expense').value;
       const paymentId = document.getElementById('f-payment').value;
-      const entidad = document.getElementById('f-entidad').value.trim();
+      const contact = contacts.find(c => c.id === document.getElementById('f-contact').value);
+      const entidad = contact ? contact.name : '';
       const concepto = document.getElementById('f-concepto').value.trim();
       const total = num(document.getElementById('f-total'));
       const msgEl = document.getElementById('expense-msg');
@@ -64,7 +75,7 @@ const Expenses = {
 
       document.getElementById('f-total').value = '';
       document.getElementById('f-concepto').value = '';
-      document.getElementById('f-entidad').value = '';
+      document.getElementById('f-contact').value = '';
       renderList();
     };
 
@@ -95,7 +106,7 @@ const Expenses = {
           </div>
           <div>
             <label class="${label}">Beneficiario</label>
-            <input id="f-entidad" type="text" class="${input}">
+            <select id="f-contact" class="${input}">${contactOptions(contacts, 'proveedor')}</select>
           </div>
           <div class="sm:col-span-2 lg:col-span-2">
             <label class="${label}">Concepto *</label>
@@ -118,6 +129,7 @@ const Expenses = {
     app.innerHTML = AccountingShell.wrap(AccountingTabs.render('expenses'), body);
 
     document.getElementById('btn-save-expense').addEventListener('click', saveExpense);
+    document.getElementById('f-contact').addEventListener('change', handleContactChange);
 
     renderList();
 

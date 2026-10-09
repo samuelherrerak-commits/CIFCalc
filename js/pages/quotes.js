@@ -1,79 +1,63 @@
 import Store from '../store.js';
 import { fmtNum, esc, num } from '../utils.js';
-import { buildIncomeLines, withRoundingPlug } from '../accounting.js';
 import { contactOptions, quickAddContact } from '../components/contact-picker.js';
 import AccountingTabs from '../components/accounting-tabs.js';
-import AccountingShell, { btnPrimary, card, input, label } from '../components/accounting-shell.js';
+import AccountingShell, { btnPrimary, btnSecondary, card, input, label } from '../components/accounting-shell.js';
 
-const Sales = {
-  async render(app, params) {
+const STATUS_LABEL = { pendiente: 'Pendiente', convertido: 'Convertido', rechazado: 'Rechazado' };
+const STATUS_COLOR = { pendiente: 'amber', convertido: 'emerald', rechazado: 'slate' };
+
+const Quotes = {
+  async render(app) {
     const destroy = new AbortController();
     const { signal } = destroy;
 
-    let accounts = Store.getAll('accounts').filter(a => a.is_active !== false);
     let contacts = Store.getAll('contacts');
     let cart = []; // [{ product, qty, unitPrice }]
     let pickerProduct = null;
     let pickerQuery = '';
-
-    // Si se llega desde Presupuestos ("Convertir en Venta"), se precarga el
-    // carrito con los mismos productos/cantidades/precios del presupuesto.
-    const sourceQuoteId = params && params[0] ? params[0] : null;
-    const sourceQuote = sourceQuoteId ? Store.getById('quotes', sourceQuoteId) : null;
-    if (sourceQuote) {
-      const items = Store.getQuoteItems(sourceQuote);
-      for (const it of items) {
-        const product = Store.getById('products', it.productId);
-        if (!product) continue;
-        cart.push({ product, qty: Math.min(it.qty, Number(product.stock) || 0), unitPrice: it.unitPrice });
-      }
-    }
-
-    const byTipoEspecifico = (te) => accounts.filter(a => a.tipo_especifico === te).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
-    const accountOptions = (list) => list.map(a => `<option value="${a.id}">${esc(a.codigo)} — ${esc(a.nombre)}</option>`).join('');
-    const diffAccount = () => accounts.find(a => a.codigo === '6.9.01.01');
-    const revenueAccount = () => accounts.find(a => a.nombre === 'Ingresos por Ventas' && a.tipo === 'Ingreso');
+    let printingQuote = null;
 
     const cartTotal = () => cart.reduce((s, l) => s + l.qty * l.unitPrice, 0);
 
-    const recentSales = () => {
-      const movs = Store.getAll('movements').filter(m => m.source === 'sale');
-      const byRef = new Map();
-      for (const m of movs) {
-        if (!byRef.has(m.ref_doc)) byRef.set(m.ref_doc, []);
-        byRef.get(m.ref_doc).push(m);
-      }
-      return [...byRef.entries()]
-        .map(([refDoc, lines]) => {
-          const first = [...lines].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0];
-          const items = lines.filter(l => Number(l.cantidad) > 0 && l.unidad === 'unidades' && Number(l.precio_venta) > 0);
-          const total = items.reduce((s, l) => s + (Number(l.credit) || 0), 0);
-          return { refDoc, date: first.entry_date, entidad: first.entidad, itemCount: items.length, total };
-        })
-        .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
-        .slice(0, 20);
-    };
+    const recentQuotes = () => [...Store.getAll('quotes')]
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+      .slice(0, 30);
 
-    const renderRecentSales = () => {
-      const tbody = document.getElementById('sales-tbody');
-      const list = recentSales();
+    const renderList = () => {
+      const tbody = document.getElementById('quotes-tbody');
+      const list = recentQuotes();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="5" class="py-4 text-center text-slate-400">Sin ventas registradas todavía.</td></tr>`
-        : list.map(s => `
+        ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin presupuestos registrados todavía.</td></tr>`
+        : list.map(q => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-2">${esc(s.date)}</td>
-            <td class="p-2">${esc(s.refDoc)}</td>
-            <td class="p-2 text-slate-500">${esc(s.entidad)}</td>
-            <td class="p-2 text-right">${s.itemCount}</td>
-            <td class="p-2 text-right font-mono font-semibold text-emerald-700">$${fmtNum(s.total)}</td>
+            <td class="p-2">${esc(q.date)}</td>
+            <td class="p-2 font-semibold text-slate-700">${esc(q.quote_number)}</td>
+            <td class="p-2 text-slate-600">${esc(q.contact_name)}</td>
+            <td class="p-2 text-right font-mono">$${fmtNum(q.total)}</td>
+            <td class="p-2"><span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold text-${STATUS_COLOR[q.status] || 'slate'}-700 bg-${STATUS_COLOR[q.status] || 'slate'}-100">${STATUS_LABEL[q.status] || q.status}</span></td>
+            <td class="p-2 text-center whitespace-nowrap">
+              <button data-print="${q.id}" class="text-slate-500 hover:text-slate-700 font-semibold text-xs px-1">Imprimir</button>
+              ${q.status === 'pendiente' ? `
+                <a href="#/contabilidad/ventas/${q.id}" class="text-blue-600 hover:text-blue-800 font-semibold text-xs px-1">Convertir en Venta</a>
+                <button data-reject="${q.id}" class="text-red-500 hover:text-red-700 font-semibold text-xs px-1">Rechazar</button>
+              ` : ''}
+            </td>
           </tr>
         `).join('');
+
+      tbody.querySelectorAll('[data-print]').forEach(btn => btn.addEventListener('click', () => printQuote(btn.dataset.print)));
+      tbody.querySelectorAll('[data-reject]').forEach(btn => btn.addEventListener('click', () => {
+        if (!confirm('¿Marcar este presupuesto como rechazado?')) return;
+        Store.update('quotes', { id: btn.dataset.reject, status: 'rechazado' });
+        renderList();
+      }));
     };
 
     const renderCart = () => {
       const tbody = document.getElementById('cart-tbody');
       tbody.innerHTML = cart.length === 0
-        ? `<tr><td colspan="5" class="p-4 text-center text-slate-400">Carrito vacío. Agrega un producto del inventario.</td></tr>`
+        ? `<tr><td colspan="5" class="p-4 text-center text-slate-400">Carrito vacío. Agrega un producto.</td></tr>`
         : cart.map((l, i) => `
           <tr class="border-b border-slate-100">
             <td class="p-2">
@@ -85,7 +69,7 @@ const Sales = {
                 </div>
               </div>
             </td>
-            <td class="p-2 text-right"><input data-cart-qty="${i}" type="number" min="1" max="${Number(l.product.stock) || 0}" step="1" value="${l.qty}" class="w-16 p-1 border border-slate-300 rounded text-xs text-right bg-white"></td>
+            <td class="p-2 text-right"><input data-cart-qty="${i}" type="number" min="1" step="1" value="${l.qty}" class="w-16 p-1 border border-slate-300 rounded text-xs text-right bg-white"></td>
             <td class="p-2 text-right"><input data-cart-price="${i}" type="number" min="0" step="0.01" value="${l.unitPrice}" class="w-20 p-1 border border-slate-300 rounded text-xs text-right bg-white"></td>
             <td class="p-2 text-right font-mono text-slate-700">$${fmtNum(l.qty * l.unitPrice)}</td>
             <td class="p-2 text-center"><button data-cart-del="${i}" class="text-red-500 hover:text-red-700 font-bold px-1">✕</button></td>
@@ -95,11 +79,7 @@ const Sales = {
       document.getElementById('cart-total').textContent = `$${fmtNum(cartTotal())}`;
 
       tbody.querySelectorAll('[data-cart-qty]').forEach(elInp => elInp.addEventListener('input', (e) => {
-        const i = Number(e.target.dataset.cartQty);
-        const max = Number(cart[i].product.stock) || 0;
-        let qty = num(e.target);
-        if (qty > max) qty = max;
-        cart[i].qty = qty;
+        cart[Number(e.target.dataset.cartQty)].qty = Math.max(1, num(e.target));
         renderCart();
       }));
       tbody.querySelectorAll('[data-cart-price]').forEach(elInp => elInp.addEventListener('input', (e) => {
@@ -112,15 +92,15 @@ const Sales = {
       }));
     };
 
-    // --- Selector visual de productos del inventario (foto + stock) ---
+    // --- Selector visual de productos (foto + stock de referencia) ---
     const renderPickerList = () => {
       const list = document.getElementById('pk-list');
       const q = pickerQuery.trim().toLowerCase();
-      const products = Store.getAll('products').filter(p => Number(p.stock) > 0 && (
+      const products = Store.getAll('products').filter(p =>
         !q || [p.sku_briggs, p.sku, p.name].some(v => String(v || '').toLowerCase().includes(q))
-      ));
+      );
       list.innerHTML = products.length === 0
-        ? `<div class="p-4 text-center text-slate-400 text-sm">Sin productos con stock disponible que coincidan.</div>`
+        ? `<div class="p-4 text-center text-slate-400 text-sm">Sin productos que coincidan.</div>`
         : products.map(p => `
           <div class="flex items-center justify-between gap-3 px-3 py-2 border-b border-slate-100 hover:bg-slate-50">
             <div class="flex items-center gap-3 min-w-0">
@@ -139,9 +119,8 @@ const Sales = {
         const p = Store.getById('products', btn.dataset.pick);
         if (!p) return;
         pickerProduct = p;
-        document.getElementById('pk-confirm-name').textContent = `${p.sku_briggs || '—'} — ${p.name || ''} (stock: ${fmtNum(p.stock)})`;
+        document.getElementById('pk-confirm-name').textContent = `${p.sku_briggs || '—'} — ${p.name || ''}`;
         document.getElementById('pk-qty').value = 1;
-        document.getElementById('pk-qty').max = Number(p.stock) || 0;
         document.getElementById('pk-price').value = Number(p.avg_cost) || 0;
         document.getElementById('pk-confirm').classList.remove('hidden');
         document.getElementById('pk-qty').focus();
@@ -167,14 +146,11 @@ const Sales = {
       if (!pickerProduct) return;
       const qty = num(document.getElementById('pk-qty'));
       const unitPrice = num(document.getElementById('pk-price'));
-      if (qty <= 0 || qty > Number(pickerProduct.stock)) { alert(`Cantidad inválida (stock disponible: ${fmtNum(pickerProduct.stock)}).`); return; }
-      if (unitPrice <= 0) { alert('Indica un precio de venta mayor a 0.'); return; }
+      if (qty <= 0) { alert('Indica una cantidad mayor a 0.'); return; }
+      if (unitPrice <= 0) { alert('Indica un precio mayor a 0.'); return; }
       const existing = cart.find(l => l.product.id === pickerProduct.id);
-      if (existing) {
-        existing.qty = Math.min(existing.qty + qty, Number(pickerProduct.stock));
-      } else {
-        cart.push({ product: pickerProduct, qty, unitPrice });
-      }
+      if (existing) existing.qty += qty;
+      else cart.push({ product: pickerProduct, qty, unitPrice });
       closePicker();
       renderCart();
     };
@@ -184,66 +160,63 @@ const Sales = {
         const c = quickAddContact(Store, 'cliente');
         contacts = Store.getAll('contacts');
         e.target.innerHTML = contactOptions(contacts, 'cliente', c ? c.id : '');
-        return;
       }
     };
 
-    // Una venta solo toca Caja/Banco/CxC (debe) e Ingresos por Ventas (haber) —
-    // el inventario es de referencia (stock en products), nunca una cuenta de
-    // activo tocada aquí.
-    const confirmSale = () => {
+    // Un presupuesto no toca el diario ni el stock — es solo un documento
+    // pendiente hasta que se convierte en una venta real.
+    const saveQuote = () => {
       const date = document.getElementById('f-date').value;
-      const paymentId = document.getElementById('f-payment').value;
       const contactId = document.getElementById('f-contact').value;
-      const concepto = document.getElementById('f-concepto').value.trim() || 'Venta';
-      const msgEl = document.getElementById('sale-msg');
+      const concepto = document.getElementById('f-concepto').value.trim();
+      const msgEl = document.getElementById('quote-msg');
       msgEl.textContent = '';
 
-      if (cart.length === 0) { msgEl.textContent = 'Agrega al menos un producto al carrito.'; return; }
+      if (cart.length === 0) { msgEl.textContent = 'Agrega al menos un producto.'; return; }
       if (!date) { msgEl.textContent = 'La fecha es obligatoria.'; return; }
-      if (!paymentId) { msgEl.textContent = 'Selecciona la forma de pago (Efectivo/Banco/Clientes).'; return; }
 
       const contact = contacts.find(c => c.id === contactId);
-      const entidad = contact ? contact.name : '';
-      const paymentAccount = accounts.find(a => a.id === paymentId);
-      const revAccount = revenueAccount();
-      if (!revAccount) { msgEl.textContent = 'Falta la cuenta "Ingresos por Ventas" en el Plan de Cuentas.'; return; }
+      const items = cart.map(l => ({ productId: l.product.id, name: l.product.name, sku_briggs: l.product.sku_briggs, foto_url: l.product.foto_url || '', qty: l.qty, unitPrice: l.unitPrice }));
 
-      const refDoc = `VTA-${Date.now().toString().slice(-6)}`;
-      let allLines = [];
-      for (const l of cart) {
-        const lineConcepto = `${concepto} | ${l.product.name}`;
-        const data = {
-          date, total: l.qty * l.unitPrice, concepto: lineConcepto, entidad, refDoc,
-          paymentAccount, revenueAccount: revAccount,
-          sale: { qty: l.qty, unidad: 'unidades', unitPrice: l.unitPrice }
-        };
-        allLines = allLines.concat(buildIncomeLines(data));
-      }
-
-      const finalLines = withRoundingPlug(allLines, diffAccount(), date, refDoc);
-      Store.postJournalRows(finalLines, { source: 'sale' });
-
-      for (const l of cart) {
-        Store.update('products', { id: l.product.id, stock: (Number(l.product.stock) || 0) - l.qty });
-      }
-
-      if (sourceQuote) {
-        Store.update('quotes', { id: sourceQuote.id, status: 'convertido', converted_ref: refDoc });
-      }
+      Store.insert('quotes', Store.newQuote({
+        date, contact_id: contactId || '', contact_name: contact ? contact.name : '',
+        concepto, items: JSON.stringify(items), total: cartTotal()
+      }));
 
       cart = [];
       document.getElementById('f-contact').value = '';
       document.getElementById('f-concepto').value = '';
       renderCart();
-      renderRecentSales();
+      renderList();
+    };
+
+    const printQuote = (quoteId) => {
+      printingQuote = Store.getById('quotes', quoteId);
+      if (!printingQuote) return;
+      const items = Store.getQuoteItems(printingQuote);
+      document.getElementById('print-quote-number').textContent = printingQuote.quote_number;
+      document.getElementById('print-quote-date').textContent = printingQuote.date;
+      document.getElementById('print-quote-client').textContent = printingQuote.contact_name || '—';
+      document.getElementById('print-quote-concepto').textContent = printingQuote.concepto || '';
+      document.getElementById('print-quote-items').innerHTML = items.map(it => `
+        <tr>
+          <td class="py-2 border-b border-slate-200">${esc(it.name)}</td>
+          <td class="py-2 border-b border-slate-200 text-right">${fmtNum(it.qty)}</td>
+          <td class="py-2 border-b border-slate-200 text-right">$${fmtNum(it.unitPrice)}</td>
+          <td class="py-2 border-b border-slate-200 text-right">$${fmtNum(it.qty * it.unitPrice)}</td>
+        </tr>
+      `).join('');
+      document.getElementById('print-quote-total').textContent = `$${fmtNum(printingQuote.total)}`;
+
+      const navbar = document.getElementById('navbar');
+      if (navbar) navbar.classList.add('print:hidden');
+      window.print();
     };
 
     const body = `
-      ${sourceQuote ? `<div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-800">Carrito precargado desde el presupuesto <strong>${esc(sourceQuote.quote_number)}</strong>.</div>` : ''}
       <div class="${card} space-y-3">
         <div class="flex justify-between items-center">
-          <h2 class="text-sm font-bold text-slate-700">Carrito de Venta</h2>
+          <h2 class="text-sm font-bold text-slate-700">Nuevo Presupuesto</h2>
           <button id="btn-add-product" class="${btnPrimary}">+ Agregar Producto</button>
         </div>
         <table class="w-full text-left text-xs">
@@ -252,48 +225,57 @@ const Sales = {
         </table>
         <div class="text-right text-sm font-bold text-slate-700">Total: <span id="cart-total" class="text-emerald-600"></span></div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
           <div>
             <label class="${label}">Fecha *</label>
             <input id="f-date" type="date" value="${new Date().toISOString().slice(0, 10)}" class="${input}">
           </div>
           <div>
-            <label class="${label}">Forma de Pago *</label>
-            <select id="f-payment" class="${input}">
-              <option value="">— Cuenta —</option>
-              <optgroup label="Efectivo">${accountOptions(byTipoEspecifico('Efectivo'))}</optgroup>
-              <optgroup label="Banco">${accountOptions(byTipoEspecifico('Banco'))}</optgroup>
-              <optgroup label="Crédito (CxC)">${accountOptions(byTipoEspecifico('Clientes'))}</optgroup>
-            </select>
+            <label class="${label}">Cliente</label>
+            <select id="f-contact" class="${input}">${contactOptions(contacts, 'cliente')}</select>
           </div>
           <div>
-            <label class="${label}">Cliente</label>
-            <select id="f-contact" class="${input}">${contactOptions(contacts, 'cliente', sourceQuote ? sourceQuote.contact_id : '')}</select>
-          </div>
-          <div class="sm:col-span-2 lg:col-span-3">
-            <label class="${label}">Concepto</label>
-            <input id="f-concepto" type="text" placeholder="Venta" class="${input}">
+            <label class="${label}">Notas</label>
+            <input id="f-concepto" type="text" placeholder="Venta al mayor…" class="${input}">
           </div>
         </div>
-        <div id="sale-msg" class="text-xs text-red-600"></div>
-        <button id="btn-confirm-sale" class="${btnPrimary}">Confirmar Venta</button>
+        <div id="quote-msg" class="text-xs text-red-600"></div>
+        <button id="btn-save-quote" class="${btnPrimary}">Guardar Presupuesto (Pendiente)</button>
       </div>
 
       <div class="${card}">
-        <h2 class="text-sm font-bold text-slate-700 mb-3">Ventas Recientes</h2>
+        <h2 class="text-sm font-bold text-slate-700 mb-3">Presupuestos</h2>
         <table class="w-full text-left text-xs">
-          <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2">Cliente</th><th class="p-2 text-right">Ítems</th><th class="p-2 text-right">Total</th></tr></thead>
-          <tbody id="sales-tbody"></tbody>
+          <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">N°</th><th class="p-2">Cliente</th><th class="p-2 text-right">Total</th><th class="p-2">Estado</th><th class="p-2 text-center">Acciones</th></tr></thead>
+          <tbody id="quotes-tbody"></tbody>
         </table>
+      </div>
+
+      <!-- Vista imprimible — oculta en pantalla, solo visible al imprimir -->
+      <div id="print-area" class="hidden print:block fixed inset-0 bg-white p-10 z-[9999]">
+        <h1 class="text-2xl font-bold text-slate-900">Maestro de Costo — Presupuesto</h1>
+        <div class="flex justify-between mt-4 text-sm">
+          <div><span class="text-slate-500">N° de Presupuesto:</span> <span id="print-quote-number" class="font-bold"></span></div>
+          <div><span class="text-slate-500">Fecha:</span> <span id="print-quote-date" class="font-bold"></span></div>
+        </div>
+        <div class="mt-2 text-sm"><span class="text-slate-500">Cliente:</span> <span id="print-quote-client" class="font-bold"></span></div>
+        <div class="mt-1 text-sm text-slate-600" id="print-quote-concepto"></div>
+        <table class="w-full text-left text-sm mt-6">
+          <thead><tr class="text-xs font-semibold text-slate-500 uppercase border-b-2 border-slate-300">
+            <th class="py-2">Producto</th><th class="py-2 text-right">Cant.</th><th class="py-2 text-right">Precio Unit.</th><th class="py-2 text-right">Subtotal</th>
+          </tr></thead>
+          <tbody id="print-quote-items"></tbody>
+        </table>
+        <div class="text-right text-lg font-bold mt-4">Total: <span id="print-quote-total"></span></div>
       </div>
     `;
 
-    app.innerHTML = AccountingShell.wrap(AccountingTabs.render('sales'), body) + `
-      <!-- Modal Selector de Productos del Inventario -->
+    app.innerHTML = AccountingShell.wrap(AccountingTabs.render('quotes'), body) + `
+      <!-- Modal Selector de Productos -->
       <div id="product-picker" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-xl p-5 space-y-3 max-h-[90vh] flex flex-col">
           <div class="flex justify-between items-center">
-            <h3 class="text-lg font-bold text-slate-800">Agregar al Carrito</h3>
+            <h3 class="text-lg font-bold text-slate-800">Agregar Producto</h3>
             <button id="pk-close" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
           </div>
           <input id="pk-search" type="text" placeholder="Buscar por SKU o nombre…" class="${input}">
@@ -306,12 +288,12 @@ const Sales = {
                 <input id="pk-qty" type="number" min="1" step="1" class="${input}">
               </div>
               <div>
-                <label class="${label}">Precio de Venta Unit. ($) *</label>
+                <label class="${label}">Precio Unit. ($) *</label>
                 <input id="pk-price" type="number" min="0" step="0.01" class="${input}">
               </div>
             </div>
             <div class="flex justify-end">
-              <button id="pk-add" class="${btnPrimary}">+ Agregar al carrito</button>
+              <button id="pk-add" class="${btnPrimary}">+ Agregar</button>
             </div>
           </div>
         </div>
@@ -319,7 +301,7 @@ const Sales = {
     `;
 
     document.getElementById('btn-add-product').addEventListener('click', openPicker);
-    document.getElementById('btn-confirm-sale').addEventListener('click', confirmSale);
+    document.getElementById('btn-save-quote').addEventListener('click', saveQuote);
     document.getElementById('f-contact').addEventListener('change', handleContactChange);
     document.getElementById('pk-search').addEventListener('input', (e) => { pickerQuery = e.target.value; renderPickerList(); });
     document.getElementById('pk-add').addEventListener('click', addToCart);
@@ -328,12 +310,16 @@ const Sales = {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && !document.getElementById('product-picker').classList.contains('hidden')) closePicker();
     }, { signal });
+    window.addEventListener('afterprint', () => {
+      const navbar = document.getElementById('navbar');
+      if (navbar) navbar.classList.remove('print:hidden');
+    }, { signal });
 
     renderCart();
-    renderRecentSales();
+    renderList();
 
     return () => destroy.abort();
   }
 };
 
-export default Sales;
+export default Quotes;

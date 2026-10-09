@@ -7,9 +7,13 @@ const AccountingTabs = {
       { path: '#/contabilidad/ingresos', key: 'income', label: 'Ingresos' },
       { path: '#/contabilidad/costos', key: 'costs', label: 'Costos' },
       { path: '#/contabilidad/ventas', key: 'sales', label: 'Ventas' },
+      { path: '#/contabilidad/presupuestos', key: 'quotes', label: 'Presupuestos' },
       { path: '#/contabilidad/gastos', key: 'expenses', label: 'Gastos' },
       { path: '#/contabilidad/pagos', key: 'payments', label: 'Pagos' },
+      { path: '#/contabilidad/por-cobrar', key: 'receivables', label: 'Cuentas por Cobrar' },
+      { path: '#/contabilidad/por-pagar', key: 'payables', label: 'Cuentas por Pagar' },
       { path: '#/contabilidad/inventario', key: 'inventory', label: 'Inventario' },
+      { path: '#/contabilidad/contactos', key: 'contacts', label: 'Contactos' },
       { path: '#/contabilidad/diario', key: 'journal', label: 'Diario' },
       { path: '#/contabilidad/mayor', key: 'ledger', label: 'Mayor' }
     ];

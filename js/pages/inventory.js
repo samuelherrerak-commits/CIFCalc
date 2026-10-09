@@ -1,6 +1,7 @@
 import Store from '../store.js';
 import { fmtNum, esc, num } from '../utils.js';
 import { buildReceptionLines, withRoundingPlug } from '../accounting.js';
+import { contactOptions, quickAddContact } from '../components/contact-picker.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { btnPrimary, card, input, label } from '../components/accounting-shell.js';
 
@@ -10,6 +11,7 @@ const Inventory = {
     const { signal } = destroy;
 
     let accounts = Store.getAll('accounts').filter(a => a.is_active !== false);
+    let contacts = Store.getAll('contacts');
     let products = Store.getAll('products');
     let subTab = 'stock';
     let query = '';
@@ -72,7 +74,8 @@ const Inventory = {
       const costTotal = num(document.getElementById('f-cost'));
       const costAccountId = document.getElementById('f-cost-account').value;
       const paymentId = document.getElementById('f-payment').value;
-      const entidad = document.getElementById('f-entidad').value.trim();
+      const contact = contacts.find(c => c.id === document.getElementById('f-contact').value);
+      const entidad = contact ? contact.name : '';
       const msgEl = document.getElementById('reception-msg');
       msgEl.textContent = '';
 
@@ -105,7 +108,7 @@ const Inventory = {
       products = Store.getAll('products');
       document.getElementById('f-qty').value = '';
       document.getElementById('f-cost').value = '';
-      document.getElementById('f-entidad').value = '';
+      document.getElementById('f-contact').value = '';
       renderStock();
       renderReceptionList();
     };
@@ -180,7 +183,7 @@ const Inventory = {
             </div>
             <div>
               <label class="${label}">Proveedor</label>
-              <input id="f-entidad" type="text" class="${input}">
+              <select id="f-contact" class="${input}">${contactOptions(contacts, 'proveedor')}</select>
             </div>
           </div>
           <div id="reception-msg" class="text-xs text-red-600"></div>
@@ -201,6 +204,13 @@ const Inventory = {
 
     document.getElementById('stock-search').addEventListener('input', (e) => { query = e.target.value; renderStock(); });
     document.getElementById('btn-save-reception').addEventListener('click', saveReception);
+    document.getElementById('f-contact').addEventListener('change', (e) => {
+      if (e.target.value === '__new__') {
+        const c = quickAddContact(Store, 'proveedor');
+        contacts = Store.getAll('contacts');
+        e.target.innerHTML = contactOptions(contacts, 'proveedor', c ? c.id : '');
+      }
+    });
 
     const defaultCost = accounts.find(a => a.nombre === 'Costo FOB de Mercancía' && a.tipo === 'Costo');
     if (defaultCost) document.getElementById('f-cost-account').value = defaultCost.id;

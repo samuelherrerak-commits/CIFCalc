@@ -34,13 +34,15 @@ const STORE_KEYS = {
   accounting_settings: 'cif_accounting_settings',
   expense_categories: 'cif_expense_categories',
   sale_concepts: 'cif_sale_concepts',
-  module_settings: 'cif_module_settings'
+  module_settings: 'cif_module_settings',
+  contacts: 'cif_contacts',
+  quotes: 'cif_quotes'
 };
 
 // Tablas que el Web App de Sheets respalda (schemas definidos en Code.gs).
 // Las demás entidades (contabilidad, ventas, gastos) viven en Supabase.
-const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings'];
-const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements'];
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'contacts', 'quotes'];
+const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes'];
 
 function readAll(key) {
   try {
@@ -650,6 +652,8 @@ function seed() {
   if (!localStorage.getItem(STORE_KEYS.expense_categories)) writeAll(STORE_KEYS.expense_categories, []);
   if (!localStorage.getItem(STORE_KEYS.sale_concepts)) writeAll(STORE_KEYS.sale_concepts, []);
   if (!localStorage.getItem(STORE_KEYS.module_settings)) writeAll(STORE_KEYS.module_settings, []);
+  if (!localStorage.getItem(STORE_KEYS.contacts)) writeAll(STORE_KEYS.contacts, []);
+  if (!localStorage.getItem(STORE_KEYS.quotes)) writeAll(STORE_KEYS.quotes, []);
 
   purgeDroppedColumns();
   localStorage.setItem(RETRY_KEY, JSON.stringify(getRetryQueue()));
@@ -974,6 +978,49 @@ const Store = {
 
   saveAccountMapping(map) {
     return this.upsert('accounting_settings', { ...map, id: 'default' });
+  },
+
+  // ============================================
+  // Contactos — directorio único de clientes/proveedores (CRM)
+  // ============================================
+  isContactRifUnique(rif, excludeId = null) {
+    const normalized = String(rif || '').trim().toLowerCase();
+    if (!normalized) return true;
+    return !readAll(STORE_KEYS.contacts).some(c =>
+      c.id !== excludeId && String(c.rif || '').trim().toLowerCase() === normalized
+    );
+  },
+
+  newContact(overrides = {}) {
+    return {
+      rif: '', name: '', type: 'cliente', email: '', phone: '', address: '',
+      ...overrides
+    };
+  },
+
+  // ============================================
+  // Presupuestos — cotizaciones para ventas al mayor, sin impacto contable
+  // hasta que se confirman (ver "Convertir en Venta" en js/pages/quotes.js).
+  // items se guarda siempre como string JSON (no array vivo) para que no
+  // haya diferencia entre lo que trae localStorage y lo que vuelve de Sheets.
+  // ============================================
+  newQuote(overrides = {}) {
+    return {
+      quote_number: `COT-${Date.now().toString().slice(-6)}`,
+      date: new Date().toISOString().slice(0, 10),
+      contact_id: '', contact_name: '', concepto: '',
+      items: '[]', total: 0, status: 'pendiente', converted_ref: '',
+      ...overrides
+    };
+  },
+
+  getQuoteItems(quote) {
+    try {
+      const parsed = JSON.parse(quote.items || '[]');
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   }
 };
 

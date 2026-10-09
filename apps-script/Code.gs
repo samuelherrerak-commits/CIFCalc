@@ -6,7 +6,7 @@
  *  Replica el contrato de datos de Supabase (Postgres) usando esta hoja de
  *  cálculo como almacenamiento. Una hoja = una tabla.
  *
- *  Tablas: companies, suppliers, containers, items, products, accounts, movements
+ *  Tablas: companies, suppliers, containers, items, products, accounts, movements, contacts, quotes
  *
  *  GET  ?table=<t>[&column=<c>&value=<v>]&pt=<token>
  *  POST (body JSON, enviado como text/plain para evitar preflight CORS):
@@ -95,6 +95,20 @@ const SCHEMAS = {
     'id', 'entry_date', 'codigo_cuenta', 'cuenta_contable', 'concepto',
     'debit', 'credit', 'ref_doc', 'entidad', 'source', 'source_ref',
     'created_at', 'updated_at', 'cantidad', 'unidad', 'precio_venta', 'codigo_barra'
+  ],
+  // Directorio único de clientes/proveedores (CRM) — lo usan los selectores de
+  // Ventas, Gastos, Costos, Inventario (Recepción) y las nuevas Cuentas por
+  // Cobrar/Pagar en vez de escribir el nombre a mano.
+  contacts: [
+    'id', 'rif', 'name', 'type', 'email', 'phone', 'address',
+    'created_at', 'updated_at'
+  ],
+  // Presupuestos (cotizaciones) para ventas al mayor — sin impacto contable
+  // hasta que se confirman desde Ventas ("Convertir en Venta"). items es un
+  // JSON string con las líneas del carrito (producto, cantidad, precio).
+  quotes: [
+    'id', 'quote_number', 'date', 'contact_id', 'contact_name', 'concepto',
+    'items', 'total', 'status', 'converted_ref', 'created_at', 'updated_at'
   ]
 };
 

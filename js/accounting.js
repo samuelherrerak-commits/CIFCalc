@@ -217,6 +217,17 @@ export function buildPayableSettlementLines(data) {
   ];
 }
 
+// Entrada genérica de 2 líneas: Debe debitAccount / Haber creditAccount. La
+// usan Cuentas por Cobrar (Debe Caja/Banco, Haber Cuentas por Cobrar) y
+// Cuentas por Pagar — Proveedores (Debe Proveedores por Pagar, Haber Caja/Banco).
+// data = { date, total, concepto, entidad, refDoc, debitAccount, creditAccount }
+export function buildTwoLineEntry(data) {
+  return [
+    line(data.date, data.debitAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
+    line(data.date, data.creditAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
+  ];
+}
+
 // Costo como movimiento propio (no ligado a una venta de inventario): debita
 // la cuenta de costo elegida (uno de los 4 subtipos: Venta/Producto/Logístico/
 // Otros), acredita una cuenta contrapartida cualquiera (Proveedores,
