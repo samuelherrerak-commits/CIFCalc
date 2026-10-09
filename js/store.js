@@ -167,41 +167,29 @@ function mergeRecords(local, remote) {
 }
 
 // ============================================
-// Backend activo (Google Sheets primario / Supabase respaldo)
-// Solo aplica a las tablas con respaldo en Sheets (SHEET_TABLES); las
-// entidades de contabilidad/ventas/gastos no tienen alternativa y siempre
-// usan Supabase directo, sin importar este modo.
+// Conexión con Google Sheets (base de datos principal)
+// Ya no existe un "modo respaldo" que lea de Supabase: si Sheets no responde,
+// la app sigue con lo que tiene en localStorage y reintenta en la próxima
+// sincronización. Leer de Supabase cuando Sheets fallaba mezclaba datos de un
+// esquema viejo (p. ej. el plan de cuentas anterior) con los de Sheets.
+// Supabase queda solo como espejo de escritura (best-effort).
 // ============================================
-const MODE_KEY = 'cif_backend_mode';
-let backendMode = localStorage.getItem(MODE_KEY) === 'supabase' ? 'supabase' : 'sheets';
-let probeCount = 0;
+localStorage.removeItem('cif_backend_mode'); // modo respaldo que pudo quedar guardado
+let sheetsReachable = true;
 
-function getBackend() {
-  return backendMode;
+function isSheetsReachable() {
+  return sheetsReachable;
 }
 
-function notifyBackend() {
+function setSheetsReachable(ok) {
+  if (sheetsReachable === ok) return;
+  sheetsReachable = ok;
+  log(ok
+    ? 'Google Sheets responde de nuevo.'
+    : 'Google Sheets no responde; se trabaja con los datos locales y se reintenta en la próxima sincronización.');
   try {
-    window.dispatchEvent(new CustomEvent('cif-backend', { detail: { backend: backendMode } }));
+    window.dispatchEvent(new CustomEvent('cif-backend', { detail: { sheetsReachable: ok } }));
   } catch (e) { /* noop */ }
-}
-
-function enterSupabaseMode() {
-  if (backendMode !== 'supabase') {
-    backendMode = 'supabase';
-    localStorage.setItem(MODE_KEY, 'supabase');
-    log('Google Sheets no responde, activando respaldo en Supabase.');
-    notifyBackend();
-  }
-}
-
-function exitSupabaseMode() {
-  if (backendMode !== 'sheets') {
-    backendMode = 'sheets';
-    localStorage.removeItem(MODE_KEY);
-    log('Google Sheets responde de nuevo, recuperando modo primario.');
-    notifyBackend();
-  }
 }
 
 // ============================================
@@ -258,8 +246,8 @@ async function processRetryQueue() {
           await Sheets.removeWhere(op.table, op.column, op.value);
         }
       } else {
-        // Supabase: si está caído, esperar la reconexión sin quemar intentos.
-        if (!sb || backendMode === 'sheets') {
+        // Supabase: si no hay cliente, esperar sin quemar intentos.
+        if (!sb) {
           remaining.push(op);
           continue;
         }
@@ -390,57 +378,69 @@ async function sheetsMirrorItems(containerId, newItems) {
 }
 
 // ============================================
-// Adaptador cloud: doble escritura + failover de lectura
+// Adaptador cloud: escritura en Sheets (+ espejo Supabase), lectura solo de Sheets
 // ============================================
-async function getRemoteTable(table) {
-  // Contabilidad/ventas/gastos: sin respaldo en Sheets, siempre Supabase directo.
-  if (!SHEETS_URL || !SHEET_TABLES.includes(table)) {
-    const data = await sbSelectAll(table);
-    return data === null ? [] : data;
-  }
 
-  // Ya estamos en modo respaldo (Sheets caído la última vez que se probó).
-  if (backendMode === 'supabase') {
-    probeCount++;
-    if (probeCount % 5 === 1) {
-      try {
-        await Sheets.select('companies');
-        exitSupabaseMode();
-        return await Sheets.select(table);
-      } catch (e) {
-        // Sheets sigue sin responder, se queda en modo respaldo.
-      }
-    }
-    const data = await sbSelectAll(table);
-    return data === null ? [] : data;
-  }
+// "tabla desconocida" significa que el Apps Script desplegado es una versión
+// anterior a esta app (falta pegar el Code.gs nuevo y redesplegar), no que
+// Sheets esté caído — esa hoja se trata como vacía por ahora.
+function isUnknownSheetError(e) {
+  return /tabla desconocida/i.test(String((e && e.message) || ''));
+}
 
-  // Modo normal: Sheets es la fuente primaria.
+async function sheetsSelectOrEmpty(table) {
   try {
     return await Sheets.select(table);
   } catch (e) {
-    console.warn(`Maestro de Costo: Sheets (${table}) falló, usando respaldo Supabase:`, e.message);
-    enterSupabaseMode();
-    const data = await sbSelectAll(table);
-    return data === null ? [] : data;
+    if (isUnknownSheetError(e)) {
+      console.warn(`Maestro de Costo: la hoja "${table}" no existe en el Apps Script desplegado — pega el Code.gs actualizado y redespliega. Se trata como vacía.`);
+      return [];
+    }
+    throw e;
   }
+}
+
+// Devuelve null si no se pudo leer: esa tabla no se mezcla ni se sube en esta
+// vuelta de sincronización (los datos locales quedan intactos).
+async function getRemoteTable(table) {
+  if (!SHEETS_URL || !SHEET_TABLES.includes(table)) {
+    return sbSelectAll(table);
+  }
+  try {
+    return await sheetsSelectOrEmpty(table);
+  } catch (e) {
+    console.warn(`Maestro de Costo: Sheets (${table}) no respondió, se mantienen los datos locales:`, e.message);
+    return null;
+  }
+}
+
+// Apps Script tiene un límite de ejecuciones simultáneas por hoja de cálculo;
+// pedir todas las tablas a la vez lo agotaba. Se leen de a pocas.
+const SHEETS_READ_CONCURRENCY = 3;
+
+async function mapWithConcurrency(list, limit, fn) {
+  const results = new Array(list.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < list.length) {
+      const i = next++;
+      results[i] = await fn(list[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, worker));
+  return results;
 }
 
 function cloudUpsert(table, record) {
   const records = normalizeEntityRows(table, Array.isArray(record) ? record : [record]);
   const sheetsCapable = SHEETS_URL && SHEET_TABLES.includes(table);
 
-  // Contabilidad/ventas/gastos: sin respaldo en Sheets, solo Supabase.
+  // Tablas sin hoja en Sheets: solo Supabase.
   if (!sheetsCapable) {
     return sb ? sbUpsert(table, records) : Promise.resolve();
   }
 
-  let p = Promise.resolve();
-  if (backendMode === 'sheets') {
-    p = sheetsUpsert(table, records);
-  } else {
-    pushRetry({ type: 'upsert', table, record: records, target: 'sheets' });
-  }
+  const p = sheetsUpsert(table, records);
   sbUpsertSafe(table, records);
   return p;
 }
@@ -453,11 +453,7 @@ function cloudDelete(table, id) {
     return;
   }
 
-  if (backendMode === 'sheets') {
-    sheetsDelete(table, id);
-  } else {
-    pushRetry({ type: 'delete', table, column: 'id', value: id, target: 'sheets' });
-  }
+  sheetsDelete(table, id);
   sbDeleteSafe(table, id);
 }
 
@@ -469,22 +465,13 @@ function cloudDeleteWhere(table, column, value) {
     return;
   }
 
-  if (backendMode === 'sheets') {
-    sheetsDeleteWhere(table, column, value);
-  } else {
-    pushRetry({ type: 'deleteWhere', table, column, value, target: 'sheets' });
-  }
+  sheetsDeleteWhere(table, column, value);
   sbDeleteWhereSafe(table, column, value);
 }
 
 async function cloudSyncContainerItems(containerId, newItems) {
   const cleanItems = normalizeEntityRows('items', newItems);
-  if (backendMode === 'sheets') {
-    await sheetsMirrorItems(containerId, cleanItems);
-  } else {
-    pushRetry({ type: 'deleteWhere', table: 'items', column: 'container_id', value: containerId, target: 'sheets' });
-    if (cleanItems.length) pushRetry({ type: 'upsert', table: 'items', record: cleanItems, target: 'sheets' });
-  }
+  await sheetsMirrorItems(containerId, cleanItems);
   sbSyncContainerItems(containerId, cleanItems);
 }
 
@@ -536,28 +523,69 @@ function sbDeleteWhereSafe(table, column, value) {
 }
 
 // ============================================
-// Sync bidireccional con la nube (Sheets primario, Supabase respaldo)
+// Cuentas del plan contable viejo (columnas code/name en vez de codigo/nombre)
+// que entraron desde el Supabase desactualizado cuando la app caía en "modo
+// respaldo". No son válidas en el modelo actual: se quitan de localStorage, de
+// la cola de reintentos y de la hoja accounts — en Supabase no se tocan.
+// ============================================
+function isLegacyAccount(a) {
+  return !String((a && a.codigo) || '').trim();
+}
+
+function purgeLegacyAccounts() {
+  const rows = readAll(STORE_KEYS.accounts);
+  const legacy = rows.filter(isLegacyAccount);
+  if (legacy.length) {
+    writeAll(STORE_KEYS.accounts, rows.filter(a => !isLegacyAccount(a)));
+    log(`Se quitaron ${legacy.length} cuenta(s) del plan de cuentas viejo que venían de Supabase.`);
+  }
+  const queue = getRetryQueue()
+    .map(op => {
+      if (op.table !== 'accounts' || op.type !== 'upsert') return op;
+      const records = (Array.isArray(op.record) ? op.record : [op.record]).filter(a => !isLegacyAccount(a));
+      return records.length ? { ...op, record: records } : null;
+    })
+    .filter(Boolean);
+  localStorage.setItem(RETRY_KEY, JSON.stringify(queue));
+}
+
+// ============================================
+// Sync bidireccional con Sheets (Supabase solo recibe el espejo de escrituras)
 // ============================================
 async function syncWithCloud() {
   if (!sb && !SHEETS_URL) return;
   try {
-    const remoteAll = {};
-    const results = await Promise.all(ENTITIES.map(async entity => [entity, await getRemoteTable(entity)]));
-    for (const [entity, data] of results) remoteAll[entity] = data;
+    const results = await mapWithConcurrency(ENTITIES, SHEETS_READ_CONCURRENCY,
+      async entity => [entity, await getRemoteTable(entity)]);
 
-    const hasRemoteData = ENTITIES.some(e => remoteAll[e].length > 0);
+    if (SHEETS_URL) {
+      setSheetsReachable(!results.some(([entity, data]) => SHEET_TABLES.includes(entity) && data === null));
+    }
+
+    // Solo se mezclan/suben las tablas que sí se pudieron leer en esta vuelta.
+    const entities = results.filter(([, data]) => data !== null).map(([entity]) => entity);
+    const remoteAll = Object.fromEntries(results.filter(([, data]) => data !== null));
+    if (entities.length === 0) return;
+
+    // Cuentas viejas que hubieran llegado a la hoja accounts: se borran de ahí.
+    if (remoteAll.accounts) {
+      for (const a of remoteAll.accounts.filter(isLegacyAccount)) sheetsDelete('accounts', a.id);
+      remoteAll.accounts = remoteAll.accounts.filter(a => !isLegacyAccount(a));
+    }
+
+    const hasRemoteData = entities.some(e => remoteAll[e].length > 0);
 
     if (!hasRemoteData) {
       const localAll = {};
-      for (const entity of ENTITIES) {
+      for (const entity of entities) {
         localAll[entity] = readAll(STORE_KEYS[entity]);
       }
-      const hasLocalData = ENTITIES.some(e => localAll[e].length > 0);
+      const hasLocalData = entities.some(e => localAll[e].length > 0);
 
       if (hasLocalData) {
-        log('BD remota vacía, subiendo datos locales (Sheets + respaldo Supabase)...');
+        log('BD remota vacía, subiendo datos locales a Sheets...');
         // Subir en orden (padres antes que hijos) y esperar cada entidad para no romper FKs.
-        for (const entity of ENTITIES) {
+        for (const entity of entities) {
           if (localAll[entity].length) await cloudUpsert(entity, localAll[entity]);
         }
         log('Datos locales subidos a la nube');
@@ -568,12 +596,13 @@ async function syncWithCloud() {
       return;
     }
 
-    log(`BD remota tiene datos (${backendMode}), mergeando...`);
-    for (const entity of ENTITIES) {
+    log('BD remota tiene datos, mergeando...');
+    for (const entity of entities) {
       const local = readAll(STORE_KEYS[entity]);
       const remote = remoteAll[entity];
       let merged = mergeRecords(local, remote);
       merged = normalizeEntityRows(entity, merged);
+      if (entity === 'accounts') merged = merged.filter(a => !isLegacyAccount(a));
       writeAll(STORE_KEYS[entity], merged);
 
       let toUpload = merged.filter(m => {
@@ -657,6 +686,7 @@ function seed() {
 
   purgeDroppedColumns();
   localStorage.setItem(RETRY_KEY, JSON.stringify(getRetryQueue()));
+  purgeLegacyAccounts();
 
   if (!seedDone) {
     seedDone = true;
@@ -688,7 +718,7 @@ const Store = {
   seed,
   syncWithCloud,
   processRetryQueue,
-  getBackend,
+  isSheetsReachable,
 
   getAll(key) { return readAll(STORE_KEYS[key]); },
 

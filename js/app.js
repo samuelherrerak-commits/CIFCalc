@@ -4,11 +4,14 @@ import Store from './store.js';
 function syncBadge() {
   const el = document.getElementById('nav-respaldo');
   if (!el) return;
-  const active = Store.getBackend() === 'supabase';
-  el.classList.toggle('hidden', !active);
+  el.classList.toggle('hidden', Store.isSheetsReachable());
 }
 
 window.addEventListener('cif-backend', syncBadge);
+// El navbar se vuelve a pintar en cada cambio de ruta y tras cada sincronización
+// (y el aviso vuelve a "hidden"), así que se reaplica después.
+window.addEventListener('hashchange', () => setTimeout(syncBadge, 0));
+window.addEventListener('cif-data-updated', () => setTimeout(syncBadge, 0));
 
 boot();
 syncBadge();

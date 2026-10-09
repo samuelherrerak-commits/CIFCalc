@@ -228,11 +228,31 @@ function doPost(e) {
 // ---------------------------------------------------------------------------
 
 /**
- * Crea las 5 hojas con sus encabezados si no existen. Idempotente.
+ * Crea las hojas de SCHEMAS con sus encabezados si no existen. Idempotente.
  * Si la fila 1 fue renombrada/borrada, la recrea con los encabezados
- * correctos. Se ejecuta al inicio de cada petición.
+ * correctos.
+ *
+ * Se llama al inicio de cada petición, pero solo trabaja de verdad una vez
+ * cada 6 horas por versión del esquema (CacheService): recorrer las 10 hojas
+ * en cada petición, con la app pidiendo varias tablas a la vez, agotaba el
+ * límite de Google ("Demasiadas invocaciones simultáneas: Hojas de cálculo").
+ * Si cambias SCHEMAS, la firma cambia y se vuelve a ejecutar sola.
  */
 function ensureSheets() {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'ensureSheets_' + schemasSignature_();
+  if (cache.get(cacheKey)) return;
+
+  ensureSheetsNow_();
+  cache.put(cacheKey, '1', 21600);
+}
+
+function schemasSignature_() {
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(SCHEMAS));
+  return Utilities.base64EncodeWebSafe(digest).slice(0, 22);
+}
+
+function ensureSheetsNow_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   Object.keys(SCHEMAS).forEach(function (name) {
