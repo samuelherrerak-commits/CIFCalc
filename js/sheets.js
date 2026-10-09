@@ -18,7 +18,7 @@ const NUMERIC_FIELDS = {
     'fob_unit', 'tariff_rate', 'gain_margin'
   ],
   products: [
-    'units_per_box', 'box_volume', 'weight_kg', 'fob_unit', 'tariff_rate', 'stock', 'avg_cost'
+    'units_per_box', 'box_volume', 'weight_kg', 'fob_unit', 'tariff_rate', 'stock', 'avg_cost', 'sale_price'
   ],
   movements: ['debit', 'credit']
 };

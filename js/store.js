@@ -813,7 +813,11 @@ const Store = {
         const prevCost = Number(product.avg_cost) || 0;
         const newQty = prevQty + c.qty;
         const newAvgCost = newQty > 0 ? ((prevQty * prevCost) + (c.qty * c.costNoVat)) / newQty : 0;
-        this.update('products', { id: product.id, stock: newQty, avg_cost: Math.round(newAvgCost * 100) / 100 });
+        const patch = { id: product.id, stock: newQty, avg_cost: Math.round(newAvgCost * 100) / 100 };
+        // Precio de venta sugerido por la calculadora (costo ÷ (1 − margen)) del
+        // último contenedor; si el ítem no tiene margen se deja el precio que ya había.
+        if (Number(c.item.gain_margin) > 0 && c.salePriceOnCost > 0) patch.sale_price = Math.round(c.salePriceOnCost * 100) / 100;
+        this.update('products', patch);
       }
       this.update('containers', { id: container.id, inventory_posted: true });
     } catch (e) {
@@ -963,7 +967,8 @@ const Store = {
       fob_unit: 0,
       tariff_rate: 0,
       stock: 0,
-      avg_cost: 0
+      avg_cost: 0,
+      sale_price: 0
     };
   },
 

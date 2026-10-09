@@ -108,7 +108,7 @@ const Quotes = {
               <div class="min-w-0">
                 <div class="text-xs font-bold text-blue-700">${esc(p.sku_briggs) || '—'}</div>
                 <div class="text-sm text-slate-800 truncate">${esc(p.name) || ''}</div>
-                <div class="text-xs text-slate-400">Stock: ${fmtNum(p.stock)} · Costo prom.: $${fmtNum(p.avg_cost)}</div>
+                <div class="text-xs text-slate-400">Stock: ${fmtNum(p.stock)} · Costo prom.: $${fmtNum(p.avg_cost)} · Precio: $${fmtNum(p.sale_price)}</div>
               </div>
             </div>
             <button data-pick="${p.id}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg w-8 h-8 flex-shrink-0">+</button>
@@ -121,7 +121,7 @@ const Quotes = {
         pickerProduct = p;
         document.getElementById('pk-confirm-name').textContent = `${p.sku_briggs || '—'} — ${p.name || ''}`;
         document.getElementById('pk-qty').value = 1;
-        document.getElementById('pk-price').value = Number(p.avg_cost) || 0;
+        document.getElementById('pk-price').value = Number(p.sale_price) || Number(p.avg_cost) || 0;
         document.getElementById('pk-confirm').classList.remove('hidden');
         document.getElementById('pk-qty').focus();
       }));
