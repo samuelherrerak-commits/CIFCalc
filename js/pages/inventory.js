@@ -202,7 +202,7 @@ const Inventory = {
     document.getElementById('stock-search').addEventListener('input', (e) => { query = e.target.value; renderStock(); });
     document.getElementById('btn-save-reception').addEventListener('click', saveReception);
 
-    const defaultCost = accounts.find(a => a.nombre === 'Costo de Producto' && a.tipo === 'Costo');
+    const defaultCost = accounts.find(a => a.nombre === 'Costo FOB de Mercancía' && a.tipo === 'Costo');
     if (defaultCost) document.getElementById('f-cost-account').value = defaultCost.id;
 
     renderSubTabs();
