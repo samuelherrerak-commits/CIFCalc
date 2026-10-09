@@ -668,6 +668,7 @@ async function mirrorAllToSheets() {
 // Seed
 // ============================================
 let seedDone = false;
+let firstSyncDone = false; // true cuando terminó la primera sincronización con Sheets
 
 function seed() {
   if (!localStorage.getItem(STORE_KEYS.companies)) writeAll(STORE_KEYS.companies, []);
@@ -696,6 +697,7 @@ function seed() {
     // ya hay en localStorage, y la sincronización corre en segundo plano.
     // Al terminar, se avisa con un evento para que la vista activa se refresque sola.
     syncWithCloud().then(() => {
+      firstSyncDone = true;
       setTimeout(() => {
         mirrorAllToSheets();
         processRetryQueue();
@@ -1083,25 +1085,62 @@ const Store = {
 
   // Elimina contenedores COMPLETADOS (p. ej. de prueba) con todo lo que
   // generaron: sus ítems, su asiento de cierre y sus pagos (líneas con
-  // source_ref = id) y la mercancía que sumaron al inventario. Solo actúa
+  // source_ref = id); luego recalcula el inventario sin ellos. Solo actúa
   // sobre status 'closed': los borradores y "En proceso" nunca se tocan,
   // aunque se pasen sus ids. Opcionalmente borra también las ventas.
+  hasSyncedOnce() { return firstSyncDone; },
+
+  // El inventario es de referencia y tiene solo dos fuentes: entra con los
+  // contenedores completados (cantidad de cada ítem vinculado a un producto)
+  // y sale con las ventas. Devuelve los productos cuya existencia o costo
+  // guardados no coinciden con lo que dicen esas fuentes (p. ej. stock de la
+  // antigua Recepción manual o de contenedores ya eliminados).
+  inventoryAudit() {
+    const products = readAll(STORE_KEYS.products);
+    const inQty = new Map(), inCost = new Map();
+    for (const c of readAll(STORE_KEYS.containers).filter(x => x.status === 'closed')) {
+      for (const calc of computeContainer(c, this.getItemsByContainer(c.id)).calculated) {
+        const pid = calc.item.product_id;
+        if (!pid || !(calc.qty > 0)) continue;
+        inQty.set(pid, (inQty.get(pid) || 0) + calc.qty);
+        inCost.set(pid, (inCost.get(pid) || 0) + calc.qty * calc.costNoVat);
+      }
+    }
+    // Ventas: por SKU (ventas nuevas) o por nombre tras "|" en el concepto.
+    const bySku = new Map(products.filter(p => p.sku_briggs).map(p => [String(p.sku_briggs), p]));
+    const byName = new Map();
+    for (const p of products) { const k = String(p.name || '').trim(); byName.set(k, [...(byName.get(k) || []), p]); }
+    const outQty = new Map();
+    for (const m of readAll(STORE_KEYS.movements)) {
+      if (m.source !== 'sale' || !(Number(m.cantidad) > 0) || !(Number(m.precio_venta) > 0) || !(Number(m.credit) > 0)) continue;
+      let p = m.codigo_barra ? bySku.get(String(m.codigo_barra)) : null;
+      if (!p) {
+        const same = byName.get((String(m.concepto || '').split('|')[1] || '').trim()) || [];
+        p = same.find(x => inQty.has(x.id)) || same[0];
+      }
+      if (p) outQty.set(p.id, (outQty.get(p.id) || 0) + Number(m.cantidad));
+    }
+    const r2 = (n) => Math.round(n * 100) / 100;
+    return products.map(p => {
+      const qIn = inQty.get(p.id) || 0;
+      const expected = Math.max(0, qIn - (outQty.get(p.id) || 0));
+      const expectedCost = expected > 0 && qIn > 0 ? r2(inCost.get(p.id) / qIn) : 0;
+      return { product: p, current: Number(p.stock) || 0, currentCost: Number(p.avg_cost) || 0, expected, expectedCost, inQty: qIn, outQty: outQty.get(p.id) || 0 };
+    }).filter(r => r.current !== r.expected || Math.abs(r.currentCost - r.expectedCost) > 0.01);
+  },
+
+  rebuildInventory() {
+    const rows = this.inventoryAudit();
+    this.updateMany('products', rows.map(r => ({ id: r.product.id, stock: r.expected, avg_cost: r.expectedCost })));
+    notifyDataUpdated();
+    return rows.length;
+  },
+
   deleteCompletedContainers(ids, { deleteSales = false } = {}) {
     const wanted = new Set(ids);
     const targets = readAll(STORE_KEYS.containers).filter(c => wanted.has(c.id) && c.status === 'closed');
     const targetIds = new Set(targets.map(c => c.id));
-    const allItems = readAll(STORE_KEYS.items);
-
-    // 1) Restar del stock lo que cada contenedor sumó al completarse.
-    const minus = new Map();
-    for (const c of targets) {
-      if (!c.inventory_posted) continue;
-      for (const it of allItems.filter(i => i.container_id === c.id && i.product_id)) {
-        minus.set(it.product_id, (minus.get(it.product_id) || 0) + (Number(it.qty) || 0));
-      }
-    }
-
-    // 2) Diario: asientos de cierre y pagos de esos contenedores (y ventas si se pide).
+    // 1) Diario: asientos de cierre y pagos de esos contenedores (y ventas si se pide).
     const movements = readAll(STORE_KEYS.movements);
     const keep = movements.filter(m => !(m.source_ref && targetIds.has(m.source_ref)) && !(deleteSales && m.source === 'sale'));
     const removedLines = movements.length - keep.length;
@@ -1109,39 +1148,11 @@ const Store = {
     for (const id of targetIds) cloudDeleteWhere('movements', 'source_ref', id);
     if (deleteSales) cloudDeleteWhere('movements', 'source', 'sale');
 
-    // 3) Contenedores e ítems.
+    // 2) Contenedores e ítems.
     for (const id of targetIds) this.removeContainer(id);
 
-    // 4) Recalcular existencia y costo promedio de los productos afectados con
-    //    los contenedores completos que quedan (las ventas no cambian el costo).
-    const remaining = readAll(STORE_KEYS.containers).filter(c => c.status === 'closed' && c.inventory_posted);
-    const costAcc = new Map(); // product_id → { qty, cost }
-    for (const c of remaining) {
-      for (const calc of computeContainer(c, this.getItemsByContainer(c.id)).calculated) {
-        const pid = calc.item.product_id;
-        if (!pid || calc.qty <= 0) continue;
-        const a = costAcc.get(pid) || { qty: 0, cost: 0 };
-        a.qty += calc.qty; a.cost += calc.qty * calc.costNoVat;
-        costAcc.set(pid, a);
-      }
-    }
-    const products = readAll(STORE_KEYS.products);
-    const soldByName = new Map();
-    if (deleteSales) {
-      for (const m of movements.filter(x => x.source === 'sale' && Number(x.cantidad) > 0 && Number(x.precio_venta) > 0 && Number(x.credit) > 0)) {
-        const name = (String(m.concepto || '').split('|')[1] || '').trim();
-        soldByName.set(name, (soldByName.get(name) || 0) + Number(m.cantidad));
-      }
-    }
-    const patches = [];
-    for (const p of products) {
-      const back = deleteSales ? (soldByName.get(p.name) || 0) : 0;
-      if (!minus.has(p.id) && !back) continue;
-      const stock = Math.max(0, (Number(p.stock) || 0) - (minus.get(p.id) || 0) + back);
-      const a = costAcc.get(p.id);
-      const avg = stock > 0 && a && a.qty > 0 ? Math.round((a.cost / a.qty) * 100) / 100 : (stock > 0 ? Number(p.avg_cost) || 0 : 0);
-      patches.push({ id: p.id, stock, avg_cost: avg });
-    }
+    // 3) Recalcular el inventario completo desde sus únicas fuentes.
+    const patches = this.inventoryAudit().map(r => ({ id: r.product.id, stock: r.expected, avg_cost: r.expectedCost }));
     this.updateMany('products', patches);
 
     if (deleteSales) {
