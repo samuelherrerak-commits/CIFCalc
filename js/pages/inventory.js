@@ -175,6 +175,7 @@ const Inventory = {
             <input id="stock-search" type="text" placeholder="Buscar producto…" class="${input}" style="width:220px">
           </div>
         </div>
+        <div id="stock-audit"></div>
         <div id="stock-summary" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"></div>
         <div class="overflow-x-auto">
         <table class="w-full text-left text-xs">
@@ -216,6 +217,43 @@ const Inventory = {
     document.getElementById('stock-only').addEventListener('change', (e) => { onlyInStock = e.target.checked; renderStock(); }, { signal });
 
     renderSubTabs();
+    // Existencia que no viene de contenedores completados ni de ventas (p. ej.
+    // de la antigua Recepción manual o de contenedores ya eliminados).
+    const renderAudit = () => {
+      const rows = Store.inventoryAudit();
+      const el = document.getElementById('stock-audit');
+      if (rows.length === 0) { el.innerHTML = ''; return; }
+      const ready = Store.hasSyncedOnce() || !Store.isSheetsReachable();
+      el.innerHTML = `
+        <div class="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div>
+              <p class="text-sm font-bold text-amber-800">⚠ ${rows.length} producto(s) tienen existencia o costo que no vienen de ningún contenedor completado ni venta</p>
+              <p class="text-xs text-amber-700">El inventario solo se alimenta de contenedores completados y se rebaja con las ventas. Esto suele ser stock de la antigua recepción manual o de contenedores ya eliminados.</p>
+            </div>
+            <button id="btn-rebuild" ${ready ? '' : 'disabled'} class="flex-shrink-0 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm">${ready ? 'Corregir inventario' : 'Sincronizando con Sheets…'}</button>
+          </div>
+          <div class="max-h-56 overflow-y-auto rounded-lg border border-amber-200 bg-white">
+            <table class="w-full text-left text-xs">
+              <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Producto</th><th class="p-2 text-right">Tiene</th><th class="p-2 text-right">Debería tener</th><th class="p-2">Origen</th></tr></thead>
+              <tbody>${rows.map(r => `
+                <tr class="border-t border-slate-100">
+                  <td class="p-2"><div class="font-semibold text-slate-700">${esc(r.product.name)}</div><div class="text-[10px] font-mono text-slate-400">${esc(r.product.sku_briggs)}</div></td>
+                  <td class="p-2 text-right font-mono text-red-600">${fmtInt(r.current)} <span class="text-slate-400">· $${fmtNum(r.currentCost)}</span></td>
+                  <td class="p-2 text-right font-mono font-bold text-emerald-700">${fmtInt(r.expected)} <span class="font-normal text-slate-400">· $${fmtNum(r.expectedCost)}</span></td>
+                  <td class="p-2 text-slate-500">${fmtInt(r.inQty)} de contenedores completados − ${fmtInt(r.outQty)} vendidas</td>
+                </tr>`).join('')}</tbody>
+            </table>
+          </div>
+        </div>`;
+      const btn = document.getElementById('btn-rebuild');
+      if (btn) btn.addEventListener('click', () => {
+        if (!confirm(`Se ajustará la existencia y el costo de ${rows.length} producto(s) a lo que dicen los contenedores completados y las ventas.\n\nTambién se guarda en Google Sheets. ¿Continuar?`)) return;
+        const n = Store.rebuildInventory();
+        alert(`Listo: ${n} producto(s) corregidos.`);
+      });
+    };
+    renderAudit();
     renderSummary();
     renderStock();
     renderHistory();

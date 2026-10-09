@@ -221,7 +221,7 @@ const Sales = {
         allLines = allLines.concat(buildIncomeLines({
           date, total: l.qty * l.unitPrice, concepto: `${concepto} | ${l.product.name}`, entidad, refDoc,
           paymentAccount, revenueAccount: revAccount,
-          sale: { qty: l.qty, unidad: 'unidades', unitPrice: l.unitPrice }
+          sale: { qty: l.qty, unidad: 'unidades', unitPrice: l.unitPrice, codigo: l.product.sku_briggs || '' }
         }));
       }
       Store.postJournalRows(withRoundingPlug(allLines, diffAccount(), date, refDoc), { source: 'sale' });

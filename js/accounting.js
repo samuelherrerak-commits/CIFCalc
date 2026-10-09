@@ -218,7 +218,7 @@ export function buildIncomeLines(data) {
   return [
     line(data.date, data.paymentAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
     line(data.date, data.revenueAccount, 0, data.total, data.concepto, data.refDoc, data.entidad,
-      data.sale ? { cantidad: data.sale.qty, unidad: data.sale.unidad || 'unidades', precio_venta: data.sale.unitPrice } : null)
+      data.sale ? { cantidad: data.sale.qty, unidad: data.sale.unidad || 'unidades', precio_venta: data.sale.unitPrice, codigo_barra: data.sale.codigo || '' } : null)
   ];
 }
 
