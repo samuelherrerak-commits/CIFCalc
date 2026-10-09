@@ -61,6 +61,16 @@ const Calculator = {
       if (changed) Store.saveContainerWithItems(container, items);
     }
 
+    // Respaldo: si el contenedor ya está completo pero el inventario o el
+    // asiento de cierre quedaron pendientes (p. ej. el mapeo contable no
+    // estaba listo cuando se completó), se reintentan solos al abrir la
+    // página — ambos son idempotentes, no duplican nada si ya se hicieron.
+    if (container.status === 'closed') {
+      Store.postInventoryForContainer(container, items);
+      Store.postClosingJournalForContainer(container, items);
+      container = Store.getById('containers', containerId) || container;
+    }
+
     const supplierName = (id) => {
       const s = Store.getById('suppliers', id);
       return s ? s.name : '';
@@ -188,6 +198,9 @@ const Calculator = {
 
     const save = async () => {
       await Store.saveContainerWithItems(container, items);
+      const stored = Store.getById('containers', containerId);
+      if (stored) container = { ...container, inventory_posted: stored.inventory_posted };
+      renderStatus();
       const statusEl = document.getElementById('save-status');
       if (statusEl) {
         statusEl.textContent = '✓ Guardado';
@@ -409,6 +422,7 @@ const Calculator = {
             <div class="flex items-center gap-2">
               <label class="text-xs font-semibold text-slate-600">Estado:</label>
               <span id="status-badge" class="inline-block px-2 py-1 rounded-full text-xs font-semibold"></span>
+              <span id="closing-status-note" class="text-xs"></span>
             </div>
           </div>
         </div>
@@ -713,6 +727,15 @@ const Calculator = {
           btn.setAttribute('disabled', 'disabled');
         }
         btn.classList.remove('hidden');
+      }
+      const note = document.getElementById('closing-status-note');
+      if (note) {
+        if (container.status === 'closed' && !Store.hasClosingJournal(containerId)) {
+          note.textContent = '⚠ El inventario ya se registró, pero falta el asiento contable — carga el catálogo sugerido en Contabilidad > Cuentas y vuelve a abrir este contenedor.';
+          note.className = 'text-xs text-amber-600';
+        } else {
+          note.textContent = '';
+        }
       }
       renderLockState();
     };
