@@ -149,6 +149,9 @@ const Accounts = {
         });
       }
       accounts = Store.getAll('accounts');
+      // Deja guardado el mapeo de cierre por defecto (cada concepto a su cuenta
+      // de Costo) para que también quede escrito en la hoja accounting_settings.
+      Store.saveAccountMapping(Store.getAccountMapping());
       renderGroups();
       renderMappingSelects();
     };
@@ -200,7 +203,7 @@ const Accounts = {
       <div class="${card} space-y-3">
         <div>
           <h2 class="text-sm font-bold text-slate-700">Mapeo Contable — Cierre de Contenedores</h2>
-          <p class="text-xs text-slate-400">Define a qué cuenta de tipo Costo va cada concepto del Maestro de Costo cuando completas un contenedor (el inventario es solo de referencia, no se mapea aquí). Si falta algún campo, no se genera el asiento automático hasta que completes el mapeo.</p>
+          <p class="text-xs text-slate-400">Ya viene mapeado por defecto: cada concepto de la Calculadora va a su propia cuenta de Costo, el IVA a IVA Acreditable y el total a Contenedores por Pagar. Solo cámbialo si quieres otra cuenta.</p>
         </div>
         <div id="mapping-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
         <div class="flex items-center gap-3">

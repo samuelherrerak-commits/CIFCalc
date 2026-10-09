@@ -109,6 +109,39 @@ export const CLOSING_MAPPING_FIELDS = [
   { key: 'payable_account_id', label: 'Contrapartida — Contenedores por Pagar' }
 ];
 
+// Mapeo por defecto (por código del catálogo sugerido): cada concepto de la
+// Calculadora va a su propia cuenta de Costo, el IVA a IVA Acreditable y la
+// contrapartida a Contenedores por Pagar. Lo guardado en Cuentas solo lo
+// sobrescribe campo por campo.
+export const DEFAULT_CLOSING_MAPPING_CODES = {
+  fob_account_id: '5.1.01.01',
+  ocean_freight_account_id: '5.1.02.01',
+  insurance_account_id: '5.1.03.01',
+  tariff_account_id: '5.1.04.01',
+  port_fee_account_id: '5.1.05.01',
+  customs_broker_account_id: '5.1.06.01',
+  other_account_id: '5.1.07.01',
+  vat_account_id: '1.1.03.01',
+  payable_account_id: '2.1.01.01'
+};
+
+export function resolveClosingMapping(stored, accounts) {
+  const active = (accounts || []).filter(a => a.is_active !== false);
+  const byId = new Map(active.map(a => [a.id, a]));
+  const byCodigo = new Map(active.map(a => [String(a.codigo), a]));
+  const resolved = {};
+  for (const f of CLOSING_MAPPING_FIELDS) {
+    const storedId = stored && stored[f.key];
+    if (storedId && byId.has(storedId)) {
+      resolved[f.key] = storedId;
+    } else {
+      const def = byCodigo.get(DEFAULT_CLOSING_MAPPING_CODES[f.key]);
+      resolved[f.key] = def ? def.id : null;
+    }
+  }
+  return resolved;
+}
+
 export function isClosingMappingComplete(mapping) {
   if (!mapping) return false;
   return CLOSING_MAPPING_FIELDS.every(f => mapping[f.key]);
@@ -193,17 +226,6 @@ export function buildIncomeLines(data) {
 export function buildExpenseLines(data) {
   return [
     line(data.date, data.expenseAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
-    line(data.date, data.paymentAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
-  ];
-}
-
-// Recepción de mercancía: debita una cuenta de Costo (el inventario físico es
-// solo de referencia, no una cuenta de activo) y acredita la forma de pago.
-// data = { date, total, concepto, entidad, refDoc, paymentAccount (Efectivo/Banco/Proveedores), costAccount, qty, unidad, codigo_barra }
-export function buildReceptionLines(data) {
-  const costExtra = { cantidad: data.qty || 0, unidad: data.unidad || 'unidades', codigo_barra: data.codigo_barra || '' };
-  return [
-    line(data.date, data.costAccount, data.total, 0, data.concepto, data.refDoc, data.entidad, costExtra),
     line(data.date, data.paymentAccount, 0, data.total, data.concepto, data.refDoc, data.entidad)
   ];
 }

@@ -2,7 +2,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase-config.js';
 import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
 import { computeContainer } from './utils.js';
-import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete } from './accounting.js';
+import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping } from './accounting.js';
 
 // ============================================
 // Supabase client (singleton) — backend primario
@@ -42,7 +42,7 @@ const STORE_KEYS = {
 // Tablas que el Web App de Sheets respalda (schemas definidos en Code.gs).
 // Las demás entidades (contabilidad, ventas, gastos) viven en Supabase.
 const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'contacts', 'quotes'];
-const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes'];
+const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes', 'accounting_settings'];
 
 function readAll(key) {
   try {
@@ -731,6 +731,9 @@ const Store = {
   async saveContainerWithItems(container, items) {
     const prev = container.id ? readAll(STORE_KEYS.containers).find(x => x.id === container.id) : null;
     const prevStatus = prev ? prev.status : null;
+    // La pantalla guarda su propia copia del contenedor; nunca debe pisar un
+    // inventory_posted ya en true (si no, al reabrirlo se volvería a sumar el stock).
+    if (prev && prev.inventory_posted) container = { ...container, inventory_posted: true };
 
     let c;
     if (container.id && readAll(STORE_KEYS.containers).some(x => x.id === container.id)) {
@@ -998,8 +1001,10 @@ const Store = {
   // Fila única de configuración (id fijo 'default'), excepción documentada al uso normal de uuid.
   // Mapeo de cuentas para el asiento automático de cierre de contenedores — sin relación con el
   // catálogo unificado más allá de que ahora apunta a cuentas de ese mismo catálogo.
+  // Lo guardado en Cuentas, completado campo por campo con el mapeo por
+  // defecto del catálogo sugerido (ver DEFAULT_CLOSING_MAPPING_CODES).
   getAccountMapping() {
-    return this.getById('accounting_settings', 'default');
+    return resolveClosingMapping(this.getById('accounting_settings', 'default'), readAll(STORE_KEYS.accounts));
   },
 
   saveAccountMapping(map) {

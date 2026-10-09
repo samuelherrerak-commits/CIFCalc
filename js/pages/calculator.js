@@ -198,6 +198,9 @@ const Calculator = {
 
     const save = async () => {
       await Store.saveContainerWithItems(container, items);
+      const stored = Store.getById('containers', containerId);
+      if (stored) container = { ...container, inventory_posted: stored.inventory_posted };
+      renderStatus();
       const statusEl = document.getElementById('save-status');
       if (statusEl) {
         statusEl.textContent = '✓ Guardado';
@@ -728,7 +731,7 @@ const Calculator = {
       const note = document.getElementById('closing-status-note');
       if (note) {
         if (container.status === 'closed' && !Store.hasClosingJournal(containerId)) {
-          note.textContent = '⚠ El inventario ya se registró, pero falta el asiento contable — completa el mapeo en Contabilidad > Cuentas.';
+          note.textContent = '⚠ El inventario ya se registró, pero falta el asiento contable — carga el catálogo sugerido en Contabilidad > Cuentas y vuelve a abrir este contenedor.';
           note.className = 'text-xs text-amber-600';
         } else {
           note.textContent = '';
