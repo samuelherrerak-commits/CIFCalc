@@ -80,7 +80,7 @@ const SCHEMAS = {
     'id', 'sku_briggs', 'sku', 'name', 'supplier_id', 'origin_country',
     'units_per_box', 'box_volume', 'weight_kg', 'hs_code', 'fob_unit',
     'tariff_rate', 'created_at', 'updated_at', 'foto_url', 'foto_file_id',
-    'stock', 'avg_cost'
+    'stock', 'avg_cost', 'sale_price'
   ],
   // Catálogo de cuentas unificado (estilo LegalYa): códigos jerárquicos con punto,
   // tipo inferido del primer dígito (1=Activo..6=Gasto). tipo_especifico es lo que
@@ -112,7 +112,8 @@ const SCHEMAS = {
   // JSON string con las líneas del carrito (producto, cantidad, precio).
   quotes: [
     'id', 'quote_number', 'date', 'contact_id', 'contact_name', 'concepto',
-    'items', 'total', 'status', 'converted_ref', 'created_at', 'updated_at'
+    'items', 'total', 'status', 'converted_ref', 'created_at', 'updated_at',
+    'valid_until'
   ],
   // Mapeo contable del cierre de contenedores (una sola fila, id = 'default').
   // Cada columna guarda el id de la cuenta a la que va ese concepto; si una
@@ -121,7 +122,10 @@ const SCHEMAS = {
     'id', 'fob_account_id', 'ocean_freight_account_id', 'insurance_account_id',
     'tariff_account_id', 'port_fee_account_id', 'customs_broker_account_id',
     'other_account_id', 'vat_account_id', 'payable_account_id',
-    'created_at', 'updated_at'
+    'created_at', 'updated_at',
+    // Datos de la empresa para los presupuestos y notas de venta impresos.
+    'issuer_name', 'issuer_rif', 'issuer_address', 'issuer_phone',
+    'issuer_email', 'issuer_logo', 'quote_terms'
   ]
 };
 
@@ -228,11 +232,31 @@ function doPost(e) {
 // ---------------------------------------------------------------------------
 
 /**
- * Crea las 5 hojas con sus encabezados si no existen. Idempotente.
+ * Crea las hojas de SCHEMAS con sus encabezados si no existen. Idempotente.
  * Si la fila 1 fue renombrada/borrada, la recrea con los encabezados
- * correctos. Se ejecuta al inicio de cada petición.
+ * correctos.
+ *
+ * Se llama al inicio de cada petición, pero solo trabaja de verdad una vez
+ * cada 6 horas por versión del esquema (CacheService): recorrer las 10 hojas
+ * en cada petición, con la app pidiendo varias tablas a la vez, agotaba el
+ * límite de Google ("Demasiadas invocaciones simultáneas: Hojas de cálculo").
+ * Si cambias SCHEMAS, la firma cambia y se vuelve a ejecutar sola.
  */
 function ensureSheets() {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'ensureSheets_' + schemasSignature_();
+  if (cache.get(cacheKey)) return;
+
+  ensureSheetsNow_();
+  cache.put(cacheKey, '1', 21600);
+}
+
+function schemasSignature_() {
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, JSON.stringify(SCHEMAS));
+  return Utilities.base64EncodeWebSafe(digest).slice(0, 22);
+}
+
+function ensureSheetsNow_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
   Object.keys(SCHEMAS).forEach(function (name) {

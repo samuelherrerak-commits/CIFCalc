@@ -30,6 +30,7 @@ const routes = [
   { pattern: /^#\/contabilidad\/ventas\/?$/, handler: 'sales', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/ventas\/([^/]+)$/, handler: 'sales', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/presupuestos\/?$/, handler: 'quotes', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/presupuestos\/([^/]+)$/, handler: 'quotes', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/gastos\/?$/, handler: 'expenses', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/pagos\/?$/, handler: 'payments', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/por-cobrar\/?$/, handler: 'receivables', key: 'contabilidad' },

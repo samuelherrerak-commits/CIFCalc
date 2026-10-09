@@ -133,25 +133,54 @@ const Accounts = {
       renderMappingSelects();
     };
 
+    // Deja el plan de cuentas exactamente igual al catálogo sugerido: crea las
+    // que falten, corrige nombre/tipo de las que ya existen con ese código, y
+    // quita las que no son del catálogo (desactivándolas si ya tienen
+    // movimientos, para no romper el historial). Hace falta porque borrar filas
+    // en la hoja no las borra del navegador, y la sincronización las volvería a subir.
     const loadSeed = () => {
-      const existingCodes = new Set(accounts.map(a => String(a.codigo)));
-      const toCreate = CHART_OF_ACCOUNTS.filter(s => !existingCodes.has(s.codigo));
-      if (toCreate.length === 0) {
-        alert('El catálogo sugerido ya está cargado por completo.');
+      const catalogCodes = new Set(CHART_OF_ACCOUNTS.map(s => s.codigo));
+      const byCodigo = new Map(accounts.map(a => [String(a.codigo), a]));
+      const toCreate = CHART_OF_ACCOUNTS.filter(s => !byCodigo.has(s.codigo));
+      const toFix = CHART_OF_ACCOUNTS.filter(s => {
+        const a = byCodigo.get(s.codigo);
+        const tipo = inferirTipo(s.codigo);
+        return a && (a.nombre !== s.nombre || a.tipo !== tipo || a.tipo_especifico !== s.tipo_especifico || a.is_active === false);
+      });
+      const extras = accounts.filter(a => !catalogCodes.has(String(a.codigo)));
+      const extrasToDeactivate = extras.filter(a => hasMovements(a.id) && a.is_active !== false);
+      const extrasToDelete = extras.filter(a => !hasMovements(a.id));
+
+      if (!toCreate.length && !toFix.length && !extrasToDeactivate.length && !extrasToDelete.length) {
+        alert('El plan de cuentas ya es igual al catálogo sugerido.');
         return;
       }
-      if (!confirm(`Se crearán ${toCreate.length} cuenta(s) sugerida(s). ¿Continuar?`)) return;
-      for (const s of toCreate) {
+      const resumen = [
+        toCreate.length && `crear ${toCreate.length}`,
+        toFix.length && `corregir ${toFix.length}`,
+        extrasToDelete.length && `quitar ${extrasToDelete.length} cuenta(s) fuera del catálogo`,
+        extrasToDeactivate.length && `desactivar ${extrasToDeactivate.length} cuenta(s) fuera del catálogo que ya tienen movimientos`
+      ].filter(Boolean).join(', ');
+      if (!confirm(`Se dejará el plan de cuentas igual al catálogo sugerido (${CHART_OF_ACCOUNTS.length} cuentas): ${resumen}. ¿Continuar?`)) return;
+
+      for (const s of CHART_OF_ACCOUNTS) {
         const tipo = inferirTipo(s.codigo);
-        Store.insert('accounts', {
-          codigo: s.codigo, nombre: s.nombre, tipo, tipo_especifico: s.tipo_especifico,
-          naturaleza: naturalezaForTipo(tipo), is_active: true
-        });
+        const fields = { codigo: s.codigo, nombre: s.nombre, tipo, tipo_especifico: s.tipo_especifico, naturaleza: naturalezaForTipo(tipo), is_active: true };
+        const existing = byCodigo.get(s.codigo);
+        if (existing) {
+          if (toFix.includes(s)) Store.update('accounts', { id: existing.id, ...fields });
+        } else {
+          Store.insert('accounts', fields);
+        }
       }
+      for (const a of extrasToDelete) Store.remove('accounts', a.id);
+      for (const a of extrasToDeactivate) Store.update('accounts', { id: a.id, is_active: false });
+
       accounts = Store.getAll('accounts');
-      // Deja guardado el mapeo de cierre por defecto (cada concepto a su cuenta
-      // de Costo) para que también quede escrito en la hoja accounting_settings.
-      Store.saveAccountMapping(Store.getAccountMapping());
+      // Mapeo de cierre por defecto (cada concepto a su cuenta de Costo), guardado
+      // también en la hoja accounting_settings. Lo guardado antes apuntaba a
+      // cuentas que pudieron cambiar, así que se recalcula desde cero.
+      Store.saveAccountMapping(Store.getDefaultAccountMapping());
       renderGroups();
       renderMappingSelects();
     };
@@ -193,7 +222,7 @@ const Accounts = {
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
         <h2 class="text-sm font-bold text-slate-700">Plan de Cuentas</h2>
         <div class="flex items-center gap-2">
-          <button id="btn-seed" class="${btnSecondary}">Cargar catálogo sugerido</button>
+          <button id="btn-seed" class="${btnSecondary}">Cargar / restablecer catálogo sugerido</button>
           <button id="btn-new-account" class="${btnPrimary}">+ Nueva Cuenta</button>
         </div>
       </div>
