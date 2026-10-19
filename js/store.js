@@ -218,8 +218,9 @@ function isRetryableError(e) {
 // directamente en Sheets. Cada navegador descarta UNA vez su copia local de
 // productos (y los reintentos pendientes de productos) para no volver a subir
 // productos viejos o duplicados: la sincronización sin borrados los
-// resucitaría. Los contenedores e ítems no se tocan.
-const CATALOG_VERSION = '2026-10-09-maestro';
+// resucitaría. Los contenedores e ítems no se tocan. Si el catálogo se vuelve a
+// cargar en Sheets, cambiar esta versión para que todos descarten su copia otra vez.
+const CATALOG_VERSION = '2026-10-19-maestro';
 function resetLocalCatalogOnce() {
   if (localStorage.getItem('cif_catalog_version') === CATALOG_VERSION) return;
   writeAll(STORE_KEYS.products, []);
