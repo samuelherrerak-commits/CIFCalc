@@ -218,8 +218,9 @@ function isRetryableError(e) {
 // directamente en Sheets. Cada navegador descarta UNA vez su copia local de
 // productos (y los reintentos pendientes de productos) para no volver a subir
 // productos viejos o duplicados: la sincronización sin borrados los
-// resucitaría. Los contenedores e ítems no se tocan.
-const CATALOG_VERSION = '2026-10-09-maestro';
+// resucitaría. Los contenedores e ítems no se tocan. Si el catálogo se vuelve a
+// cargar en Sheets, cambiar esta versión para que todos descarten su copia otra vez.
+const CATALOG_VERSION = '2026-10-19-maestro';
 function resetLocalCatalogOnce() {
   if (localStorage.getItem('cif_catalog_version') === CATALOG_VERSION) return;
   writeAll(STORE_KEYS.products, []);
@@ -548,6 +549,27 @@ function isLegacyAccount(a) {
   return !String((a && a.codigo) || '').trim();
 }
 
+// Producto sin SKU Briggs: el formulario siempre lo exige, así que una fila así
+// es basura (p. ej. las filas que quedaron solo con foto tras una importación
+// fallida). Se trata igual que una cuenta vieja: no se guarda ni se sube, y se
+// borra de la hoja products.
+function isEmptyProduct(p) {
+  return !String((p && p.sku_briggs) || '').trim();
+}
+
+function purgeEmptyProducts() {
+  const rows = readAll(STORE_KEYS.products);
+  if (rows.some(isEmptyProduct)) writeAll(STORE_KEYS.products, rows.filter(p => !isEmptyProduct(p)));
+  const queue = getRetryQueue()
+    .map(op => {
+      if (op.table !== 'products' || op.type !== 'upsert') return op;
+      const records = (Array.isArray(op.record) ? op.record : [op.record]).filter(p => !isEmptyProduct(p));
+      return records.length ? { ...op, record: records } : null;
+    })
+    .filter(Boolean);
+  localStorage.setItem(RETRY_KEY, JSON.stringify(queue));
+}
+
 function purgeLegacyAccounts() {
   const rows = readAll(STORE_KEYS.accounts);
   const legacy = rows.filter(isLegacyAccount);
@@ -588,6 +610,11 @@ async function syncWithCloud() {
       for (const a of remoteAll.accounts.filter(isLegacyAccount)) sheetsDelete('accounts', a.id);
       remoteAll.accounts = remoteAll.accounts.filter(a => !isLegacyAccount(a));
     }
+    if (remoteAll.products) {
+      const empty = remoteAll.products.filter(isEmptyProduct);
+      if (empty.length) mapWithConcurrency(empty, 2, p => sheetsDelete('products', p.id));
+      remoteAll.products = remoteAll.products.filter(p => !isEmptyProduct(p));
+    }
 
     const hasRemoteData = entities.some(e => remoteAll[e].length > 0);
 
@@ -619,6 +646,7 @@ async function syncWithCloud() {
       let merged = mergeRecords(local, remote);
       merged = normalizeEntityRows(entity, merged);
       if (entity === 'accounts') merged = merged.filter(a => !isLegacyAccount(a));
+      if (entity === 'products') merged = merged.filter(p => !isEmptyProduct(p));
       writeAll(STORE_KEYS[entity], merged);
 
       let toUpload = merged.filter(m => {
@@ -705,6 +733,7 @@ function seed() {
   localStorage.setItem(RETRY_KEY, JSON.stringify(getRetryQueue()));
   purgeLegacyAccounts();
   resetLocalCatalogOnce();
+  purgeEmptyProducts();
 
   if (!seedDone) {
     seedDone = true;
