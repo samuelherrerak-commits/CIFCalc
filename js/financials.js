@@ -275,10 +275,37 @@ export function periodBounds(kind, year, month, from, to) {
   return { from, to, pFrom: addDays(from, -len), pTo: addDays(from, -1), label: `${from} al ${to}`, pLabel: `${addDays(from, -len)} al ${addDays(from, -1)}` };
 }
 
+// Datos que distorsionan el costo de ventas: asientos de cierre cuyo contenedor
+// no está completo (o ya no existe) y productos de contenedores completos que no
+// están vinculados al catálogo (su costo no entra al inventario).
+function dataIssues(movements, to) {
+  const containers = new Map(Store.getAll('containers').map(c => [c.id, c]));
+  let orphanTotal = 0;
+  const orphanNames = new Set();
+  for (const m of movements) {
+    if (m.source !== 'container_close' || String(m.entry_date).slice(0, 10) > to) continue;
+    const c = containers.get(m.source_ref);
+    if (c && c.status === 'closed') continue;
+    if (String(m.codigo_cuenta).startsWith('5')) orphanTotal += Number(m.debit) || 0; // solo lo que va a costo
+    orphanNames.add(c ? (c.bl_number || 'sin BL') : 'contenedor eliminado');
+  }
+  const products = new Set(Store.getAll('products').map(p => p.id));
+  const closedWithEntry = new Set(movements.filter(m => m.source === 'container_close').map(m => m.source_ref));
+  let unlinkedCost = 0;
+  for (const c of containers.values()) {
+    if (c.status !== 'closed' || !closedWithEntry.has(c.id)) continue;
+    for (const calc of computeContainer(c, Store.getItemsByContainer(c.id)).calculated) {
+      if (!calc.item.product_id || !products.has(calc.item.product_id)) unlinkedCost += calc.qty * calc.costNoVat;
+    }
+  }
+  return { orphanTotal: r2(orphanTotal), orphanNames: [...orphanNames], unlinkedCost: r2(unlinkedCost) };
+}
+
 export function buildStatements(p) {
   const movements = Store.getAll('movements');
   const info = accountsInfo();
   return {
+    issues: dataIssues(movements, p.to),
     p,
     bs: balanceSheet(movements, info, p.to, p.from),
     bsPrev: balanceSheet(movements, info, p.pTo, p.pFrom),
