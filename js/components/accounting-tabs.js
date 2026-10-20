@@ -40,7 +40,8 @@ export const ACCOUNTING_SECTIONS = [
   { title: 'Libros contables', items: [
     { key: 'accounts', path: '#/contabilidad/cuentas', label: 'Plan de Cuentas', icon: '📚', color: 'slate' },
     { key: 'journal', path: '#/contabilidad/diario', label: 'Libro Diario', icon: '📓', color: 'slate' },
-    { key: 'ledger', path: '#/contabilidad/mayor', label: 'Libro Mayor', icon: '📊', color: 'slate' }
+    { key: 'ledger', path: '#/contabilidad/mayor', label: 'Libro Mayor', icon: '📊', color: 'slate' },
+    { key: 'financials', path: '#/contabilidad/estados', label: 'Estados Financieros', icon: '🏛️', color: 'slate' }
   ] }
 ];
 
