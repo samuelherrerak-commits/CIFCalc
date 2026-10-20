@@ -21,8 +21,11 @@ const NUMERIC_FIELDS = {
   products: [
     'units_per_box', 'box_volume', 'weight_kg', 'fob_unit', 'tariff_rate', 'stock', 'avg_cost', 'sale_price'
   ],
-  movements: ['debit', 'credit', 'costo_unitario', 'precio_lista'],
-  contacts: ['discount_pct'],
+  movements: ['debit', 'credit', 'costo_unitario', 'precio_lista', 'tasa_bcv'],
+  contacts: ['discount_pct', 'iva_retention_pct'],
+  fiscal_docs: ['total', 'exempt', 'base_general', 'tax_general', 'base_reducida', 'tax_reducida', 'withheld', 'tasa_bcv'],
+  exchange_rates: ['usd_bcv', 'eur_bcv', 'usdt'],
+  accounting_settings: ['iva_rate_general', 'iva_rate_reducida'],
   promotions: ['discount_pct']
 };
 
@@ -30,11 +33,12 @@ const BOOL_FIELDS = {
   containers: ['insurance_enabled', 'inventory_posted'],
   accounts: ['is_active'],
   crm_activities: ['done'],
-  promotions: ['active']
+  promotions: ['active'],
+  accounting_settings: ['iva_enabled', 'prices_include_iva']
 };
 // Valor cuando la celda viene vacía (p. ej. una columna recién agregada a la
 // hoja): una cuenta sin marca se considera activa.
-const BOOL_DEFAULTS = { accounts: { is_active: true } };
+const BOOL_DEFAULTS = { accounts: { is_active: true }, accounting_settings: { iva_enabled: true } };
 
 // Sheets puede devolver TRUE/FALSE (si la celda no quedó como texto) o
 // 'true'/'false'; se aceptan ambos.

@@ -81,7 +81,9 @@ const SCHEMAS = {
     'units_per_box', 'box_volume', 'weight_kg', 'hs_code', 'fob_unit',
     'tariff_rate', 'created_at', 'updated_at', 'foto_url', 'foto_file_id',
     'stock', 'avg_cost', 'sale_price',
-    'brand', 'collection', 'category', 'color'
+    'brand', 'collection', 'category', 'color',
+    // IVA del producto: 'general' (vacío = general), 'reducida' o 'exento'.
+    'iva_tipo'
   ],
   // Catálogo de cuentas unificado (estilo LegalYa): códigos jerárquicos con punto,
   // tipo inferido del primer dígito (1=Activo..6=Gasto). tipo_especifico es lo que
@@ -102,7 +104,9 @@ const SCHEMAS = {
     'created_at', 'updated_at', 'cantidad', 'unidad', 'precio_venta', 'codigo_barra',
     // Venta: costo unitario del producto al momento de vender (para el margen)
     // y precio de lista antes de promociones o descuento del cliente.
-    'costo_unitario', 'precio_lista'
+    'costo_unitario', 'precio_lista',
+    // Tasa BCV (Bs por USD) del día del asiento, para llevar los libros en Bs.
+    'tasa_bcv'
   ],
   // Directorio único de clientes/proveedores (CRM) — lo usan los selectores de
   // Ventas, Gastos, Costos, Inventario (Recepción) y las nuevas Cuentas por
@@ -112,7 +116,9 @@ const SCHEMAS = {
     'created_at', 'updated_at',
     // CRM: etapa (prospecto/activo/inactivo/perdido), etiquetas, notas,
     // descuento especial del cliente (%) y próximo seguimiento.
-    'stage', 'tags', 'notes', 'discount_pct', 'next_followup_date'
+    'stage', 'tags', 'notes', 'discount_pct', 'next_followup_date',
+    // % de IVA que nos retiene el cliente (0, 75 o 100) si es contribuyente especial.
+    'iva_retention_pct'
   ],
   // Bitácora del CRM: actividades (llamada, visita, WhatsApp, correo, nota) y
   // tareas de seguimiento con fecha (kind = 'tarea', done = true/false).
@@ -146,7 +152,26 @@ const SCHEMAS = {
     'created_at', 'updated_at',
     // Datos de la empresa para los presupuestos y notas de venta impresos.
     'issuer_name', 'issuer_rif', 'issuer_address', 'issuer_phone',
-    'issuer_email', 'issuer_logo', 'quote_terms'
+    'issuer_email', 'issuer_logo', 'quote_terms',
+    // Configuración fiscal (IVA). iva_enabled vacío = activo.
+    'iva_enabled', 'iva_rate_general', 'iva_rate_reducida', 'prices_include_iva'
+  ],
+  // Registro fiscal de facturas para los Libros de Compras y Ventas del SENIAT.
+  // book = 'ventas' | 'compras'; doc_type = factura | nota_credito |
+  // nota_debito | importacion. Montos en USD; tasa_bcv convierte a Bs.
+  fiscal_docs: [
+    'id', 'book', 'date', 'doc_type', 'invoice_number', 'control_number',
+    'affected_invoice', 'rif', 'name', 'total', 'exempt',
+    'base_general', 'tax_general', 'base_reducida', 'tax_reducida',
+    'withheld', 'withholding_number', 'withholding_date',
+    'import_form', 'import_file', 'ref_doc', 'source_ref', 'tasa_bcv',
+    'status', 'notes', 'created_at', 'updated_at'
+  ],
+  // Tasas de cambio del día (id = fecha AAAA-MM-DD): oficiales del BCV para
+  // USD y EUR, y USDT (Binance P2P). Bs por unidad de moneda.
+  exchange_rates: [
+    'id', 'date', 'usd_bcv', 'eur_bcv', 'usdt', 'source', 'fetched_at',
+    'created_at', 'updated_at'
   ]
 };
 

@@ -108,6 +108,7 @@ function classifyLiability(code, te) {
   if (code.startsWith('2.2')) return 'nc';
   if (te === 'Proveedores' || code.startsWith('2.1.01') || code.startsWith('2.1.02')) return 'cxp';
   if (code.startsWith('2.1.03')) return 'prestamos';
+  if (code.startsWith('2.1.04')) return 'pImpuestos';
   return 'otrosCorr';
 }
 function classifyResult(code, tipo) {
@@ -153,7 +154,7 @@ function incomeStatement(movements, info, from, to) {
 // Situación financiera al cierre de `date`.
 function balanceSheet(movements, info, date, periodFrom) {
   const b = balances(movements, null, date);
-  const groups = { efectivo: [], cxc: [], impuestos: [], otrosCorr: [], nc: [], cxp: [], prestamos: [], pOtrosCorr: [], pNc: [], capital: [] };
+  const groups = { efectivo: [], cxc: [], impuestos: [], otrosCorr: [], nc: [], cxp: [], prestamos: [], pImpuestos: [], pOtrosCorr: [], pNc: [], capital: [] };
   let acumulado = 0; // resultado contable (sin ajuste de inventario) de todos los ingresos/costos/gastos
   for (const [code, v] of b) {
     const tipo = info.tipoOf(code);
@@ -180,7 +181,8 @@ function balanceSheet(movements, info, date, periodFrom) {
   const activoNC = sum(groups.nc);
   const activoTotal = r2(activoCorriente + activoNC);
   const cxp = sum(groups.cxp), prestamos = sum(groups.prestamos), pOtros = sum(groups.pOtrosCorr);
-  const pasivoCorriente = r2(cxp + prestamos + pOtros);
+  const pImpuestos = sum(groups.pImpuestos);
+  const pasivoCorriente = r2(cxp + prestamos + pImpuestos + pOtros);
   const pasivoNC = sum(groups.pNc);
   const pasivoTotal = r2(pasivoCorriente + pasivoNC);
   const capital = sum(groups.capital);
@@ -191,7 +193,7 @@ function balanceSheet(movements, info, date, periodFrom) {
   const patrimonio = r2(capital + resultadosAcumulados + resultadoEjercicio);
   return {
     date, groups, inventario, efectivo, cxc, impuestos, otrosCorr, activoCorriente, activoNC, activoTotal,
-    cxp, prestamos, pOtros, pasivoCorriente, pasivoNC, pasivoTotal, capital, resultadosAcumulados, resultadoEjercicio,
+    cxp, prestamos, pImpuestos, pOtros, pasivoCorriente, pasivoNC, pasivoTotal, capital, resultadosAcumulados, resultadoEjercicio,
     patrimonio, pasivoPatrimonio: r2(pasivoTotal + patrimonio), diferencia: r2(activoTotal - pasivoTotal - patrimonio)
   };
 }
@@ -253,7 +255,7 @@ function cashFlow(movements, info, from, to) {
       else if (tipo === 'Ingreso') k = 'otrosCobros';
       else if (tipo === 'Costo' || te === 'Proveedores' || code.startsWith('2.1.01') || code.startsWith('2.1.02')) k = 'pagosProveedores';
       else if (tipo === 'Gasto') k = 'pagosGastos';
-      else if (code.startsWith('1.1.03')) k = 'impuestos';
+      else if (code.startsWith('1.1.03') || code.startsWith('2.1.04')) k = 'impuestos';
       else if (code.startsWith('1.2')) k = 'inversion';
       else if (tipo === 'Pasivo') k = 'prestamos';
       else if (tipo === 'Patrimonio') k = 'capital';

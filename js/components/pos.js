@@ -16,6 +16,8 @@ import { fmtNum, fmtInt, esc } from '../utils.js';
 //   onCartChange(cart)
 //   priceFor(product) → { listPrice, unitPrice, discountPct, label } (promoción
 //                       o descuento del cliente); por defecto el precio de venta
+//   summary(cart)     → { rows: [[etiqueta, monto]], total } para mostrar el
+//                       desglose de IVA sobre el total (por defecto, sin IVA)
 //   suggestedIds      → Set de productos sugeridos (p. ej. los que ya compra el
 //                       cliente): chip "⭐ Sugeridos" y etiqueta en la tarjeta
 // Cada línea del carrito: { product, qty, unitPrice, listPrice, label, manual }.
@@ -60,6 +62,7 @@ export function mountPOS(root, opts) {
           ${opts.headerFieldsHtml ? `<div class="p-4 border-b border-slate-100 space-y-3">${opts.headerFieldsHtml}</div>` : ''}
           <div id="pos-cart" class="p-4 space-y-2 max-h-[40vh] overflow-y-auto"></div>
           <div class="p-4 bg-slate-50 border-t border-slate-200 space-y-3">
+            <div id="pos-summary" class="space-y-0.5 text-xs text-slate-500"></div>
             <div class="flex justify-between items-end">
               <span class="text-xs font-black uppercase text-slate-400">Total</span>
               <span id="pos-total" class="text-3xl font-black tracking-tight text-slate-900"></span>
@@ -76,7 +79,9 @@ export function mountPOS(root, opts) {
 
   const $ = (id) => root.querySelector('#' + id);
   const inCart = (id) => cart.find(l => l.product.id === id);
-  const total = () => cart.reduce((s, l) => s + l.qty * l.unitPrice, 0);
+  const subtotal = () => cart.reduce((s, l) => s + l.qty * l.unitPrice, 0);
+  const summary = () => (opts.summary && cart.length ? opts.summary(cart) : null);
+  const total = () => { const sm = summary(); return sm ? sm.total : subtotal(); };
   const units = () => cart.reduce((s, l) => s + l.qty, 0);
   const visibleProducts = () => opts.products().filter(p => !capToStock || stockOf(p) > 0);
 
@@ -230,7 +235,11 @@ export function mountPOS(root, opts) {
         </div>`;
       }).join('');
 
-    $('pos-total').textContent = `$${fmtNum(total())}`;
+    const sm = summary();
+    $('pos-summary').innerHTML = sm && sm.rows.length
+      ? sm.rows.map(([k, v]) => `<div class="flex justify-between"><span>${esc(k)}</span><span class="font-mono font-semibold text-slate-700">$${fmtNum(v)}</span></div>`).join('')
+      : '';
+    $('pos-total').textContent = `$${fmtNum(sm ? sm.total : subtotal())}`;
     $('pos-units').textContent = cart.length ? `${fmtInt(units())} unidad${units() === 1 ? '' : 'es'} · ${cart.length} producto${cart.length === 1 ? '' : 's'}` : '';
     $('pos-clear').classList.toggle('hidden', cart.length === 0);
 
@@ -267,6 +276,7 @@ export function mountPOS(root, opts) {
   return {
     getCart: () => cart,
     total,
+    subtotal,
     flash,
     success,
     onAction: (fn) => $('pos-action').addEventListener('click', fn),

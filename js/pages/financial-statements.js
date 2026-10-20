@@ -69,6 +69,7 @@ function esfHtml(s) {
     row('Pasivo corriente', 0, 0, { head: true, indent: 1 }),
     row('Cuentas por pagar comerciales', a.cxp, b.cxp, { indent: 1, note: '7' }), ...lines('cxp'),
     row('Préstamos por pagar', a.prestamos, b.prestamos, { indent: 1 }),
+    ...(a.pImpuestos || b.pImpuestos ? [row('Impuestos por pagar (IVA)', a.pImpuestos, b.pImpuestos, { indent: 1 })] : []),
     ...(a.pOtros || b.pOtros ? [row('Otros pasivos corrientes', a.pOtros, b.pOtros, { indent: 1 })] : []),
     row('Total pasivo corriente', a.pasivoCorriente, b.pasivoCorriente, { total: true, indent: 1 }),
     ...(a.pasivoNC || b.pasivoNC ? [row('Pasivo no corriente', a.pasivoNC, b.pasivoNC, { indent: 1 })] : []),

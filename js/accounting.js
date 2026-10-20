@@ -42,9 +42,15 @@ export const CHART_OF_ACCOUNTS = [
   { codigo: '1.1.01.02', nombre: 'Bancos', tipo_especifico: 'Banco' },
   { codigo: '1.1.02.01', nombre: 'Cuentas por Cobrar', tipo_especifico: 'Clientes' },
   { codigo: '1.1.03.01', nombre: 'IVA Acreditable', tipo_especifico: 'Otros' },
+  { codigo: '1.1.03.02', nombre: 'IVA Retenido por Clientes', tipo_especifico: 'Otros' },
   { codigo: '2.1.01.01', nombre: 'Contenedores por Pagar', tipo_especifico: 'Proveedores' },
   { codigo: '2.1.02.01', nombre: 'Proveedores por Pagar', tipo_especifico: 'Proveedores' },
   { codigo: '2.1.03.01', nombre: 'Préstamos por Pagar', tipo_especifico: 'Otros' },
+  // IVA: el débito fiscal de las ventas se acumula en 2.1.04.01; al liquidar
+  // el mes (Declaración de IVA) se compensa con el crédito fiscal y el saldo
+  // pasa a 2.1.04.02 hasta que se paga al SENIAT.
+  { codigo: '2.1.04.01', nombre: 'IVA Débito Fiscal', tipo_especifico: 'Otros' },
+  { codigo: '2.1.04.02', nombre: 'IVA por Pagar (SENIAT)', tipo_especifico: 'Otros' },
   { codigo: '3.1.01.01', nombre: 'Capital Social', tipo_especifico: 'Otros' },
   { codigo: '4.1.01.01', nombre: 'Ingresos por Ventas', tipo_especifico: 'Otros' },
   { codigo: '4.1.02.01', nombre: 'Otros Ingresos', tipo_especifico: 'Otros' },

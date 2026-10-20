@@ -10,7 +10,9 @@ import { fmtNum, esc } from '../utils.js';
 //   kind: 'quote' | 'sale', number, date, validUntil?,
 //   client: { name, rif, address, phone, email },
 //   items: [{ name, sku, qty, unit, unitPrice }],
-//   paymentMethod?, notes?, terms?
+//   paymentMethod?, notes?, terms?,
+//   fiscal?: { rows: [[etiqueta, monto]], total, rate?, invoice?, control? }
+//            desglose de IVA; rate = tasa BCV para el equivalente en Bs
 // }
 // issuer = { name, rif, address, phone, email, logo }
 
@@ -87,6 +89,8 @@ export function buildSalesDocumentHtml(doc, issuer = {}) {
         <div>${numberLabel}: ${esc(doc.number)}</div>
         <div>Fecha: ${fmtDate(doc.date)}</div>
         ${isQuote && doc.validUntil ? `<div>Válido hasta: ${fmtDate(doc.validUntil)}</div>` : ''}
+        ${doc.fiscal && doc.fiscal.invoice ? `<div>Factura fiscal: ${esc(doc.fiscal.invoice)}</div>` : ''}
+        ${doc.fiscal && doc.fiscal.control ? `<div>N.º de control: ${esc(doc.fiscal.control)}</div>` : ''}
       </div>
     </div>
 
@@ -106,7 +110,14 @@ export function buildSalesDocumentHtml(doc, issuer = {}) {
 
     <div class="totals">
       <div><span>Subtotal</span><span>${fmtNum(subtotal)}</span></div>
-      <div class="grand"><span>Total USD</span><span>$${fmtNum(subtotal)}</span></div>
+      ${doc.fiscal ? (() => {
+        const f = doc.fiscal;
+        const ret = f.rows.filter(([, v]) => v < 0).reduce((t, [, v]) => t - v, 0);
+        return f.rows.filter(([, v]) => v >= 0).filter(([k]) => k !== 'Base imponible' || f.rows.some(([x]) => x === 'Exento')).map(([k, v]) => `<div><span>${esc(k)}</span><span>${fmtNum(v)}</span></div>`).join('')
+          + `<div class="grand"><span>Total USD</span><span>$${fmtNum(f.total)}</span></div>`
+          + (ret > 0 ? `<div><span>Menos: IVA retenido</span><span>(${fmtNum(ret)})</span></div><div><span>Neto a cobrar</span><span>$${fmtNum(f.total - ret)}</span></div>` : '')
+          + (f.rate > 0 ? `<div style="color:#64748b"><span>Equivalente Bs (tasa BCV ${f.rate.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 4 })})</span><span>Bs ${(f.total * f.rate).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>` : '');
+      })() : `<div class="grand"><span>Total USD</span><span>$${fmtNum(subtotal)}</span></div>`}
     </div>
 
     ${bottomBlocks}

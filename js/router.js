@@ -21,6 +21,7 @@ import Payables from './pages/payables.js';
 import Promotions from './pages/promotions.js';
 import Reports from './pages/reports.js';
 import FinancialStatements from './pages/financial-statements.js';
+import Fiscal from './pages/fiscal.js';
 
 const routes = [
   { pattern: /^#\/?$/, handler: 'dashboard', key: 'dashboard' },
@@ -44,6 +45,8 @@ const routes = [
   { pattern: /^#\/contabilidad\/promociones\/?$/, handler: 'promotions', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/reportes\/?$/, handler: 'reports', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/estados\/?$/, handler: 'financials', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/fiscal\/?$/, handler: 'fiscal', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/fiscal\/([^/]+)$/, handler: 'fiscal', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/reportes\/([^/]+)$/, handler: 'reports', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/diario\/?$/, handler: 'journal', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/mayor\/?$/, handler: 'ledger', key: 'contabilidad' }
@@ -69,7 +72,8 @@ const pages = {
   payables: Payables,
   promotions: Promotions,
   reports: Reports,
-  financials: FinancialStatements
+  financials: FinancialStatements,
+  fiscal: Fiscal
 };
 
 let currentCleanup = null;
