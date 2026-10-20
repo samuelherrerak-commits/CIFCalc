@@ -256,6 +256,7 @@ const FinancialStatements = {
       const issues = s.issues || {};
       const warnings = [
         issues.orphanTotal > 0.01 ? warn(`Hay asiento(s) de cierre de contenedores que no están completos por $${fmtNum(issues.orphanTotal)} (${esc(issues.orphanNames.join(', '))}): suman a compras y al costo de ventas`) : '',
+        s.is.costoVentas < -0.01 ? warn(`El costo de ventas salió negativo ($${fmtNum(s.is.costoVentas)}): el inventario final vale más que las compras registradas; revisa los contenedores completados`) : '',
         issues.unlinkedCost > 0.01 ? warn(`$${fmtNum(issues.unlinkedCost)} de contenedores completos son productos sin vincular al catálogo: no entran al inventario y van completos al costo de ventas`) : ''
       ].join('');
       document.getElementById('fs-checks').innerHTML = warnings +

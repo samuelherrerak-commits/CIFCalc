@@ -51,18 +51,30 @@ function balances(movements, from, to) {
 export function inventoryAt(date) {
   const movements = Store.getAll('movements');
   const closingDate = new Map();
+  const bookedCost = new Map(); // contenedor → costo llevado a cuentas de Costo en su asiento de cierre
   for (const m of movements) {
-    if (m.source === 'container_close' && m.source_ref && !closingDate.has(m.source_ref)) closingDate.set(m.source_ref, String(m.entry_date).slice(0, 10));
+    if (m.source !== 'container_close' || !m.source_ref) continue;
+    if (!closingDate.has(m.source_ref)) closingDate.set(m.source_ref, String(m.entry_date).slice(0, 10));
+    if (String(m.codigo_cuenta).startsWith('5')) bookedCost.set(m.source_ref, (bookedCost.get(m.source_ref) || 0) + (Number(m.debit) || 0));
   }
+  const seen = new Set();
   const ins = new Map(); // productId → { qty, cost }
   for (const c of Store.getAll('containers')) {
+    if (seen.has(c.id)) continue; // filas repetidas con el mismo id en la hoja
+    seen.add(c.id);
     const d = closingDate.get(c.id);
     if (!d || d > date) continue; // solo contenedores cuyo costo ya está en el diario
-    for (const calc of computeContainer(c, Store.getItemsByContainer(c.id)).calculated) {
-      const pid = calc.item.product_id;
-      if (!pid || !(calc.qty > 0)) continue;
+    const calc = computeContainer(c, Store.getItemsByContainer(c.id)).calculated;
+    // El costo de cada producto se reparte del costo REGISTRADO en el asiento
+    // (no del recalculado hoy): si el contenedor se editó después de
+    // completarlo, el inventario nunca vale más que lo que se compró.
+    const current = calc.reduce((s, x) => s + x.qty * x.costNoVat, 0);
+    const factor = current > 0 ? (bookedCost.get(c.id) || 0) / current : 0;
+    for (const x of calc) {
+      const pid = x.item.product_id;
+      if (!pid || !(x.qty > 0)) continue;
       const e = ins.get(pid) || { qty: 0, cost: 0 };
-      e.qty += calc.qty; e.cost += calc.qty * calc.costNoVat;
+      e.qty += x.qty; e.cost += x.qty * x.costNoVat * factor;
       ins.set(pid, e);
     }
   }
