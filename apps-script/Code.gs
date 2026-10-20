@@ -99,14 +99,32 @@ const SCHEMAS = {
   movements: [
     'id', 'entry_date', 'codigo_cuenta', 'cuenta_contable', 'concepto',
     'debit', 'credit', 'ref_doc', 'entidad', 'source', 'source_ref',
-    'created_at', 'updated_at', 'cantidad', 'unidad', 'precio_venta', 'codigo_barra'
+    'created_at', 'updated_at', 'cantidad', 'unidad', 'precio_venta', 'codigo_barra',
+    // Venta: costo unitario del producto al momento de vender (para el margen)
+    // y precio de lista antes de promociones o descuento del cliente.
+    'costo_unitario', 'precio_lista'
   ],
   // Directorio único de clientes/proveedores (CRM) — lo usan los selectores de
   // Ventas, Gastos, Costos, Inventario (Recepción) y las nuevas Cuentas por
   // Cobrar/Pagar en vez de escribir el nombre a mano.
   contacts: [
     'id', 'rif', 'name', 'type', 'email', 'phone', 'address',
+    'created_at', 'updated_at',
+    // CRM: etapa (prospecto/activo/inactivo/perdido), etiquetas, notas,
+    // descuento especial del cliente (%) y próximo seguimiento.
+    'stage', 'tags', 'notes', 'discount_pct', 'next_followup_date'
+  ],
+  // Bitácora del CRM: actividades (llamada, visita, WhatsApp, correo, nota) y
+  // tareas de seguimiento con fecha (kind = 'tarea', done = true/false).
+  crm_activities: [
+    'id', 'contact_id', 'kind', 'channel', 'date', 'due_date', 'note', 'done',
     'created_at', 'updated_at'
+  ],
+  // Promociones generales: % de descuento sobre el precio de venta para un
+  // producto, una categoría o todo el catálogo, con vigencia.
+  promotions: [
+    'id', 'name', 'scope', 'target', 'discount_pct', 'start_date', 'end_date',
+    'active', 'created_at', 'updated_at'
   ],
   // Presupuestos (cotizaciones) para ventas al mayor — sin impacto contable
   // hasta que se confirman desde Ventas ("Convertir en Venta"). items es un
@@ -114,7 +132,9 @@ const SCHEMAS = {
   quotes: [
     'id', 'quote_number', 'date', 'contact_id', 'contact_name', 'concepto',
     'items', 'total', 'status', 'converted_ref', 'created_at', 'updated_at',
-    'valid_until'
+    'valid_until',
+    // 'presupuesto' u 'oferta' (oferta personalizada desde el CRM).
+    'kind'
   ],
   // Mapeo contable del cierre de contenedores (una sola fila, id = 'default').
   // Cada columna guarda el id de la cuenta a la que va ese concepto; si una

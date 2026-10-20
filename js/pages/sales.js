@@ -162,6 +162,8 @@ const Sales = {
       cart: initialCart,
       capToStock: true,
       title: 'Venta',
+      // Mejor de: promoción vigente o descuento especial del cliente elegido.
+      priceFor: (p) => Store.priceFor(p, contacts.find(c => c.id === (document.getElementById('f-contact') || {}).value)),
       actionLabel: 'Procesar venta',
       headerFieldsHtml: `
         <div>
@@ -221,7 +223,12 @@ const Sales = {
         allLines = allLines.concat(buildIncomeLines({
           date, total: l.qty * l.unitPrice, concepto: `${concepto} | ${l.product.name}`, entidad, refDoc,
           paymentAccount, revenueAccount: revAccount,
-          sale: { qty: l.qty, unidad: 'unidades', unitPrice: l.unitPrice, codigo: l.product.sku_briggs || '' }
+          sale: {
+            qty: l.qty, unidad: 'unidades', unitPrice: l.unitPrice, codigo: l.product.sku_briggs || '',
+            // Costo del producto al momento de vender (margen exacto en Reportes) y precio de lista.
+            unitCost: Number((Store.getById('products', l.product.id) || l.product).avg_cost) || 0,
+            listPrice: l.listPrice || Number(l.product.sale_price) || l.unitPrice
+          }
         }));
       }
       Store.postJournalRows(withRoundingPlug(allLines, diffAccount(), date, refDoc), { source: 'sale' });
@@ -250,10 +257,12 @@ const Sales = {
     });
 
     document.getElementById('f-contact').addEventListener('change', (e) => {
-      if (e.target.value !== '__new__') return;
-      const c = quickAddContact(Store, 'cliente');
-      contacts = Store.getAll('contacts');
-      e.target.innerHTML = contactOptions(contacts, 'cliente', c ? c.id : '');
+      if (e.target.value === '__new__') {
+        const c = quickAddContact(Store, 'cliente');
+        contacts = Store.getAll('contacts');
+        e.target.innerHTML = contactOptions(contacts, 'cliente', c ? c.id : '');
+      }
+      pos.repriceAll(); // el descuento del cliente cambia los precios
     }, { signal });
     document.getElementById('btn-business').addEventListener('click', () => openBusinessProfileModal(Store), { signal });
 

@@ -1,15 +1,17 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase-config.js';
 import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
+import { isSandbox, setSandboxFlag, storageKey } from './sandbox.js';
 import { computeContainer } from './utils.js';
 import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping, CHART_OF_ACCOUNTS, inferirTipo, naturalezaForTipo, DEFAULT_CLOSING_MAPPING_CODES } from './accounting.js';
 
 // ============================================
 // Supabase client (singleton) — backend primario
 // ============================================
+const SANDBOX = isSandbox(); // fijo durante la vida de la página: cambiar de modo recarga
 let sb = null;
 try {
-  if (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
+  if (!SANDBOX && SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
     sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
 } catch (e) {
@@ -36,17 +38,19 @@ const STORE_KEYS = {
   sale_concepts: 'cif_sale_concepts',
   module_settings: 'cif_module_settings',
   contacts: 'cif_contacts',
-  quotes: 'cif_quotes'
+  quotes: 'cif_quotes',
+  crm_activities: 'cif_crm_activities',
+  promotions: 'cif_promotions'
 };
 
 // Tablas que el Web App de Sheets respalda (schemas definidos en Code.gs).
 // Las demás entidades (contabilidad, ventas, gastos) viven en Supabase.
-const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'contacts', 'quotes'];
-const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes', 'accounting_settings'];
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'contacts', 'quotes', 'crm_activities', 'promotions'];
+const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes', 'accounting_settings', 'crm_activities', 'promotions'];
 
 function readAll(key) {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(storageKey(key));
     const data = raw ? JSON.parse(raw) : [];
     return Array.isArray(data) ? data : [];
   } catch (e) {
@@ -56,7 +60,7 @@ function readAll(key) {
 }
 
 function writeAll(key, data) {
-  localStorage.setItem(key, JSON.stringify(data));
+  localStorage.setItem(storageKey(key), JSON.stringify(data));
 }
 
 function uid() {
@@ -239,6 +243,7 @@ function getRetryQueue() {
 }
 
 function pushRetry(operation) {
+  if (SANDBOX) return;
   const queue = getRetryQueue();
   operation.attempts = operation.attempts || 0;
   queue.push(operation);
@@ -247,7 +252,7 @@ function pushRetry(operation) {
 }
 
 async function processRetryQueue() {
-  if (!sb && !SHEETS_URL) return;
+  if (SANDBOX || (!sb && !SHEETS_URL)) return;
   const queue = getRetryQueue();
   if (queue.length === 0) return;
   const remaining = [];
@@ -449,6 +454,7 @@ async function mapWithConcurrency(list, limit, fn) {
 }
 
 function cloudUpsert(table, record) {
+  if (SANDBOX) return Promise.resolve();
   const records = normalizeEntityRows(table, Array.isArray(record) ? record : [record]);
   const sheetsCapable = SHEETS_URL && SHEET_TABLES.includes(table);
 
@@ -463,6 +469,7 @@ function cloudUpsert(table, record) {
 }
 
 function cloudDelete(table, id) {
+  if (SANDBOX) return;
   const sheetsCapable = SHEETS_URL && SHEET_TABLES.includes(table);
 
   if (!sheetsCapable) {
@@ -475,6 +482,7 @@ function cloudDelete(table, id) {
 }
 
 function cloudDeleteWhere(table, column, value) {
+  if (SANDBOX) return;
   const sheetsCapable = SHEETS_URL && SHEET_TABLES.includes(table);
 
   if (!sheetsCapable) {
@@ -487,6 +495,7 @@ function cloudDeleteWhere(table, column, value) {
 }
 
 async function cloudSyncContainerItems(containerId, newItems) {
+  if (SANDBOX) return;
   const cleanItems = normalizeEntityRows('items', newItems);
   await sheetsMirrorItems(containerId, cleanItems);
   sbSyncContainerItems(containerId, cleanItems);
@@ -591,7 +600,7 @@ function purgeLegacyAccounts() {
 // Sync bidireccional con Sheets (Supabase solo recibe el espejo de escrituras)
 // ============================================
 async function syncWithCloud() {
-  if (!sb && !SHEETS_URL) return;
+  if (SANDBOX || (!sb && !SHEETS_URL)) return;
   try {
     const results = await mapWithConcurrency(ENTITIES, SHEETS_READ_CONCURRENCY,
       async entity => [entity, await getRemoteTable(entity)]);
@@ -681,7 +690,7 @@ async function syncWithCloud() {
 const SHEETS_SEEDED_KEY = 'cif_sheets_seeded';
 
 async function mirrorAllToSheets() {
-  if (!SHEETS_URL) return;
+  if (SANDBOX || !SHEETS_URL) return;
   if (localStorage.getItem(SHEETS_SEEDED_KEY)) return;
   for (const entity of ENTITIES) {
     if (!SHEET_TABLES.includes(entity)) continue;
@@ -713,28 +722,34 @@ let seedDone = false;
 let firstSyncDone = false; // true cuando terminó la primera sincronización con Sheets
 
 function seed() {
-  if (!localStorage.getItem(STORE_KEYS.companies)) writeAll(STORE_KEYS.companies, []);
-  if (!localStorage.getItem(STORE_KEYS.suppliers)) writeAll(STORE_KEYS.suppliers, []);
-  if (!localStorage.getItem(STORE_KEYS.containers)) writeAll(STORE_KEYS.containers, []);
-  if (!localStorage.getItem(STORE_KEYS.items)) writeAll(STORE_KEYS.items, []);
-  if (!localStorage.getItem(STORE_KEYS.products)) writeAll(STORE_KEYS.products, []);
-  if (!localStorage.getItem(STORE_KEYS.accounts)) writeAll(STORE_KEYS.accounts, []);
-  if (!localStorage.getItem(STORE_KEYS.movements)) writeAll(STORE_KEYS.movements, []);
-  if (!localStorage.getItem(STORE_KEYS.journal_entries)) writeAll(STORE_KEYS.journal_entries, []);
-  if (!localStorage.getItem(STORE_KEYS.journal_lines)) writeAll(STORE_KEYS.journal_lines, []);
-  if (!localStorage.getItem(STORE_KEYS.accounting_settings)) writeAll(STORE_KEYS.accounting_settings, []);
-  if (!localStorage.getItem(STORE_KEYS.expense_categories)) writeAll(STORE_KEYS.expense_categories, []);
-  if (!localStorage.getItem(STORE_KEYS.sale_concepts)) writeAll(STORE_KEYS.sale_concepts, []);
-  if (!localStorage.getItem(STORE_KEYS.module_settings)) writeAll(STORE_KEYS.module_settings, []);
-  if (!localStorage.getItem(STORE_KEYS.contacts)) writeAll(STORE_KEYS.contacts, []);
-  if (!localStorage.getItem(STORE_KEYS.quotes)) writeAll(STORE_KEYS.quotes, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.companies))) writeAll(STORE_KEYS.companies, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.suppliers))) writeAll(STORE_KEYS.suppliers, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.containers))) writeAll(STORE_KEYS.containers, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.items))) writeAll(STORE_KEYS.items, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.products))) writeAll(STORE_KEYS.products, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.accounts))) writeAll(STORE_KEYS.accounts, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.movements))) writeAll(STORE_KEYS.movements, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.journal_entries))) writeAll(STORE_KEYS.journal_entries, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.journal_lines))) writeAll(STORE_KEYS.journal_lines, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.accounting_settings))) writeAll(STORE_KEYS.accounting_settings, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.expense_categories))) writeAll(STORE_KEYS.expense_categories, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.sale_concepts))) writeAll(STORE_KEYS.sale_concepts, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.module_settings))) writeAll(STORE_KEYS.module_settings, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.contacts))) writeAll(STORE_KEYS.contacts, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.quotes))) writeAll(STORE_KEYS.quotes, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.crm_activities))) writeAll(STORE_KEYS.crm_activities, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.promotions))) writeAll(STORE_KEYS.promotions, []);
 
   purgeDroppedColumns();
   localStorage.setItem(RETRY_KEY, JSON.stringify(getRetryQueue()));
   purgeLegacyAccounts();
-  resetLocalCatalogOnce();
+  if (!SANDBOX) resetLocalCatalogOnce();
   purgeEmptyProducts();
 
+  if (!seedDone && SANDBOX) {
+    seedDone = true;
+    firstSyncDone = true; // en modo prueba no hay nube que esperar
+  }
   if (!seedDone) {
     seedDone = true;
     // El primer render no espera a la nube: se pinta de inmediato con lo que
@@ -761,9 +776,35 @@ function notifyDataUpdated() {
 // ============================================
 // Store API
 // ============================================
+// Copia los datos actuales (los reales) al espacio de prueba.
+function copyRealDataToSandbox() {
+  for (const key of Object.values(STORE_KEYS)) {
+    const raw = localStorage.getItem(key);
+    localStorage.setItem('sbx_' + key, raw == null ? '[]' : raw);
+  }
+}
+
 const Store = {
   uid,
   seed,
+  isSandbox: () => SANDBOX,
+  // Entra al modo prueba con una copia de los datos actuales (o conserva la
+  // copia anterior si keepPrevious y ya existe). Recarga la página.
+  enterSandbox({ keepPrevious = false } = {}) {
+    const hasPrevious = localStorage.getItem('sbx_' + STORE_KEYS.products) != null;
+    if (!(keepPrevious && hasPrevious)) copyRealDataToSandbox();
+    setSandboxFlag(true);
+    location.reload();
+  },
+  // Vuelve a empezar la prueba desde los datos reales actuales.
+  resetSandbox() {
+    copyRealDataToSandbox();
+    location.reload();
+  },
+  exitSandbox() {
+    setSandboxFlag(false);
+    location.reload();
+  },
   syncWithCloud,
   processRetryQueue,
   isSheetsReachable,
@@ -1077,6 +1118,8 @@ const Store = {
       unidad: l.unidad || 'monto',
       precio_venta: Math.round((Number(l.precio_venta) || 0) * 100) / 100,
       codigo_barra: l.codigo_barra || '',
+      costo_unitario: Math.round((Number(l.costo_unitario) || 0) * 100) / 100,
+      precio_lista: Math.round((Number(l.precio_lista) || 0) * 100) / 100,
       source: opts.source || 'manual',
       source_ref: opts.sourceRef || null,
       created_at: ts,
@@ -1247,6 +1290,7 @@ const Store = {
   newContact(overrides = {}) {
     return {
       rif: '', name: '', type: 'cliente', email: '', phone: '', address: '',
+      stage: 'activo', tags: '', notes: '', discount_pct: 0, next_followup_date: '',
       ...overrides
     };
   },
@@ -1264,9 +1308,46 @@ const Store = {
       date: new Date().toISOString().slice(0, 10),
       valid_until: validUntil,
       contact_id: '', contact_name: '', concepto: '',
-      items: '[]', total: 0, status: 'pendiente', converted_ref: '',
+      items: '[]', total: 0, status: 'pendiente', converted_ref: '', kind: 'presupuesto',
       ...overrides
     };
+  },
+
+  // ============================================
+  // Precios: promociones generales y descuento especial del cliente. Nunca se
+  // suman: se aplica el mayor de los dos sobre el precio de venta (lista).
+  // ============================================
+  activePromotions(date = new Date().toISOString().slice(0, 10)) {
+    return readAll(STORE_KEYS.promotions).filter(p =>
+      p.active !== false && String(p.active) !== 'false' && Number(p.discount_pct) > 0 &&
+      (!p.start_date || p.start_date <= date) && (!p.end_date || p.end_date >= date));
+  },
+
+  bestPromotionFor(product, date) {
+    const cat = String(product.category || '').trim();
+    return this.activePromotions(date)
+      .filter(p => p.scope === 'todos' || (p.scope === 'producto' && p.target === product.id) || (p.scope === 'categoria' && p.target === cat))
+      .sort((a, b) => Number(b.discount_pct) - Number(a.discount_pct))[0] || null;
+  },
+
+  // → { listPrice, unitPrice, discountPct, label } para vender `product` a `contact`.
+  priceFor(product, contact, date) {
+    const listPrice = Number(product.sale_price) || 0;
+    const promo = this.bestPromotionFor(product, date);
+    const promoPct = promo ? Number(promo.discount_pct) : 0;
+    const clientPct = contact ? Number(contact.discount_pct) || 0 : 0;
+    const pct = Math.max(promoPct, clientPct);
+    const label = pct <= 0 ? '' : (promoPct >= clientPct ? `Promo ${promo.name || ''} -${pct}%`.replace('  ', ' ') : `Cliente -${pct}%`);
+    return { listPrice, discountPct: pct, unitPrice: Math.round(listPrice * (1 - pct / 100) * 100) / 100, label };
+  },
+
+  newPromotion(overrides = {}) {
+    const today = new Date().toISOString().slice(0, 10);
+    return { name: '', scope: 'categoria', target: '', discount_pct: 10, start_date: today, end_date: '', active: true, ...overrides };
+  },
+
+  newActivity(overrides = {}) {
+    return { contact_id: '', kind: 'actividad', channel: 'llamada', date: new Date().toISOString().slice(0, 10), due_date: '', note: '', done: false, ...overrides };
   },
 
   getQuoteItems(quote) {

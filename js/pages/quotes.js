@@ -4,6 +4,7 @@ import { contactOptions, quickAddContact } from '../components/contact-picker.js
 import { mountPOS } from '../components/pos.js';
 import { printSalesDocument } from '../components/sales-document.js';
 import { openBusinessProfileModal } from '../components/business-profile.js';
+import { salesLines } from '../analytics.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { input, label } from '../components/accounting-shell.js';
 
@@ -26,10 +27,11 @@ let draftCart = []; // carrito del presupuesto nuevo, sobrevive al cambiar de pe
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-function quoteDocument(q) {
+export function quoteDocument(q) {
   const contact = q.contact_id ? Store.getById('contacts', q.contact_id) : null;
   return {
-    kind: 'quote', number: q.quote_number, date: q.date, validUntil: q.valid_until,
+    kind: 'quote', title: q.kind === 'oferta' ? 'Oferta' : 'Presupuesto',
+    number: q.quote_number, date: q.date, validUntil: q.valid_until,
     client: contact
       ? { name: contact.name, rif: contact.rif, address: contact.address, phone: contact.phone, email: contact.email }
       : { name: q.contact_name },
@@ -37,6 +39,23 @@ function quoteDocument(q) {
     notes: q.concepto,
     terms: Store.getBusinessProfile().terms
   };
+}
+
+// Mensaje de WhatsApp con el resumen de la oferta o presupuesto.
+export function whatsappQuoteLink(q, contact) {
+  let digits = String((contact && contact.phone) || '').replace(/\D/g, '');
+  if (digits.startsWith('0')) digits = '58' + digits.slice(1);
+  const biz = Store.getBusinessProfile().name;
+  const items = Store.getQuoteItems(q);
+  const text = [
+    `Hola${contact && contact.name ? ' ' + contact.name : ''}, ${q.kind === 'oferta' ? 'te comparto una oferta especial' : 'te comparto el presupuesto'} ${q.quote_number}${biz ? ' de ' + biz : ''}:`,
+    '',
+    ...items.map(it => `• ${it.qty} x ${it.name} — $${fmtNum(it.unitPrice)} c/u`),
+    '',
+    `Total: $${fmtNum(q.total)}`,
+    q.valid_until ? `Válido hasta: ${q.valid_until}` : ''
+  ].filter((l, i, arr) => l !== '' || arr[i - 1] !== '').join('\n');
+  return digits ? `https://wa.me/${digits}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
 }
 
 const printQuote = (id) => {
@@ -47,7 +66,12 @@ const printQuote = (id) => {
 const Quotes = {
   async render(app, params) {
     const param = params && params[0];
-    if (param) return renderBuilder(app, param === 'nuevo' ? null : param);
+    if (param) {
+      // nuevo?cliente=<id>&tipo=oferta llega desde la ficha del cliente (CRM).
+      const [path, qs] = String(param).split('?');
+      const opts = Object.fromEntries(new URLSearchParams(qs || ''));
+      return renderBuilder(app, path === 'nuevo' ? null : path, opts);
+    }
     return renderHome(app);
   }
 };
@@ -120,6 +144,7 @@ function renderHome(app) {
             <div class="min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="font-mono font-bold text-slate-800">${esc(x.quote_number)}</span>
+                ${x.kind === 'oferta' ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-violet-700 bg-violet-100">🎯 Oferta</span>' : ''}
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-${st.color}-700 bg-${st.color}-100">${st.label}</span>
                 ${isExpired(x) ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-red-700 bg-red-100">Vencido</span>' : ''}
                 ${x.converted_ref ? `<span class="text-[10px] font-mono text-emerald-700">→ ${esc(x.converted_ref)}</span>` : ''}
@@ -131,6 +156,7 @@ function renderHome(app) {
           <div class="text-xl font-black text-slate-900 md:w-32 md:text-right">$${fmtNum(x.total)}</div>
           <div class="flex flex-wrap gap-1.5 md:justify-end md:w-[22rem]">
             ${btn('data-print', '🖨 Imprimir', 'bg-slate-100 text-slate-700 hover:bg-slate-200')}
+            <a target="_blank" rel="noopener" href="${esc(whatsappQuoteLink(x, x.contact_id ? Store.getById('contacts', x.contact_id) : null))}" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-white hover:bg-emerald-600">💬 WhatsApp</a>
             ${x.status === 'pendiente' ? btn('data-edit', 'Editar', 'bg-slate-100 text-slate-700 hover:bg-slate-200') : ''}
             ${x.status === 'pendiente' ? btn('data-approve', '👍 Aprobar', 'bg-blue-600 text-white hover:bg-blue-700') : ''}
             ${x.status === 'aprobado' ? btn('data-convert', '🛒 Convertir en venta', 'bg-emerald-600 text-white hover:bg-emerald-700') : ''}
@@ -169,8 +195,11 @@ function renderHome(app) {
     </div>
     ${emitted && emitted.status === 'pendiente' ? `
       <div class="flex items-center justify-between gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-800">
-        <span>✅ Presupuesto <strong>${esc(emitted.quote_number)}</strong> emitido por <strong>$${fmtNum(emitted.total)}</strong>. Quedó como pendiente.</span>
-        <button id="btn-print-emitted" class="flex-shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg">🖨 Imprimir</button>
+        <span>✅ ${emitted.kind === 'oferta' ? 'Oferta' : 'Presupuesto'} <strong>${esc(emitted.quote_number)}</strong> emitido por <strong>$${fmtNum(emitted.total)}</strong>. Quedó como pendiente.</span>
+        <span class="flex gap-1.5 flex-shrink-0">
+          <a target="_blank" rel="noopener" href="${esc(whatsappQuoteLink(emitted, emitted.contact_id ? Store.getById('contacts', emitted.contact_id) : null))}" class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg">💬 WhatsApp</a>
+          <button id="btn-print-emitted" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg">🖨 Imprimir</button>
+        </span>
       </div>` : ''}
     <div id="q-tiles" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
     <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 space-y-3">
@@ -195,7 +224,7 @@ function renderHome(app) {
 // ---------------------------------------------------------------------------
 // Nuevo / editar: mismo punto de venta que Ventas, sin asiento ni stock
 // ---------------------------------------------------------------------------
-function renderBuilder(app, editId) {
+function renderBuilder(app, editId, opts = {}) {
   const destroy = new AbortController();
   const { signal } = destroy;
   const editing = editId ? Store.getById('quotes', editId) : null;
@@ -206,9 +235,22 @@ function renderBuilder(app, editId) {
 
   let contacts = Store.getAll('contacts');
   const products = Store.getAll('products');
+  const kind = editing ? (editing.kind || 'presupuesto') : (opts.tipo === 'oferta' ? 'oferta' : 'presupuesto');
+  const isOffer = kind === 'oferta';
+  const presetContact = editing ? editing.contact_id : (opts.cliente || '');
+  // Una oferta desde el CRM empieza vacía (no mezcla el borrador del presupuesto).
   const source = editing
     ? Store.getQuoteItems(editing)
-    : draftCart;
+    : (opts.cliente ? [] : draftCart);
+  const currentContact = () => contacts.find(c => c.id === (document.getElementById('f-contact') || {}).value);
+  // ⭐ Sugeridos: lo que este cliente ya ha comprado.
+  const suggested = new Set();
+  const refreshSuggested = () => {
+    suggested.clear();
+    const c = currentContact() || contacts.find(x => x.id === presetContact);
+    if (!c) return;
+    for (const l of salesLines()) if (l.productId && (l.contactId === c.id || l.entidad.trim() === String(c.name).trim())) suggested.add(l.productId);
+  };
   const initialCart = source
     .map(it => ({ product: products.find(p => p.id === it.productId), qty: it.qty, unitPrice: it.unitPrice }))
     .filter(l => l.product && l.qty > 0);
@@ -218,8 +260,10 @@ function renderBuilder(app, editId) {
       <div class="flex items-center gap-3">
         <a href="#/contabilidad/presupuestos" class="w-9 h-9 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-600">←</a>
         <div>
-          <h2 class="text-lg font-bold text-slate-800">${editing ? `Editar presupuesto ${esc(editing.quote_number)}` : 'Nuevo presupuesto'}</h2>
-          <p class="text-xs text-slate-400">Igual que una venta, con los productos disponibles. Al emitirlo queda pendiente; no toca la contabilidad ni el inventario.</p>
+          <h2 class="text-lg font-bold text-slate-800">${editing ? `Editar ${isOffer ? 'oferta' : 'presupuesto'} ${esc(editing.quote_number)}` : (isOffer ? '🎯 Nueva oferta' : 'Nuevo presupuesto')}</h2>
+          <p class="text-xs text-slate-400">${isOffer
+            ? 'Los productos que este cliente ya compra aparecen primero (⭐). Aplica un descuento a toda la oferta o cambia el precio de cada línea; luego imprímela o mándala por WhatsApp.'
+            : 'Igual que una venta, con los productos disponibles. Al emitirlo queda pendiente; no toca la contabilidad ni el inventario.'}</p>
         </div>
       </div>
     </div>
@@ -231,12 +275,14 @@ function renderBuilder(app, editId) {
     products: () => products,
     cart: initialCart,
     capToStock: true,
-    title: 'Presupuesto',
-    actionLabel: editing ? 'Guardar cambios' : 'Emitir presupuesto',
+    title: isOffer ? 'Oferta' : 'Presupuesto',
+    actionLabel: editing ? 'Guardar cambios' : (isOffer ? 'Emitir oferta' : 'Emitir presupuesto'),
+    suggestedIds: suggested,
+    priceFor: (p) => Store.priceFor(p, currentContact()),
     headerFieldsHtml: `
       <div>
         <label class="${label}">Cliente</label>
-        <select id="f-contact" class="${input}">${contactOptions(contacts, 'cliente', editing ? editing.contact_id : '')}</select>
+        <select id="f-contact" class="${input}">${contactOptions(contacts, 'cliente', presetContact)}</select>
       </div>`,
     footerFieldsHtml: `
       <div class="grid grid-cols-2 gap-2">
@@ -251,10 +297,17 @@ function renderBuilder(app, editId) {
       </div>
       <div>
         <label class="${label}">Notas</label>
-        <input id="f-concepto" type="text" placeholder="Venta al mayor…" value="${esc(editing ? editing.concepto : '')}" class="${input}">
+        <input id="f-concepto" type="text" placeholder="${isOffer ? 'Oferta especial por volumen…' : 'Venta al mayor…'}" value="${esc(editing ? editing.concepto : '')}" class="${input}">
+      </div>
+      <div class="flex items-end gap-2">
+        <div class="flex-1">
+          <label class="${label}">Descuento a toda la ${isOffer ? 'oferta' : 'cotización'} %</label>
+          <input id="f-discount" type="number" min="0" max="90" step="0.5" placeholder="0" class="${input}">
+        </div>
+        <button id="f-discount-apply" type="button" class="px-3 py-2 rounded-lg text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white">Aplicar</button>
       </div>`,
     onCartChange: (cart) => {
-      if (!editing) draftCart = cart.map(l => ({ productId: l.product.id, qty: l.qty, unitPrice: l.unitPrice }));
+      if (!editing && !opts.cliente) draftCart = cart.map(l => ({ productId: l.product.id, qty: l.qty, unitPrice: l.unitPrice }));
     }
   });
 
@@ -278,7 +331,7 @@ function renderBuilder(app, editId) {
     }));
     const fields = {
       date, valid_until: validUntil, contact_id: contactId || '', contact_name: contact ? contact.name : '',
-      concepto, items: JSON.stringify(items), total: Math.round(pos.total() * 100) / 100
+      concepto, items: JSON.stringify(items), total: Math.round(pos.total() * 100) / 100, kind
     };
 
     if (editing) {
@@ -293,11 +346,22 @@ function renderBuilder(app, editId) {
   });
 
   document.getElementById('f-contact').addEventListener('change', (e) => {
-    if (e.target.value !== '__new__') return;
-    const c = quickAddContact(Store, 'cliente');
-    contacts = Store.getAll('contacts');
-    e.target.innerHTML = contactOptions(contacts, 'cliente', c ? c.id : '');
+    if (e.target.value === '__new__') {
+      const c = quickAddContact(Store, 'cliente');
+      contacts = Store.getAll('contacts');
+      e.target.innerHTML = contactOptions(contacts, 'cliente', c ? c.id : '');
+    }
+    refreshSuggested();
+    pos.refresh();
+    pos.repriceAll();
   }, { signal });
+  document.getElementById('f-discount-apply').addEventListener('click', () => {
+    const pct = Math.max(0, Math.min(90, Number(document.getElementById('f-discount').value) || 0));
+    if (!pos.getCart().length) { pos.flash('Agrega productos antes de aplicar el descuento.'); return; }
+    pos.applyDiscount(pct);
+  }, { signal });
+  refreshSuggested();
+  pos.refresh();
 
   return () => destroy.abort();
 }
