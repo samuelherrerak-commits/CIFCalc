@@ -106,14 +106,16 @@ const AccountingDashboard = {
     `;
 
     // Accesos rápidos (como el menú de inicio de LegalYa).
+    // Mismos colores que las secciones del menú: verde = ingresos, rojo =
+    // gastos, celeste = activo (te deben), naranja = pasivo (debes).
     const actions = [
-      ['#/contabilidad/ventas', 'Nueva venta', '🛒', 'bg-blue-600 hover:bg-blue-700 text-white'],
-      ['#/contabilidad/presupuestos/nuevo', 'Presupuesto', '📄', 'bg-indigo-600 hover:bg-indigo-700 text-white'],
-      ['#/contabilidad/por-cobrar', 'Cobrar', '💵', 'bg-amber-500 hover:bg-amber-600 text-white'],
-      ['#/contabilidad/pagos', 'Pagar contenedor', '🚢', 'bg-slate-800 hover:bg-slate-900 text-white'],
+      ['#/contabilidad/ventas', 'Nueva venta', '🛒', 'bg-emerald-600 hover:bg-emerald-700 text-white'],
+      ['#/contabilidad/presupuestos/nuevo', 'Presupuesto', '📄', 'bg-emerald-500 hover:bg-emerald-600 text-white'],
       ['#/contabilidad/gastos', 'Registrar gasto', '💸', 'bg-rose-500 hover:bg-rose-600 text-white'],
+      ['#/contabilidad/por-cobrar', 'Cobrar a clientes', '💵', 'bg-sky-500 hover:bg-sky-600 text-white'],
+      ['#/contabilidad/pagos', 'Pagar contenedor', '🚢', 'bg-orange-500 hover:bg-orange-600 text-white'],
       ['#/contabilidad/inventario', 'Ver stock', '📦', 'bg-white hover:bg-slate-50 text-slate-800 border border-slate-200'],
-      ['#/contabilidad/contactos', 'Contactos', '👥', 'bg-fuchsia-600 hover:bg-fuchsia-700 text-white']
+      ['#/contabilidad/contactos', 'Contactos', '👥', 'bg-slate-700 hover:bg-slate-800 text-white']
     ];
     const actionBtn = ([href, text, icon, cls]) => `
       <a href="${href}" class="${cls} rounded-2xl p-4 flex flex-col justify-between min-h-[96px] shadow-sm hover:shadow-lg hover:-translate-y-0.5 active:scale-95 transition">
@@ -135,9 +137,9 @@ const AccountingDashboard = {
     const approvedQuotes = quotes.filter(q => q.status === 'aprobado');
     const noPrice = Store.getAll('products').filter(p => Number(p.stock) > 0 && !(Number(p.sale_price) > 0)).length;
     const pendings = [
-      payableCount && { href: '#/contabilidad/pagos', icon: '🚢', color: 'sky', title: `${payableCount} contenedor(es) por pagar`, value: '$' + fmtNum(payableTotal) },
+      payableCount && { href: '#/contabilidad/pagos', icon: '🚢', color: 'orange', title: `${payableCount} contenedor(es) por pagar`, value: '$' + fmtNum(payableTotal) },
       withoutEntry && { href: '#/contabilidad/pagos', icon: '⚠️', color: 'red', title: `${withoutEntry} contenedor(es) completo(s) sin asiento`, value: 'Generar' },
-      stats.porCobrar > 0.01 && { href: '#/contabilidad/por-cobrar', icon: '💵', color: 'amber', title: 'Clientes te deben', value: '$' + fmtNum(stats.porCobrar) },
+      stats.porCobrar > 0.01 && { href: '#/contabilidad/por-cobrar', icon: '💵', color: 'sky', title: 'Clientes te deben', value: '$' + fmtNum(stats.porCobrar) },
       pendingQuotes.length && { href: '#/contabilidad/presupuestos', icon: '⏳', color: 'amber', title: `${pendingQuotes.length} presupuesto(s) pendiente(s)`, value: '$' + fmtNum(pendingQuotes.reduce((s2, q) => s2 + (Number(q.total) || 0), 0)) },
       approvedQuotes.length && { href: '#/contabilidad/presupuestos', icon: '👍', color: 'blue', title: `${approvedQuotes.length} presupuesto(s) aprobado(s) por vender`, value: 'Convertir' },
       noPrice && { href: '#/contabilidad/inventario', icon: '🏷️', color: 'violet', title: `${noPrice} producto(s) con existencia sin precio`, value: 'Poner precio' }
@@ -173,7 +175,7 @@ const AccountingDashboard = {
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
         ${statCard('Caja', stats.caja, 'emerald', '#/contabilidad/mayor', '💵')}
         ${statCard('Banco', stats.banco, 'blue', '#/contabilidad/mayor', '🏦')}
-        ${statCard('Por Cobrar', stats.porCobrar, 'amber', '#/contabilidad/por-cobrar', '🧾')}
+        ${statCard('Por Cobrar', stats.porCobrar, 'sky', '#/contabilidad/por-cobrar', '🧾')}
         ${statCard('Gastos y Costos', stats.gastosCostos, 'rose', '#/contabilidad/gastos', '💸')}
       </div>
 

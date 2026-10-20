@@ -3,27 +3,33 @@ import Store from '../store.js';
 // Navegación del módulo de Contabilidad al estilo LegalYa: menú lateral por
 // secciones con íconos (en escritorio) y barra inferior + panel "Más" (en el
 // teléfono). Tema claro, igual que el resto de CIFCalc.
+// Secciones según la naturaleza contable: lo que entra (Ingresos), lo que sale
+// (Costos y Gastos), lo que te deben (Activo) y lo que debes (Pasivo) nunca se
+// mezclan en un mismo grupo. Inventario y Contactos son de apoyo (el
+// inventario es de referencia, no una cuenta contable).
 export const ACCOUNTING_SECTIONS = [
   { title: 'Inicio', items: [
     { key: 'dashboard', path: '#/contabilidad/resumen', label: 'Resumen', icon: '🏠', color: 'blue' }
   ] },
-  { title: 'Vender', items: [
-    { key: 'sales', path: '#/contabilidad/ventas', label: 'Ventas', icon: '🛒', color: 'blue' },
-    { key: 'quotes', path: '#/contabilidad/presupuestos', label: 'Presupuestos', icon: '📄', color: 'indigo' },
-    { key: 'inventory', path: '#/contabilidad/inventario', label: 'Inventario', icon: '📦', color: 'emerald' }
+  { title: 'Ingresos', tag: 'Lo que entra', tagColor: 'emerald', items: [
+    { key: 'sales', path: '#/contabilidad/ventas', label: 'Ventas', icon: '🛒', color: 'emerald' },
+    { key: 'quotes', path: '#/contabilidad/presupuestos', label: 'Presupuestos', icon: '📄', color: 'emerald' },
+    { key: 'income', path: '#/contabilidad/ingresos', label: 'Otros Ingresos', icon: '➕', color: 'emerald' }
   ] },
-  { title: 'Cobros y pagos', items: [
-    { key: 'receivables', path: '#/contabilidad/por-cobrar', label: 'Cuentas por Cobrar', icon: '💵', color: 'amber' },
-    { key: 'payments', path: '#/contabilidad/pagos', label: 'Pagar Contenedores', icon: '🚢', color: 'sky' },
-    { key: 'payables', path: '#/contabilidad/por-pagar', label: 'Cuentas por Pagar', icon: '🧾', color: 'orange' }
+  { title: 'Costos y Gastos', tag: 'Lo que sale', tagColor: 'rose', items: [
+    { key: 'costs', path: '#/contabilidad/costos', label: 'Costos', icon: '🏷️', color: 'rose' },
+    { key: 'expenses', path: '#/contabilidad/gastos', label: 'Gastos', icon: '💸', color: 'rose' }
   ] },
-  { title: 'Registrar', items: [
-    { key: 'expenses', path: '#/contabilidad/gastos', label: 'Gastos', icon: '💸', color: 'rose' },
-    { key: 'income', path: '#/contabilidad/ingresos', label: 'Otros Ingresos', icon: '➕', color: 'teal' },
-    { key: 'costs', path: '#/contabilidad/costos', label: 'Costos', icon: '🏷️', color: 'violet' }
+  { title: 'Activo', tag: 'Te deben', tagColor: 'sky', items: [
+    { key: 'receivables', path: '#/contabilidad/por-cobrar', label: 'Cuentas por Cobrar', icon: '💵', color: 'sky' }
   ] },
-  { title: 'Directorio', items: [
-    { key: 'contacts', path: '#/contabilidad/contactos', label: 'Contactos', icon: '👥', color: 'fuchsia' }
+  { title: 'Pasivo', tag: 'Debes', tagColor: 'orange', items: [
+    { key: 'payments', path: '#/contabilidad/pagos', label: 'Contenedores por Pagar', icon: '🚢', color: 'orange' },
+    { key: 'payables', path: '#/contabilidad/por-pagar', label: 'Proveedores por Pagar', icon: '🧾', color: 'orange' }
+  ] },
+  { title: 'Apoyo', tag: 'Referencia', tagColor: 'slate', items: [
+    { key: 'inventory', path: '#/contabilidad/inventario', label: 'Inventario', icon: '📦', color: 'slate' },
+    { key: 'contacts', path: '#/contabilidad/contactos', label: 'Contactos', icon: '👥', color: 'slate' }
   ] },
   { title: 'Libros contables', items: [
     { key: 'accounts', path: '#/contabilidad/cuentas', label: 'Plan de Cuentas', icon: '📚', color: 'slate' },
@@ -31,6 +37,12 @@ export const ACCOUNTING_SECTIONS = [
     { key: 'ledger', path: '#/contabilidad/mayor', label: 'Libro Mayor', icon: '📊', color: 'slate' }
   ] }
 ];
+
+const sectionTitle = (s, extra = '') => `
+  <p class="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400 ${extra}">
+    <span>${s.title}</span>
+    ${s.tag ? `<span class="normal-case tracking-normal font-bold text-[9px] px-1.5 py-0.5 rounded-full text-${s.tagColor}-700 bg-${s.tagColor}-50">${s.tag}</span>` : ''}
+  </p>`;
 
 const ALL_ITEMS = ACCOUNTING_SECTIONS.flatMap(s => s.items);
 const MOBILE_KEYS = ['dashboard', 'sales', 'inventory', 'expenses'];
@@ -74,7 +86,7 @@ const AccountingTabs = {
           <nav class="space-y-2.5">
             ${ACCOUNTING_SECTIONS.map(s => `
               <div>
-                <p class="text-[9px] font-black uppercase tracking-widest text-slate-400 px-2.5 mb-1">${s.title}</p>
+                ${sectionTitle(s, 'px-2.5 mb-1')}
                 <div class="space-y-0.5">${s.items.map(link).join('')}</div>
               </div>`).join('')}
           </nav>
@@ -99,7 +111,7 @@ const AccountingTabs = {
           </div>
           ${ACCOUNTING_SECTIONS.map(s => `
             <div>
-              <p class="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1.5">${s.title}</p>
+              ${sectionTitle(s, 'mb-1.5')}
               <div class="grid grid-cols-3 gap-2">
                 ${s.items.map(it => `
                   <a href="${it.path}" class="flex flex-col items-center gap-1 p-2.5 rounded-2xl text-center text-[10px] font-bold ${it.key === active ? 'bg-blue-600 text-white' : `bg-${it.color}-50 text-slate-700`}">
