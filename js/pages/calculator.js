@@ -36,18 +36,23 @@ const Calculator = {
         if (!item.product_id) return item;
         const product = Store.getById('products', item.product_id);
         if (!product) return item;
+        // Un dato vacío o en 0 en el catálogo (p. ej. el Maestro de Códigos no
+        // trae FOB ni medidas) nunca pisa lo que ya se cargó en el contenedor.
+        const text = (v, fallback) => (String(v || '').trim() ? v : fallback);
+        const numv = (v, fallback) => (Number(v) > 0 ? Number(v) : fallback);
         const updated = {
           ...item,
-          name: product.name,
-          sku: product.sku,
-          origin_country: product.origin_country,
-          supplier_id: product.supplier_id,
-          units_per_box: Number(product.units_per_box) || 1,
-          box_volume: Number(product.box_volume) || 0,
-          weight_kg: Number(product.weight_kg) || 0,
-          fob_unit: Number(product.fob_unit) || 0,
-          hs_code: product.hs_code || '',
-          tariff_rate: Number(product.tariff_rate) || 0
+          sku_briggs: text(product.sku_briggs, item.sku_briggs),
+          name: text(product.name, item.name),
+          sku: text(product.sku, item.sku),
+          origin_country: text(product.origin_country, item.origin_country),
+          supplier_id: text(product.supplier_id, item.supplier_id),
+          units_per_box: numv(product.units_per_box > 1 ? product.units_per_box : 0, Number(item.units_per_box) || 1),
+          box_volume: numv(product.box_volume, Number(item.box_volume) || 0),
+          weight_kg: numv(product.weight_kg, Number(item.weight_kg) || 0),
+          fob_unit: numv(product.fob_unit, Number(item.fob_unit) || 0),
+          hs_code: text(product.hs_code, item.hs_code || ''),
+          tariff_rate: numv(product.tariff_rate, Number(item.tariff_rate) || 0)
         };
         if (!changed && Object.keys(updated).some((k) => updated[k] !== item[k])) changed = true;
         return updated;
@@ -223,7 +228,10 @@ const Calculator = {
       const tbody = document.getElementById('items-tbody');
       tbody.innerHTML = items.map((item, index) => `
         <tr class="border-b border-slate-100 hover:bg-slate-50" data-idx="${index}">
-          <td class="p-2 font-bold text-blue-800">${esc(item.sku_briggs) || '—'}</td>
+          <td class="p-2 font-bold text-blue-800">${isLinked(item)
+            ? `<span title="Vinculado al catálogo: entra al inventario al completar">🔗 ${esc(item.sku_briggs) || '—'}</span>`
+            : `<div class="text-[10px] font-normal text-slate-400 line-through">${esc(item.sku_briggs) || ''}</div>
+               <button data-link="${index}" class="whitespace-nowrap text-[11px] font-bold px-2 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800" title="Sin vincular al catálogo: no entra al inventario">⚠ Vincular</button>`}</td>
           <td class="p-2">${esc(item.sku) || '—'}</td>
           <td class="p-2">${esc(item.name) || '—'}</td>
           <td class="p-2">${esc(supplierName(item.supplier_id)) || '—'}</td>
@@ -263,6 +271,8 @@ const Calculator = {
           refreshItemsTable();
         });
       });
+      tbody.querySelectorAll('[data-link]').forEach(btn => btn.addEventListener('click', () => openLinkPicker(Number(btn.dataset.link))));
+      renderLinkBanner();
       tbody.querySelectorAll('[data-remove]').forEach(btn => {
         btn.addEventListener('click', (e) => {
           const idx = Number(e.target.dataset.remove);
@@ -273,7 +283,73 @@ const Calculator = {
       });
     };
 
+    // --- Vínculo de ítems con el catálogo (solo los vinculados entran al inventario) ---
+    const isLinked = (item) => !!(item.product_id && Store.getById('products', item.product_id));
+    const normCode = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const words = (v) => new Set(String(v || '').toLowerCase().split(/[^a-z0-9áéíóúñ]+/).filter(w => w.length > 2));
+    // Puntaje de parecido entre un ítem del contenedor y un producto del catálogo.
+    const matchScore = (item, p) => {
+      let score = 0;
+      const briggs = String(item.sku_briggs || '').toUpperCase().trim().replace(/-\d+$/, '').replace(/-+$/, '');
+      if (briggs && String(p.sku_briggs || '').toUpperCase().trim().replace(/-+$/, '') === briggs) score += 10;
+      const code = normCode(item.sku), origin = normCode(p.sku);
+      if (code && origin) { if (origin === code) score += 8; else if (origin.endsWith(code) || code.endsWith(origin)) score += 5; }
+      const iw = words(item.name);
+      for (const w of words(p.name)) if (iw.has(w)) score += 1;
+      return score;
+    };
+    // Coincidencia única y clara (para vincular en lote con confirmación).
+    const uniqueMatch = (item) => {
+      const scored = Store.getAll('products').map(p => [p, matchScore(item, p)]).filter(([, sc]) => sc >= 5).sort((a, b) => b[1] - a[1]);
+      return scored.length === 1 || (scored.length > 1 && scored[0][1] >= 8 && scored[1][1] < 8) ? scored[0][0] : null;
+    };
+    // Vincula el ítem al producto conservando cantidades, FOB, medidas y margen
+    // del contenedor; si al producto del catálogo le faltan esos datos, los toma del ítem.
+    const linkItem = (idx, product) => {
+      const it = items[idx];
+      items[idx] = {
+        ...it, product_id: product.id, sku_briggs: product.sku_briggs || it.sku_briggs,
+        name: product.name || it.name, sku: product.sku || it.sku,
+        supplier_id: product.supplier_id || it.supplier_id, origin_country: product.origin_country || it.origin_country
+      };
+      const fill = {};
+      if (!(Number(product.fob_unit) > 0) && Number(it.fob_unit) > 0) fill.fob_unit = Number(it.fob_unit);
+      if (!(Number(product.units_per_box) > 1) && Number(it.units_per_box) > 1) fill.units_per_box = Number(it.units_per_box);
+      if (!(Number(product.box_volume) > 0) && Number(it.box_volume) > 0) fill.box_volume = Number(it.box_volume);
+      if (!(Number(product.weight_kg) > 0) && Number(it.weight_kg) > 0) fill.weight_kg = Number(it.weight_kg);
+      if (!String(product.hs_code || '').trim() && String(it.hs_code || '').trim()) fill.hs_code = it.hs_code;
+      if (!(Number(product.tariff_rate) > 0) && Number(it.tariff_rate) > 0) fill.tariff_rate = Number(it.tariff_rate);
+      if (Object.keys(fill).length) Store.update('products', { id: product.id, ...fill });
+    };
+    // Tras vincular: guardar y, si el contenedor ya estaba completo, recalcular el
+    // inventario (su entrada se registró antes sin estos productos).
+    const afterLink = () => {
+      refreshResults();
+      refreshItemsTable();
+      if (container.status === 'closed') setTimeout(() => Store.rebuildInventory(), 900);
+    };
+    const renderLinkBanner = () => {
+      const el = document.getElementById('link-banner');
+      if (!el) return;
+      const unlinked = items.map((it, i) => [it, i]).filter(([it]) => !isLinked(it));
+      if (!unlinked.length) { el.innerHTML = ''; return; }
+      const auto = unlinked.map(([it, i]) => [i, uniqueMatch(it)]).filter(([, p]) => p);
+      el.innerHTML = `
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+          <span>⚠ <strong>${unlinked.length} de ${items.length}</strong> producto(s) no están vinculados al catálogo. <strong>No entrarán al inventario</strong> al completar el contenedor (y no se podrán vender). Toca <strong>⚠ Vincular</strong> en cada uno.</span>
+          ${auto.length ? `<button id="btn-auto-link" class="whitespace-nowrap font-bold px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white">🔗 Vincular ${auto.length} con coincidencia clara</button>` : ''}
+        </div>`;
+      const btn = document.getElementById('btn-auto-link');
+      if (btn) btn.addEventListener('click', () => {
+        const list = auto.map(([i, p]) => `• ${items[i].sku || items[i].name || 'Ítem'} → ${p.sku_briggs} ${p.name}`).join('\n');
+        if (!confirm(`Se vincularán estos productos (se conservan cantidades, FOB y medidas del contenedor):\n\n${list}\n\n¿Continuar?`)) return;
+        for (const [i, p] of auto) linkItem(i, p);
+        afterLink();
+      });
+    };
+
     // --- Selector de productos desde el catálogo ---
+    let linkingIdx = null; // índice del ítem que se está vinculando (modo vincular)
     let pickerProduct = null;
     let pickerQuery = '';
     let pickerCategory = '';
@@ -297,7 +373,8 @@ const Calculator = {
       const list = document.getElementById('pk-list');
       const products = Store.getAll('products');
       const q = pickerQuery.trim().toLowerCase();
-      const filtered = products.filter(p => {
+      const linkItemRef = linkingIdx != null ? items[linkingIdx] : null;
+      const filteredRaw = products.filter(p => {
         if (pickerCategory && p.category !== pickerCategory) return false;
         if (pickerCollection && p.collection !== pickerCollection) return false;
         if (!q) return true;
@@ -305,6 +382,8 @@ const Calculator = {
         return [p.sku_briggs, p.sku, p.name, p.origin_country, sup]
           .some(v => String(v || '').toLowerCase().includes(q));
       });
+      const scoreOf = new Map(linkItemRef ? filteredRaw.map(p => [p.id, matchScore(linkItemRef, p)]) : []);
+      const filtered = linkItemRef ? [...filteredRaw].sort((a, b) => scoreOf.get(b.id) - scoreOf.get(a.id)) : filteredRaw;
       list.innerHTML = filtered.length === 0
         ? `<div class="p-4 text-center text-slate-400 text-sm">Sin productos que coincidan. Ajusta la búsqueda o los filtros.</div>`
         : filtered.map(p => `
@@ -312,13 +391,13 @@ const Calculator = {
             <div class="flex items-center gap-3 min-w-0">
               ${p.foto_url ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-10 h-10 object-cover rounded border border-slate-200 flex-shrink-0" alt="">` : '<div class="w-10 h-10 rounded border border-slate-200 bg-slate-50 flex-shrink-0"></div>'}
               <div class="min-w-0">
-                <div class="text-xs font-bold text-blue-800">${esc(p.sku_briggs) || '—'} <span class="text-slate-500 font-normal">${esc(p.sku) || ''}</span></div>
+                <div class="text-xs font-bold text-blue-800">${esc(p.sku_briggs) || '—'} <span class="text-slate-500 font-normal">${esc(p.sku) || ''}</span>${(scoreOf.get(p.id) || 0) >= 5 ? ' <span class="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-800">⭐ Coincide</span>' : ''}</div>
                 <div class="text-sm text-slate-800 truncate">${esc(p.name) || ''}</div>
                 <div class="text-xs text-slate-400">Proveedor: ${esc(supplierName(p.supplier_id)) || '—'} · País: ${esc(p.origin_country) || '—'} · Vol: ${Number(p.box_volume) || 0} m³ · Peso: ${fmtNum(p.weight_kg)} kg</div>
                 ${(p.category || p.collection) ? `<div class="text-xs text-slate-400">${esc(p.category) || ''}${p.category && p.collection ? ' · ' : ''}${esc(p.collection) || ''}</div>` : ''}
               </div>
             </div>
-            <button data-pick="${p.id}" class="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg w-8 h-8 flex-shrink-0">+</button>
+            <button data-pick="${p.id}" class="${linkItemRef ? 'bg-amber-500 hover:bg-amber-600 px-3 text-xs' : 'bg-blue-600 hover:bg-blue-700 w-8'} text-white font-bold rounded-lg h-8 flex-shrink-0">${linkItemRef ? 'Vincular' : '+'}</button>
           </div>
         `).join('');
 
@@ -326,6 +405,12 @@ const Calculator = {
         btn.addEventListener('click', () => {
           const p = Store.getById('products', btn.dataset.pick);
           if (!p) return;
+          if (linkingIdx != null) {
+            linkItem(linkingIdx, p);
+            closePicker();
+            afterLink();
+            return;
+          }
           pickerProduct = p;
           document.getElementById('pk-confirm-name').textContent = `${p.sku_briggs || '—'} — ${p.name || ''}`;
           document.getElementById('pk-qty').value = '';
@@ -340,6 +425,9 @@ const Calculator = {
     };
 
     const openProductPicker = () => {
+      linkingIdx = null;
+      document.getElementById('pk-title').textContent = 'Agregar Producto';
+      document.getElementById('pk-link-info').classList.add('hidden');
       pickerProduct = null;
       pickerQuery = '';
       pickerCategory = '';
@@ -356,6 +444,19 @@ const Calculator = {
       const modal = document.getElementById('product-picker');
       if (modal) modal.classList.add('hidden');
       pickerProduct = null;
+      linkingIdx = null;
+    };
+
+    // Modo vincular: el mismo selector, ordenado por parecido con el ítem.
+    const openLinkPicker = (idx) => {
+      openProductPicker();
+      linkingIdx = idx;
+      const it = items[idx];
+      document.getElementById('pk-title').textContent = 'Vincular con el catálogo';
+      const info = document.getElementById('pk-link-info');
+      info.innerHTML = `Ítem del contenedor: <strong>${esc(it.sku || '—')}</strong> · ${esc(it.name || '—')} · ${fmtInt(it.qty)} unid. · FOB $${fmtNum(it.fob_unit)}. Se conservan cantidad, FOB, medidas y margen.`;
+      info.classList.remove('hidden');
+      renderPickerList();
     };
 
     const confirmPick = () => {
@@ -527,6 +628,7 @@ const Calculator = {
             + Agregar Producto
           </button>
         </div>
+        <div id="link-banner"></div>
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse text-xs">
             <thead>
@@ -598,9 +700,10 @@ const Calculator = {
       <div id="product-picker" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-5 space-y-4 max-h-[90vh] flex flex-col">
           <div class="flex justify-between items-center">
-            <h3 class="text-lg font-bold text-slate-800">Agregar Producto</h3>
+            <h3 id="pk-title" class="text-lg font-bold text-slate-800">Agregar Producto</h3>
             <button id="pk-close" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
           </div>
+          <div id="pk-link-info" class="hidden text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded-lg p-2.5"></div>
           <input id="pk-search" type="text" placeholder="Buscar por SKU BRIGGS, SKU, nombre, proveedor, país…"
                  class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
           <div class="grid grid-cols-2 gap-2">
@@ -759,6 +862,8 @@ const Calculator = {
       if (container.status === 'draft') {
         container = { ...container, status: 'in_transit' };
       } else if (container.status === 'in_transit') {
+        const unlinked = items.filter(it => !isLinked(it)).length;
+        if (unlinked && !confirm(`⚠ ${unlinked} de ${items.length} producto(s) no están vinculados al catálogo y NO entrarán al inventario (no se podrán vender).\n\nLo recomendable es Cancelar y tocar "⚠ Vincular" en cada uno.\n\n¿Completar de todas formas?`)) return;
         container = { ...container, status: 'closed' };
       } else {
         return; // ya completo, no se puede cambiar
