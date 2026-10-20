@@ -51,18 +51,30 @@ function balances(movements, from, to) {
 export function inventoryAt(date) {
   const movements = Store.getAll('movements');
   const closingDate = new Map();
+  const bookedCost = new Map(); // contenedor → costo llevado a cuentas de Costo en su asiento de cierre
   for (const m of movements) {
-    if (m.source === 'container_close' && m.source_ref && !closingDate.has(m.source_ref)) closingDate.set(m.source_ref, String(m.entry_date).slice(0, 10));
+    if (m.source !== 'container_close' || !m.source_ref) continue;
+    if (!closingDate.has(m.source_ref)) closingDate.set(m.source_ref, String(m.entry_date).slice(0, 10));
+    if (String(m.codigo_cuenta).startsWith('5')) bookedCost.set(m.source_ref, (bookedCost.get(m.source_ref) || 0) + (Number(m.debit) || 0));
   }
+  const seen = new Set();
   const ins = new Map(); // productId → { qty, cost }
   for (const c of Store.getAll('containers')) {
+    if (seen.has(c.id)) continue; // filas repetidas con el mismo id en la hoja
+    seen.add(c.id);
     const d = closingDate.get(c.id);
     if (!d || d > date) continue; // solo contenedores cuyo costo ya está en el diario
-    for (const calc of computeContainer(c, Store.getItemsByContainer(c.id)).calculated) {
-      const pid = calc.item.product_id;
-      if (!pid || !(calc.qty > 0)) continue;
+    const calc = computeContainer(c, Store.getItemsByContainer(c.id)).calculated;
+    // El costo de cada producto se reparte del costo REGISTRADO en el asiento
+    // (no del recalculado hoy): si el contenedor se editó después de
+    // completarlo, el inventario nunca vale más que lo que se compró.
+    const current = calc.reduce((s, x) => s + x.qty * x.costNoVat, 0);
+    const factor = current > 0 ? (bookedCost.get(c.id) || 0) / current : 0;
+    for (const x of calc) {
+      const pid = x.item.product_id;
+      if (!pid || !(x.qty > 0)) continue;
       const e = ins.get(pid) || { qty: 0, cost: 0 };
-      e.qty += calc.qty; e.cost += calc.qty * calc.costNoVat;
+      e.qty += x.qty; e.cost += x.qty * x.costNoVat * factor;
       ins.set(pid, e);
     }
   }
@@ -96,6 +108,7 @@ function classifyLiability(code, te) {
   if (code.startsWith('2.2')) return 'nc';
   if (te === 'Proveedores' || code.startsWith('2.1.01') || code.startsWith('2.1.02')) return 'cxp';
   if (code.startsWith('2.1.03')) return 'prestamos';
+  if (code.startsWith('2.1.04')) return 'pImpuestos';
   return 'otrosCorr';
 }
 function classifyResult(code, tipo) {
@@ -141,7 +154,7 @@ function incomeStatement(movements, info, from, to) {
 // Situación financiera al cierre de `date`.
 function balanceSheet(movements, info, date, periodFrom) {
   const b = balances(movements, null, date);
-  const groups = { efectivo: [], cxc: [], impuestos: [], otrosCorr: [], nc: [], cxp: [], prestamos: [], pOtrosCorr: [], pNc: [], capital: [] };
+  const groups = { efectivo: [], cxc: [], impuestos: [], otrosCorr: [], nc: [], cxp: [], prestamos: [], pImpuestos: [], pOtrosCorr: [], pNc: [], capital: [] };
   let acumulado = 0; // resultado contable (sin ajuste de inventario) de todos los ingresos/costos/gastos
   for (const [code, v] of b) {
     const tipo = info.tipoOf(code);
@@ -168,7 +181,8 @@ function balanceSheet(movements, info, date, periodFrom) {
   const activoNC = sum(groups.nc);
   const activoTotal = r2(activoCorriente + activoNC);
   const cxp = sum(groups.cxp), prestamos = sum(groups.prestamos), pOtros = sum(groups.pOtrosCorr);
-  const pasivoCorriente = r2(cxp + prestamos + pOtros);
+  const pImpuestos = sum(groups.pImpuestos);
+  const pasivoCorriente = r2(cxp + prestamos + pImpuestos + pOtros);
   const pasivoNC = sum(groups.pNc);
   const pasivoTotal = r2(pasivoCorriente + pasivoNC);
   const capital = sum(groups.capital);
@@ -179,7 +193,7 @@ function balanceSheet(movements, info, date, periodFrom) {
   const patrimonio = r2(capital + resultadosAcumulados + resultadoEjercicio);
   return {
     date, groups, inventario, efectivo, cxc, impuestos, otrosCorr, activoCorriente, activoNC, activoTotal,
-    cxp, prestamos, pOtros, pasivoCorriente, pasivoNC, pasivoTotal, capital, resultadosAcumulados, resultadoEjercicio,
+    cxp, prestamos, pImpuestos, pOtros, pasivoCorriente, pasivoNC, pasivoTotal, capital, resultadosAcumulados, resultadoEjercicio,
     patrimonio, pasivoPatrimonio: r2(pasivoTotal + patrimonio), diferencia: r2(activoTotal - pasivoTotal - patrimonio)
   };
 }
@@ -241,7 +255,7 @@ function cashFlow(movements, info, from, to) {
       else if (tipo === 'Ingreso') k = 'otrosCobros';
       else if (tipo === 'Costo' || te === 'Proveedores' || code.startsWith('2.1.01') || code.startsWith('2.1.02')) k = 'pagosProveedores';
       else if (tipo === 'Gasto') k = 'pagosGastos';
-      else if (code.startsWith('1.1.03')) k = 'impuestos';
+      else if (code.startsWith('1.1.03') || code.startsWith('2.1.04')) k = 'impuestos';
       else if (code.startsWith('1.2')) k = 'inversion';
       else if (tipo === 'Pasivo') k = 'prestamos';
       else if (tipo === 'Patrimonio') k = 'capital';
@@ -275,10 +289,37 @@ export function periodBounds(kind, year, month, from, to) {
   return { from, to, pFrom: addDays(from, -len), pTo: addDays(from, -1), label: `${from} al ${to}`, pLabel: `${addDays(from, -len)} al ${addDays(from, -1)}` };
 }
 
+// Datos que distorsionan el costo de ventas: asientos de cierre cuyo contenedor
+// no está completo (o ya no existe) y productos de contenedores completos que no
+// están vinculados al catálogo (su costo no entra al inventario).
+function dataIssues(movements, to) {
+  const containers = new Map(Store.getAll('containers').map(c => [c.id, c]));
+  let orphanTotal = 0;
+  const orphanNames = new Set();
+  for (const m of movements) {
+    if (m.source !== 'container_close' || String(m.entry_date).slice(0, 10) > to) continue;
+    const c = containers.get(m.source_ref);
+    if (c && c.status === 'closed') continue;
+    if (String(m.codigo_cuenta).startsWith('5')) orphanTotal += Number(m.debit) || 0; // solo lo que va a costo
+    orphanNames.add(c ? (c.bl_number || 'sin BL') : 'contenedor eliminado');
+  }
+  const products = new Set(Store.getAll('products').map(p => p.id));
+  const closedWithEntry = new Set(movements.filter(m => m.source === 'container_close').map(m => m.source_ref));
+  let unlinkedCost = 0;
+  for (const c of containers.values()) {
+    if (c.status !== 'closed' || !closedWithEntry.has(c.id)) continue;
+    for (const calc of computeContainer(c, Store.getItemsByContainer(c.id)).calculated) {
+      if (!calc.item.product_id || !products.has(calc.item.product_id)) unlinkedCost += calc.qty * calc.costNoVat;
+    }
+  }
+  return { orphanTotal: r2(orphanTotal), orphanNames: [...orphanNames], unlinkedCost: r2(unlinkedCost) };
+}
+
 export function buildStatements(p) {
   const movements = Store.getAll('movements');
   const info = accountsInfo();
   return {
+    issues: dataIssues(movements, p.to),
     p,
     bs: balanceSheet(movements, info, p.to, p.from),
     bsPrev: balanceSheet(movements, info, p.pTo, p.pFrom),

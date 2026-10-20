@@ -66,6 +66,7 @@ function contactModal(existing, onSaved) {
         <div class="col-span-2"><label class="${label}">Dirección</label><input id="m-address" class="${input}" value="${esc(c.address)}"></div>
         <div><label class="${label}">Descuento especial %</label><input id="m-discount" type="number" min="0" max="90" step="0.5" class="${input}" value="${Number(c.discount_pct) || ''}" placeholder="0"></div>
         <div><label class="${label}">Etiquetas</label><input id="m-tags" class="${input}" value="${esc(c.tags)}" placeholder="mayorista, constructora"></div>
+        <div class="col-span-2"><label class="${label}">Retención de IVA (contribuyente especial)</label><select id="m-retention" class="${input}">${[[0, 'No retiene'], [75, 'Retiene el 75 % del IVA'], [100, 'Retiene el 100 % del IVA']].map(([v, t]) => `<option value="${v}" ${Number(c.iva_retention_pct) === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
         <div class="col-span-2"><label class="${label}">Notas</label><textarea id="m-notes" rows="3" class="${input}">${esc(c.notes)}</textarea></div>
         <p class="col-span-2 text-[11px] text-slate-400">El descuento especial se aplica solo en Ventas cuando eliges a este cliente (si hay una promoción mayor, se usa la promoción).</p>
         <div id="m-msg" class="col-span-2 text-xs text-red-600"></div>
@@ -84,7 +85,8 @@ function contactModal(existing, onSaved) {
     const rec = {
       name: $('m-name').value.trim(), type: $('m-type').value, stage: $('m-stage').value, rif: $('m-rif').value.trim(),
       phone: $('m-phone').value.trim(), email: $('m-email').value.trim(), address: $('m-address').value.trim(),
-      discount_pct: Math.max(0, Math.min(90, Number($('m-discount').value) || 0)), tags: $('m-tags').value.trim(), notes: $('m-notes').value.trim()
+      discount_pct: Math.max(0, Math.min(90, Number($('m-discount').value) || 0)), tags: $('m-tags').value.trim(), notes: $('m-notes').value.trim(),
+      iva_retention_pct: Number($('m-retention').value) || 0
     };
     if (!rec.name) { $('m-msg').textContent = 'El nombre es obligatorio.'; return; }
     if (rec.rif && !Store.isContactRifUnique(rec.rif, existing ? existing.id : null)) { $('m-msg').textContent = 'Ya existe un contacto con ese RIF.'; return; }
@@ -398,7 +400,7 @@ function renderProfile(app, contactId) {
   const datosHtml = () => `
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
       ${[['Rol', TYPE_LABEL[contact.type]], ['Etapa', `${st.icon} ${st.label}`], ['Cédula / RIF', contact.rif], ['Teléfono', contact.phone], ['Correo', contact.email], ['Dirección', contact.address],
-        ['Descuento especial', Number(contact.discount_pct) > 0 ? `${contact.discount_pct}%` : 'Ninguno'], ['Etiquetas', contact.tags], ['Cliente desde', s.first || '—']]
+        ['Descuento especial', Number(contact.discount_pct) > 0 ? `${contact.discount_pct}%` : 'Ninguno'], ['Etiquetas', contact.tags], ['Retención de IVA', Number(contact.iva_retention_pct) > 0 ? `${contact.iva_retention_pct}% (contribuyente especial)` : 'No retiene'], ['Cliente desde', s.first || '—']]
         .map(([k, v]) => `<div class="rounded-xl bg-slate-50 p-3"><div class="text-[10px] uppercase font-bold text-slate-400">${k}</div><div class="font-semibold text-slate-800">${esc(v) || '—'}</div></div>`).join('')}
       <div class="md:col-span-2 rounded-xl bg-slate-50 p-3"><div class="text-[10px] uppercase font-bold text-slate-400">Notas</div><div class="text-slate-700 whitespace-pre-line">${esc(contact.notes) || '—'}</div></div>
     </div>

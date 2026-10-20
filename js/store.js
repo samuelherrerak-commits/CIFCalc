@@ -40,13 +40,15 @@ const STORE_KEYS = {
   contacts: 'cif_contacts',
   quotes: 'cif_quotes',
   crm_activities: 'cif_crm_activities',
-  promotions: 'cif_promotions'
+  promotions: 'cif_promotions',
+  fiscal_docs: 'cif_fiscal_docs',
+  exchange_rates: 'cif_exchange_rates'
 };
 
 // Tablas que el Web App de Sheets respalda (schemas definidos en Code.gs).
 // Las demás entidades (contabilidad, ventas, gastos) viven en Supabase.
-const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'contacts', 'quotes', 'crm_activities', 'promotions'];
-const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes', 'accounting_settings', 'crm_activities', 'promotions'];
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'contacts', 'quotes', 'crm_activities', 'promotions', 'fiscal_docs', 'exchange_rates'];
+const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes', 'accounting_settings', 'crm_activities', 'promotions', 'fiscal_docs', 'exchange_rates'];
 
 function readAll(key) {
   try {
@@ -739,6 +741,8 @@ function seed() {
   if (!localStorage.getItem(storageKey(STORE_KEYS.quotes))) writeAll(STORE_KEYS.quotes, []);
   if (!localStorage.getItem(storageKey(STORE_KEYS.crm_activities))) writeAll(STORE_KEYS.crm_activities, []);
   if (!localStorage.getItem(storageKey(STORE_KEYS.promotions))) writeAll(STORE_KEYS.promotions, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.fiscal_docs))) writeAll(STORE_KEYS.fiscal_docs, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.exchange_rates))) writeAll(STORE_KEYS.exchange_rates, []);
 
   purgeDroppedColumns();
   localStorage.setItem(RETRY_KEY, JSON.stringify(getRetryQueue()));
@@ -1120,6 +1124,7 @@ const Store = {
       codigo_barra: l.codigo_barra || '',
       costo_unitario: Math.round((Number(l.costo_unitario) || 0) * 100) / 100,
       precio_lista: Math.round((Number(l.precio_lista) || 0) * 100) / 100,
+      tasa_bcv: Number(l.tasa_bcv) || Number(opts.rate) || this.usdRateFor(l.entry_date) || 0,
       source: opts.source || 'manual',
       source_ref: opts.sourceRef || null,
       created_at: ts,
@@ -1277,6 +1282,71 @@ const Store = {
   },
 
   // ============================================
+  // Fiscal: IVA y tasas de cambio
+  // ============================================
+  // Configuración de IVA en la misma fila 'default' de accounting_settings.
+  // Alícuotas vigentes en Venezuela: general 16 %, reducida 8 %.
+  getFiscalSettings() {
+    const s = this.getById('accounting_settings', 'default') || {};
+    const flag = (v, def) => (v === undefined || v === null || v === '') ? def : (v === true || String(v).toLowerCase() === 'true');
+    return {
+      ivaEnabled: flag(s.iva_enabled, true),
+      rateGeneral: Number(s.iva_rate_general) > 0 ? Number(s.iva_rate_general) : 16,
+      rateReducida: Number(s.iva_rate_reducida) > 0 ? Number(s.iva_rate_reducida) : 8,
+      pricesIncludeIva: flag(s.prices_include_iva, false)
+    };
+  },
+
+  saveFiscalSettings(f) {
+    return this.upsert('accounting_settings', {
+      id: 'default',
+      iva_enabled: !!f.ivaEnabled,
+      iva_rate_general: Number(f.rateGeneral) || 16,
+      iva_rate_reducida: Number(f.rateReducida) || 8,
+      prices_include_iva: !!f.pricesIncludeIva
+    });
+  },
+
+  // Tasa del día (o la última publicada antes de esa fecha: el BCV no publica
+  // fines de semana ni feriados). Devuelve la fila de exchange_rates o null.
+  ratesFor(date) {
+    const d = String(date || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const rows = readAll(STORE_KEYS.exchange_rates)
+      .filter(r => r.date && r.date <= d && Number(r.usd_bcv) > 0)
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    return rows[0] || null;
+  },
+
+  usdRateFor(date) {
+    const r = this.ratesFor(date);
+    return r ? Number(r.usd_bcv) || 0 : 0;
+  },
+
+  // Guarda (o corrige a mano) las tasas de una fecha; id = fecha.
+  saveRates(date, rates, source = 'manual') {
+    const d = String(date).slice(0, 10);
+    return this.upsert('exchange_rates', {
+      id: d, date: d,
+      usd_bcv: Number(rates.usd_bcv) || 0,
+      eur_bcv: Number(rates.eur_bcv) || 0,
+      usdt: Number(rates.usdt) || 0,
+      source, fetched_at: new Date().toISOString()
+    });
+  },
+
+  // Registro fiscal (Libros de Compras y Ventas).
+  newFiscalDoc(overrides = {}) {
+    return {
+      book: 'ventas', date: new Date().toISOString().slice(0, 10), doc_type: 'factura',
+      invoice_number: '', control_number: '', affected_invoice: '', rif: '', name: '',
+      total: 0, exempt: 0, base_general: 0, tax_general: 0, base_reducida: 0, tax_reducida: 0,
+      withheld: 0, withholding_number: '', withholding_date: '', import_form: '', import_file: '',
+      ref_doc: '', source_ref: '', tasa_bcv: 0, status: 'emitida', notes: '',
+      ...overrides
+    };
+  },
+
+  // ============================================
   // Contactos — directorio único de clientes/proveedores (CRM)
   // ============================================
   isContactRifUnique(rif, excludeId = null) {
@@ -1290,7 +1360,7 @@ const Store = {
   newContact(overrides = {}) {
     return {
       rif: '', name: '', type: 'cliente', email: '', phone: '', address: '',
-      stage: 'activo', tags: '', notes: '', discount_pct: 0, next_followup_date: '',
+      stage: 'activo', tags: '', notes: '', discount_pct: 0, next_followup_date: '', iva_retention_pct: 0,
       ...overrides
     };
   },

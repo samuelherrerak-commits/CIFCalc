@@ -1,5 +1,6 @@
 import { boot } from './router.js';
 import Store from './store.js';
+import { ensureTodayRates } from './rates.js';
 
 function syncBadge() {
   const el = document.getElementById('nav-respaldo');
@@ -33,3 +34,11 @@ syncBadge();
 setInterval(() => {
   Store.syncWithCloud().then(() => Store.processRetryQueue());
 }, 60000);
+
+// Tasas BCV/USDT del día: después de la primera sincronización (por si otro
+// equipo ya las guardó) y luego cada hora por si cambia el día.
+const refreshRates = () => ensureTodayRates(Store)
+  .then(() => window.dispatchEvent(new CustomEvent('cif-rates-updated')))
+  .catch(e => console.warn('Maestro de Costo: tasas no disponibles —', e.message));
+setTimeout(refreshRates, 5000);
+setInterval(refreshRates, 3600000);

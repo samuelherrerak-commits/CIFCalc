@@ -60,7 +60,9 @@ const Calculator = {
       return { items: synced, changed };
     };
 
-    {
+    // Un contenedor completo queda congelado: su costo ya está en el asiento de
+    // cierre, así que el catálogo no vuelve a tocar sus productos.
+    if (container.status !== 'closed') {
       const { items: synced, changed } = syncItemsFromCatalog(items);
       items = synced;
       if (changed) Store.saveContainerWithItems(container, items);

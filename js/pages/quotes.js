@@ -5,6 +5,15 @@ import { mountPOS } from '../components/pos.js';
 import { printSalesDocument } from '../components/sales-document.js';
 import { openBusinessProfileModal } from '../components/business-profile.js';
 import { salesLines } from '../analytics.js';
+import { computeTax, ivaTipoOf, taxSummaryRows } from '../fiscal.js';
+
+// IVA de un presupuesto con la configuración fiscal actual (informativo: el
+// impuesto se registra al convertirlo en venta).
+function quoteTax(lines) {
+  const fs = Store.getFiscalSettings();
+  const t = computeTax(lines.map(l => ({ amount: l.qty * l.unitPrice, tipo: ivaTipoOf(l.product) })), fs);
+  return { rows: taxSummaryRows(t, fs), total: t.total };
+}
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { input, label } from '../components/accounting-shell.js';
 
@@ -37,7 +46,12 @@ export function quoteDocument(q) {
       : { name: q.contact_name },
     items: Store.getQuoteItems(q).map(it => ({ name: it.name, sku: it.sku_briggs, qty: it.qty, unit: 'unidad', unitPrice: it.unitPrice })),
     notes: q.concepto,
-    terms: Store.getBusinessProfile().terms
+    terms: Store.getBusinessProfile().terms,
+    fiscal: (() => {
+      const items = Store.getQuoteItems(q);
+      const t = quoteTax(items.map(it => ({ qty: it.qty, unitPrice: it.unitPrice, product: Store.getById('products', it.productId) })));
+      return t.rows.length ? { ...t, rate: Store.usdRateFor(q.date) } : null;
+    })()
   };
 }
 
@@ -279,6 +293,7 @@ function renderBuilder(app, editId, opts = {}) {
     actionLabel: editing ? 'Guardar cambios' : (isOffer ? 'Emitir oferta' : 'Emitir presupuesto'),
     suggestedIds: suggested,
     priceFor: (p) => Store.priceFor(p, currentContact()),
+    summary: (cart) => quoteTax(cart),
     headerFieldsHtml: `
       <div>
         <label class="${label}">Cliente</label>

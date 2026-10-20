@@ -69,6 +69,7 @@ function esfHtml(s) {
     row('Pasivo corriente', 0, 0, { head: true, indent: 1 }),
     row('Cuentas por pagar comerciales', a.cxp, b.cxp, { indent: 1, note: '7' }), ...lines('cxp'),
     row('Préstamos por pagar', a.prestamos, b.prestamos, { indent: 1 }),
+    ...(a.pImpuestos || b.pImpuestos ? [row('Impuestos por pagar (IVA)', a.pImpuestos, b.pImpuestos, { indent: 1 })] : []),
     ...(a.pOtros || b.pOtros ? [row('Otros pasivos corrientes', a.pOtros, b.pOtros, { indent: 1 })] : []),
     row('Total pasivo corriente', a.pasivoCorriente, b.pasivoCorriente, { total: true, indent: 1 }),
     ...(a.pasivoNC || b.pasivoNC ? [row('Pasivo no corriente', a.pasivoNC, b.pasivoNC, { indent: 1 })] : []),
@@ -92,17 +93,17 @@ function eriHtml(s) {
   };
   return table(p, [
     row('Ingresos de actividades ordinarias', a.ventas, b.ventas, { note: '8' }),
-    row('Costo de ventas', -a.costoVentas, -b.costoVentas, { note: '9' }),
+    row('Menos: Costo de ventas', -a.costoVentas, -b.costoVentas, { note: '9' }),
     row('Ganancia bruta', a.bruta, b.bruta, { total: true }),
     row('Otros ingresos', a.otrosIngresos, b.otrosIngresos), ...det('otrosIngresos'),
-    row('Gastos de distribución y logística', -a.distribucion, -b.distribucion),
-    row('Gastos de ventas', -a.gVentas, -b.gVentas),
-    row('Gastos de administración', -a.admin, -b.admin),
-    row('Otros gastos', -a.otrosGastos, -b.otrosGastos), ...det('otrosGastos'),
+    row('Menos: Gastos de distribución y logística', -a.distribucion, -b.distribucion),
+    row('Menos: Gastos de ventas', -a.gVentas, -b.gVentas),
+    row('Menos: Gastos de administración', -a.admin, -b.admin),
+    row('Menos: Otros gastos', -a.otrosGastos, -b.otrosGastos), ...det('otrosGastos'),
     row('Resultado de actividades de operación', a.operativo, b.operativo, { total: true }),
-    row('Costos financieros', -a.financieros, -b.financieros),
+    row('Menos: Costos financieros', -a.financieros, -b.financieros),
     row('Resultado antes de impuesto', a.antesImpuesto, b.antesImpuesto, { total: true }),
-    row('Impuesto sobre la renta', -a.impuesto, -b.impuesto, { note: '10' }),
+    row('Menos: Impuesto sobre la renta', -a.impuesto, -b.impuesto, { note: '10' }),
     row('RESULTADO DEL EJERCICIO', a.resultado, b.resultado, { grand: true }),
     row('Otro resultado integral', 0, 0),
     row('RESULTADO INTEGRAL TOTAL', a.resultado, b.resultado, { grand: true })
@@ -252,7 +253,14 @@ const FinancialStatements = {
       const okCf = Math.abs(s.cf.diferencia) < 0.01 && Math.abs(s.cfPrev.diferencia) < 0.01;
       const okEq = Math.abs(s.eq.totalFin - s.bs.patrimonio) < 0.01;
       const check = (ok, txt, bad) => `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}">${ok ? '✓' : '⚠'} ${ok ? txt : bad}</span>`;
-      document.getElementById('fs-checks').innerHTML =
+      const warn = (txt) => `<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800">⚠ ${txt}</span>`;
+      const issues = s.issues || {};
+      const warnings = [
+        issues.orphanTotal > 0.01 ? warn(`Hay asiento(s) de cierre de contenedores que no están completos por $${fmtNum(issues.orphanTotal)} (${esc(issues.orphanNames.join(', '))}): suman a compras y al costo de ventas`) : '',
+        s.is.costoVentas < -0.01 ? warn(`El costo de ventas salió negativo ($${fmtNum(s.is.costoVentas)}): el inventario final vale más que las compras registradas; revisa los contenedores completados`) : '',
+        issues.unlinkedCost > 0.01 ? warn(`$${fmtNum(issues.unlinkedCost)} de contenedores completos son productos sin vincular al catálogo: no entran al inventario y van completos al costo de ventas`) : ''
+      ].join('');
+      document.getElementById('fs-checks').innerHTML = warnings +
         check(okBs, 'Activo = Pasivo + Patrimonio', `El balance no cuadra por ${money(s.bs.diferencia)}`) +
         check(okEq, 'Patrimonio concilia con el balance', 'El patrimonio no concilia') +
         check(okCf, 'Flujo de efectivo concilia con caja y bancos', `El flujo no concilia por ${money(s.cf.diferencia)}`);
@@ -277,7 +285,7 @@ const FinancialStatements = {
       <div class="flex flex-col md:flex-row md:items-end justify-between gap-3">
         <div>
           <h1 class="text-xl font-black text-slate-900">Estados Financieros</h1>
-          <p class="text-xs text-slate-500">Según VEN-NIF PYME, con cifras comparativas. Se generan solos desde el Libro Diario.</p>
+          <p class="text-xs text-slate-500">Según VEN-NIF PYME, con cifras comparativas. Se generan solos desde el Libro Diario. Los montos entre paréntesis son negativos (se restan).</p>
         </div>
         <div class="flex gap-2">
           <button id="fs-print" class="px-3 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 hover:border-slate-400">🖨 Imprimir este estado</button>

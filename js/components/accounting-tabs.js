@@ -1,4 +1,5 @@
 import Store from '../store.js';
+import { ensureTodayRates } from '../rates.js';
 
 // Navegación del módulo de Contabilidad al estilo LegalYa: menú lateral por
 // secciones con íconos (en escritorio) y barra inferior + panel "Más" (en el
@@ -37,6 +38,11 @@ export const ACCOUNTING_SECTIONS = [
   { title: 'Apoyo', tag: 'Referencia', tagColor: 'slate', items: [
     { key: 'inventory', path: '#/contabilidad/inventario', label: 'Inventario', icon: '📦', color: 'slate' }
   ] },
+  { title: 'Impuestos', tag: 'SENIAT', tagColor: 'amber', items: [
+    { key: 'fiscal-books', path: '#/contabilidad/fiscal/ventas', label: 'Libros de IVA', icon: '📒', color: 'amber' },
+    { key: 'fiscal-decl', path: '#/contabilidad/fiscal/declaracion', label: 'Declaración IVA', icon: '🧮', color: 'amber' },
+    { key: 'fiscal-rates', path: '#/contabilidad/fiscal/tasas', label: 'Tasas BCV', icon: '💱', color: 'amber' }
+  ] },
   { title: 'Libros contables', items: [
     { key: 'accounts', path: '#/contabilidad/cuentas', label: 'Plan de Cuentas', icon: '📚', color: 'slate' },
     { key: 'journal', path: '#/contabilidad/diario', label: 'Libro Diario', icon: '📓', color: 'slate' },
@@ -53,6 +59,24 @@ const sectionTitle = (s, extra = '') => `
 
 const ALL_ITEMS = ACCOUNTING_SECTIONS.flatMap(s => s.items);
 const MOBILE_KEYS = ['dashboard', 'sales', 'inventory', 'expenses'];
+
+// Tasas del día en el menú: dólar y euro BCV y USDT (Bs por unidad).
+const fmtRate = (v) => Number(v) > 0 ? Number(v).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+function ratesCardInner() {
+  const r = Store.ratesFor(new Date().toISOString().slice(0, 10));
+  const cell = (k, v) => `<div class="text-center"><p class="text-[9px] font-bold text-slate-400">${k}</p><p class="text-[11px] font-black text-slate-800 font-mono">${fmtRate(v)}</p></div>`;
+  return `
+    <div class="flex items-center justify-between mb-1">
+      <a href="#/contabilidad/fiscal/tasas" class="text-[10px] font-black uppercase tracking-wide text-emerald-700">💱 Tasas ${r ? r.date.slice(8, 10) + '/' + r.date.slice(5, 7) : ''}</a>
+      <button data-rates-refresh title="Actualizar tasas" class="text-slate-400 hover:text-emerald-700 text-xs">↻</button>
+    </div>
+    <div class="grid grid-cols-3 gap-1">${cell('USD BCV', r && r.usd_bcv)}${cell('EUR BCV', r && r.eur_bcv)}${cell('USDT', r && r.usdt)}</div>`;
+}
+function ratesCard() {
+  return `<div data-rates-card class="rounded-xl border border-emerald-100 bg-emerald-50/60 p-2">${ratesCardInner()}</div>`;
+}
+const repaintRates = () => document.querySelectorAll('[data-rates-card]').forEach(el => { el.innerHTML = ratesCardInner(); });
+window.addEventListener('cif-rates-updated', repaintRates);
 
 function sandboxCard() {
   return Store.isSandbox()
@@ -89,6 +113,7 @@ const AccountingTabs = {
             <p class="text-lg font-black tracking-tight text-slate-900 leading-none">Contabilidad</p>
             <p class="text-[10px] font-bold uppercase tracking-widest text-blue-600 mt-1">Maestro de Costo</p>
           </div>
+          ${ratesCard()}
           ${sandboxCard()}
           <nav class="space-y-2.5">
             ${ACCOUNTING_SECTIONS.map(s => `
@@ -116,6 +141,7 @@ const AccountingTabs = {
             <p class="font-black text-slate-900">Contabilidad</p>
             <button data-acc-more-close class="text-slate-400 text-xl leading-none">✕</button>
           </div>
+          ${ratesCard()}
           ${ACCOUNTING_SECTIONS.map(s => `
             <div>
               ${sectionTitle(s, 'mb-1.5')}
@@ -140,6 +166,15 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-acc-more]')) { if (more) more.classList.remove('hidden'); return; }
   if (more && (e.target.closest('[data-acc-more-close]') === e.target || e.target.closest('button[data-acc-more-close]') || e.target.closest('#acc-more a'))) {
     more.classList.add('hidden');
+  }
+  const rr = e.target.closest('[data-rates-refresh]');
+  if (rr) {
+    rr.textContent = '…';
+    ensureTodayRates(Store, { force: true })
+      .then(() => window.dispatchEvent(new CustomEvent('cif-rates-updated')))
+      .catch(err => alert(`No se pudieron consultar las tasas: ${err.message}`))
+      .finally(() => { repaintRates(); });
+    return;
   }
   const sbx = e.target.closest('[data-sbx]');
   if (!sbx) return;

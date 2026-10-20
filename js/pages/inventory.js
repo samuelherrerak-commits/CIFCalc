@@ -92,11 +92,22 @@ const Inventory = {
                 <input data-price="${esc(p.id)}" type="number" min="0" step="0.01" value="${Number(p.sale_price) || ''}" placeholder="0.00"
                   class="w-24 p-1.5 border border-slate-200 rounded-lg text-right font-mono font-semibold text-blue-700 bg-white focus:border-blue-400 focus:outline-none">
               </div>
+              <div class="mt-1">
+                <select data-iva="${esc(p.id)}" title="IVA del producto" class="text-[10px] font-semibold text-slate-500 bg-transparent border-0 p-0 text-right cursor-pointer">
+                  ${[['general', 'IVA general'], ['reducida', 'IVA reducido'], ['exento', 'Exento de IVA']].map(([v, t]) => `<option value="${v}" ${(p.iva_tipo || 'general') === v ? 'selected' : ''}>${t}</option>`).join('')}
+                </select>
+              </div>
             </td>
             <td class="p-2 text-right font-mono text-[11px] ${m === null ? 'text-slate-300' : m < 0 ? 'text-red-600' : 'text-emerald-600'}">${m === null ? '—' : fmtNum(m) + '%'}</td>
           </tr>`;
         }).join('');
 
+      tbody.querySelectorAll('[data-iva]').forEach(el => el.addEventListener('change', (e) => {
+        const p = products.find(x => x.id === e.target.dataset.iva);
+        if (!p) return;
+        p.iva_tipo = e.target.value;
+        Store.update('products', { id: p.id, iva_tipo: e.target.value });
+      }, { signal }));
       tbody.querySelectorAll('[data-price]').forEach(el => el.addEventListener('change', (e) => {
         const p = products.find(x => x.id === e.target.dataset.price);
         if (!p) return;
