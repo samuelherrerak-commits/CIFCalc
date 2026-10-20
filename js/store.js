@@ -1,15 +1,17 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase-config.js';
 import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
+import { isSandbox, setSandboxFlag, storageKey } from './sandbox.js';
 import { computeContainer } from './utils.js';
 import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping, CHART_OF_ACCOUNTS, inferirTipo, naturalezaForTipo, DEFAULT_CLOSING_MAPPING_CODES } from './accounting.js';
 
 // ============================================
 // Supabase client (singleton) — backend primario
 // ============================================
+const SANDBOX = isSandbox(); // fijo durante la vida de la página: cambiar de modo recarga
 let sb = null;
 try {
-  if (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
+  if (!SANDBOX && SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
     sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
 } catch (e) {
@@ -46,7 +48,7 @@ const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products
 
 function readAll(key) {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(storageKey(key));
     const data = raw ? JSON.parse(raw) : [];
     return Array.isArray(data) ? data : [];
   } catch (e) {
@@ -56,7 +58,7 @@ function readAll(key) {
 }
 
 function writeAll(key, data) {
-  localStorage.setItem(key, JSON.stringify(data));
+  localStorage.setItem(storageKey(key), JSON.stringify(data));
 }
 
 function uid() {
@@ -239,6 +241,7 @@ function getRetryQueue() {
 }
 
 function pushRetry(operation) {
+  if (SANDBOX) return;
   const queue = getRetryQueue();
   operation.attempts = operation.attempts || 0;
   queue.push(operation);
@@ -247,7 +250,7 @@ function pushRetry(operation) {
 }
 
 async function processRetryQueue() {
-  if (!sb && !SHEETS_URL) return;
+  if (SANDBOX || (!sb && !SHEETS_URL)) return;
   const queue = getRetryQueue();
   if (queue.length === 0) return;
   const remaining = [];
@@ -449,6 +452,7 @@ async function mapWithConcurrency(list, limit, fn) {
 }
 
 function cloudUpsert(table, record) {
+  if (SANDBOX) return Promise.resolve();
   const records = normalizeEntityRows(table, Array.isArray(record) ? record : [record]);
   const sheetsCapable = SHEETS_URL && SHEET_TABLES.includes(table);
 
@@ -463,6 +467,7 @@ function cloudUpsert(table, record) {
 }
 
 function cloudDelete(table, id) {
+  if (SANDBOX) return;
   const sheetsCapable = SHEETS_URL && SHEET_TABLES.includes(table);
 
   if (!sheetsCapable) {
@@ -475,6 +480,7 @@ function cloudDelete(table, id) {
 }
 
 function cloudDeleteWhere(table, column, value) {
+  if (SANDBOX) return;
   const sheetsCapable = SHEETS_URL && SHEET_TABLES.includes(table);
 
   if (!sheetsCapable) {
@@ -487,6 +493,7 @@ function cloudDeleteWhere(table, column, value) {
 }
 
 async function cloudSyncContainerItems(containerId, newItems) {
+  if (SANDBOX) return;
   const cleanItems = normalizeEntityRows('items', newItems);
   await sheetsMirrorItems(containerId, cleanItems);
   sbSyncContainerItems(containerId, cleanItems);
@@ -591,7 +598,7 @@ function purgeLegacyAccounts() {
 // Sync bidireccional con Sheets (Supabase solo recibe el espejo de escrituras)
 // ============================================
 async function syncWithCloud() {
-  if (!sb && !SHEETS_URL) return;
+  if (SANDBOX || (!sb && !SHEETS_URL)) return;
   try {
     const results = await mapWithConcurrency(ENTITIES, SHEETS_READ_CONCURRENCY,
       async entity => [entity, await getRemoteTable(entity)]);
@@ -681,7 +688,7 @@ async function syncWithCloud() {
 const SHEETS_SEEDED_KEY = 'cif_sheets_seeded';
 
 async function mirrorAllToSheets() {
-  if (!SHEETS_URL) return;
+  if (SANDBOX || !SHEETS_URL) return;
   if (localStorage.getItem(SHEETS_SEEDED_KEY)) return;
   for (const entity of ENTITIES) {
     if (!SHEET_TABLES.includes(entity)) continue;
@@ -713,28 +720,32 @@ let seedDone = false;
 let firstSyncDone = false; // true cuando terminó la primera sincronización con Sheets
 
 function seed() {
-  if (!localStorage.getItem(STORE_KEYS.companies)) writeAll(STORE_KEYS.companies, []);
-  if (!localStorage.getItem(STORE_KEYS.suppliers)) writeAll(STORE_KEYS.suppliers, []);
-  if (!localStorage.getItem(STORE_KEYS.containers)) writeAll(STORE_KEYS.containers, []);
-  if (!localStorage.getItem(STORE_KEYS.items)) writeAll(STORE_KEYS.items, []);
-  if (!localStorage.getItem(STORE_KEYS.products)) writeAll(STORE_KEYS.products, []);
-  if (!localStorage.getItem(STORE_KEYS.accounts)) writeAll(STORE_KEYS.accounts, []);
-  if (!localStorage.getItem(STORE_KEYS.movements)) writeAll(STORE_KEYS.movements, []);
-  if (!localStorage.getItem(STORE_KEYS.journal_entries)) writeAll(STORE_KEYS.journal_entries, []);
-  if (!localStorage.getItem(STORE_KEYS.journal_lines)) writeAll(STORE_KEYS.journal_lines, []);
-  if (!localStorage.getItem(STORE_KEYS.accounting_settings)) writeAll(STORE_KEYS.accounting_settings, []);
-  if (!localStorage.getItem(STORE_KEYS.expense_categories)) writeAll(STORE_KEYS.expense_categories, []);
-  if (!localStorage.getItem(STORE_KEYS.sale_concepts)) writeAll(STORE_KEYS.sale_concepts, []);
-  if (!localStorage.getItem(STORE_KEYS.module_settings)) writeAll(STORE_KEYS.module_settings, []);
-  if (!localStorage.getItem(STORE_KEYS.contacts)) writeAll(STORE_KEYS.contacts, []);
-  if (!localStorage.getItem(STORE_KEYS.quotes)) writeAll(STORE_KEYS.quotes, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.companies))) writeAll(STORE_KEYS.companies, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.suppliers))) writeAll(STORE_KEYS.suppliers, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.containers))) writeAll(STORE_KEYS.containers, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.items))) writeAll(STORE_KEYS.items, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.products))) writeAll(STORE_KEYS.products, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.accounts))) writeAll(STORE_KEYS.accounts, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.movements))) writeAll(STORE_KEYS.movements, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.journal_entries))) writeAll(STORE_KEYS.journal_entries, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.journal_lines))) writeAll(STORE_KEYS.journal_lines, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.accounting_settings))) writeAll(STORE_KEYS.accounting_settings, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.expense_categories))) writeAll(STORE_KEYS.expense_categories, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.sale_concepts))) writeAll(STORE_KEYS.sale_concepts, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.module_settings))) writeAll(STORE_KEYS.module_settings, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.contacts))) writeAll(STORE_KEYS.contacts, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.quotes))) writeAll(STORE_KEYS.quotes, []);
 
   purgeDroppedColumns();
   localStorage.setItem(RETRY_KEY, JSON.stringify(getRetryQueue()));
   purgeLegacyAccounts();
-  resetLocalCatalogOnce();
+  if (!SANDBOX) resetLocalCatalogOnce();
   purgeEmptyProducts();
 
+  if (!seedDone && SANDBOX) {
+    seedDone = true;
+    firstSyncDone = true; // en modo prueba no hay nube que esperar
+  }
   if (!seedDone) {
     seedDone = true;
     // El primer render no espera a la nube: se pinta de inmediato con lo que
@@ -761,9 +772,35 @@ function notifyDataUpdated() {
 // ============================================
 // Store API
 // ============================================
+// Copia los datos actuales (los reales) al espacio de prueba.
+function copyRealDataToSandbox() {
+  for (const key of Object.values(STORE_KEYS)) {
+    const raw = localStorage.getItem(key);
+    localStorage.setItem('sbx_' + key, raw == null ? '[]' : raw);
+  }
+}
+
 const Store = {
   uid,
   seed,
+  isSandbox: () => SANDBOX,
+  // Entra al modo prueba con una copia de los datos actuales (o conserva la
+  // copia anterior si keepPrevious y ya existe). Recarga la página.
+  enterSandbox({ keepPrevious = false } = {}) {
+    const hasPrevious = localStorage.getItem('sbx_' + STORE_KEYS.products) != null;
+    if (!(keepPrevious && hasPrevious)) copyRealDataToSandbox();
+    setSandboxFlag(true);
+    location.reload();
+  },
+  // Vuelve a empezar la prueba desde los datos reales actuales.
+  resetSandbox() {
+    copyRealDataToSandbox();
+    location.reload();
+  },
+  exitSandbox() {
+    setSandboxFlag(false);
+    location.reload();
+  },
   syncWithCloud,
   processRetryQueue,
   isSheetsReachable,

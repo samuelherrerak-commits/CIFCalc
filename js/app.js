@@ -13,6 +13,20 @@ window.addEventListener('cif-backend', syncBadge);
 window.addEventListener('hashchange', () => setTimeout(syncBadge, 0));
 window.addEventListener('cif-data-updated', () => setTimeout(syncBadge, 0));
 
+// Franja fija de "Modo prueba" en toda la app.
+if (Store.isSandbox()) {
+  const bar = document.createElement('div');
+  bar.id = 'sandbox-bar';
+  bar.className = 'sticky top-0 z-[60] -mx-4 md:-mx-8 -mt-4 md:-mt-8 mb-4 bg-amber-400 text-amber-950 text-xs font-bold px-4 py-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 shadow';
+  bar.innerHTML = `
+    <span>🧪 MODO PRUEBA — trabajas con una copia; nada se guarda en la base de datos</span>
+    <span class="flex gap-1.5">
+      <button data-sbx="reset" class="bg-white/70 hover:bg-white px-2 py-0.5 rounded-md">Reiniciar prueba</button>
+      <button data-sbx="exit" class="bg-amber-900 text-white hover:bg-amber-950 px-2 py-0.5 rounded-md">Salir</button>
+    </span>`;
+  document.body.prepend(bar);
+}
+
 boot();
 syncBadge();
 

@@ -13,16 +13,12 @@ export function badge(colorName, text) {
 }
 
 const AccountingShell = {
-  // tabs: HTML ya renderizado de AccountingTabs.render(active)
+  // tabs: HTML de AccountingTabs.render(active) — menú lateral + barra móvil.
   wrap(tabsHtml, bodyHtml) {
     return `
-      <div class="space-y-4">
-        <header>
-          <h1 class="text-2xl font-bold text-slate-900">Contabilidad</h1>
-          <p class="text-sm text-slate-500">Partida doble en USD, integrada con el Maestro de Costo</p>
-        </header>
+      <div class="flex gap-5 items-start pb-20 md:pb-0">
         ${tabsHtml}
-        <div class="space-y-5">
+        <div class="flex-1 min-w-0 space-y-5">
           ${bodyHtml}
         </div>
       </div>

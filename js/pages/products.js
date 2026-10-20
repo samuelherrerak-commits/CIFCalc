@@ -569,6 +569,8 @@ const Products = {
     // Sube una foto con reintentos: una llamada que falla por un hipo transitorio
     // de Apps Script/Drive (cuota, timeout, red) ya no se pierde en el primer intento.
     const uploadFotoWithRetry = async (id, filename, mimeType, base64, attempts = 3) => {
+      // En modo prueba no se sube nada a Drive (sería escribir en la base real).
+      if (Store.isSandbox()) throw new Error('Modo prueba: las fotos no se suben a Drive');
       let lastErr;
       for (let i = 0; i < attempts; i++) {
         try {

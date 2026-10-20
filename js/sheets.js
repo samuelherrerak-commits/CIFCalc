@@ -1,4 +1,5 @@
 import { SHEETS_URL, SHEETS_TOKEN } from './sheets-config.js';
+import { isSandbox } from './sandbox.js';
 
 // ============================================
 // Proveedor de respaldo sobre Google Sheets
@@ -58,6 +59,8 @@ function normalizeRow(table, row) {
 }
 
 async function request(method, query, body) {
+  // Modo prueba: nunca se toca la base de datos real.
+  if (isSandbox()) throw new Error('Modo prueba: no se lee ni escribe en Google Sheets');
   if (!SHEETS_URL) throw new Error('SHEETS_URL no configurada');
   const base = SHEETS_URL.endsWith('/') ? SHEETS_URL.slice(0, -1) : SHEETS_URL;
   const params = new URLSearchParams(query || {});
