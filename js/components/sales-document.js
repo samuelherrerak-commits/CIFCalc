@@ -21,8 +21,8 @@ const fmtDate = (iso) => {
 
 export function buildSalesDocumentHtml(doc, issuer = {}) {
   const isQuote = doc.kind === 'quote';
-  const title = isQuote ? 'Presupuesto' : 'Nota de venta';
-  const numberLabel = isQuote ? 'N.º de presupuesto' : 'N.º de venta';
+  const title = doc.title || (isQuote ? 'Presupuesto' : 'Nota de venta');
+  const numberLabel = doc.title ? `N.º de ${doc.title.toLowerCase()}` : (isQuote ? 'N.º de presupuesto' : 'N.º de venta');
   const items = doc.items || [];
   const subtotal = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
   const client = doc.client || {};

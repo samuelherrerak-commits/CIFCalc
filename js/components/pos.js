@@ -14,12 +14,21 @@ import { fmtNum, fmtInt, esc } from '../utils.js';
 //   headerFieldsHtml  → campos sobre el carrito (p. ej. Cliente)
 //   footerFieldsHtml  → campos bajo el total (fecha, pago, notas…)
 //   onCartChange(cart)
+//   priceFor(product) → { listPrice, unitPrice, discountPct, label } (promoción
+//                       o descuento del cliente); por defecto el precio de venta
+//   suggestedIds      → Set de productos sugeridos (p. ej. los que ya compra el
+//                       cliente): chip "⭐ Sugeridos" y etiqueta en la tarjeta
+// Cada línea del carrito: { product, qty, unitPrice, listPrice, label, manual }.
+// "manual" = precio escrito a mano: no se recalcula al cambiar el cliente.
 const norm = (v) => String(v || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const stockOf = (p) => Number(p.stock) || 0;
 
 export function mountPOS(root, opts) {
   const capToStock = !!opts.capToStock;
-  let cart = (opts.cart || []).slice();
+  const priceFor = opts.priceFor || ((p) => ({ listPrice: Number(p.sale_price) || 0, unitPrice: Number(p.sale_price) || 0, discountPct: 0, label: '' }));
+  const suggested = opts.suggestedIds || new Set();
+  const SUGGESTED = '__sugeridos__';
+  let cart = (opts.cart || []).map(l => ({ listPrice: Number(l.product.sale_price) || l.unitPrice, label: '', manual: true, ...l }));
   let query = '';
   let category = '';
   let flashTimer = null;
@@ -90,13 +99,17 @@ export function mountPOS(root, opts) {
 
   const renderCategories = () => {
     const cats = [...new Set(visibleProducts().map(p => String(p.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    if (category && !cats.includes(category)) category = '';
+    if (category && category !== SUGGESTED && !cats.includes(category)) category = '';
     const chip = (value, text) => `
       <button data-cat="${esc(value)}" class="px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition ${
         category === value ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:border-blue-300 hover:text-blue-700'
       }">${esc(text)}</button>`;
     const wrap = $('pos-categories');
-    wrap.innerHTML = cats.length ? chip('', 'Todas') + cats.map(c => chip(c, c)).join('') : '';
+    const sugCount = visibleProducts().filter(p => suggested.has(p.id)).length;
+    if (category === SUGGESTED && !sugCount) category = '';
+    wrap.innerHTML = (cats.length || sugCount)
+      ? chip('', 'Todas') + (sugCount ? chip(SUGGESTED, `⭐ Sugeridos (${sugCount})`) : '') + cats.map(c => chip(c, c)).join('')
+      : '';
     wrap.querySelectorAll('[data-cat]').forEach(b => b.addEventListener('click', () => {
       category = b.dataset.cat;
       renderCategories();
@@ -108,9 +121,9 @@ export function mountPOS(root, opts) {
     const q = norm(query.trim());
     const all = visibleProducts();
     const list = all
-      .filter(p => !category || String(p.category || '').trim() === category)
+      .filter(p => !category || (category === SUGGESTED ? suggested.has(p.id) : String(p.category || '').trim() === category))
       .filter(p => !q || [p.name, p.category, p.collection, p.brand, p.sku_briggs, p.sku, p.codigo_barra].some(v => norm(v).includes(q)))
-      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      .sort((a, b) => (suggested.has(b.id) - suggested.has(a.id)) || String(a.name).localeCompare(String(b.name)));
 
     $('pos-count').textContent = `${list.length} producto${list.length === 1 ? '' : 's'}${capToStock ? ' disponible' + (list.length === 1 ? '' : 's') : ''}`;
 
@@ -140,7 +153,14 @@ export function mountPOS(root, opts) {
             ${p.category ? `<span class="text-[10px] font-semibold uppercase tracking-wide text-violet-600">${esc(p.category)}</span>` : ''}
             <span class="text-sm font-bold text-slate-800 leading-tight line-clamp-2" data-name>${esc(p.name) || 'Sin nombre'}</span>
             <span class="text-[10px] font-mono text-slate-400">${esc(p.sku_briggs)}</span>
-            <span class="mt-auto pt-1 font-black ${Number(p.sale_price) > 0 ? 'text-lg text-slate-900' : 'text-xs text-amber-600'}">${Number(p.sale_price) > 0 ? '$' + fmtNum(p.sale_price) : 'Sin precio'}</span>
+            ${suggested.has(p.id) ? '<span class="self-start text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">⭐ Lo compra</span>' : ''}
+            ${(() => {
+              const pr = priceFor(p);
+              if (!(pr.listPrice > 0)) return '<span class="mt-auto pt-1 font-black text-xs text-amber-600">Sin precio</span>';
+              return pr.discountPct > 0
+                ? `<span class="mt-auto pt-1 flex items-baseline gap-1.5 flex-wrap"><span class="font-black text-lg text-emerald-700">$${fmtNum(pr.unitPrice)}</span><span class="text-[11px] text-slate-400 line-through">$${fmtNum(pr.listPrice)}</span><span class="text-[10px] font-bold text-rose-600">-${fmtNum(pr.discountPct).replace(/\.00$/, '')}%</span></span>`
+                : `<span class="mt-auto pt-1 font-black text-lg text-slate-900">$${fmtNum(pr.listPrice)}</span>`;
+            })()}
           </div>
         </button>`;
       }).join('');
@@ -154,7 +174,10 @@ export function mountPOS(root, opts) {
     const line = inCart(p.id);
     if (capToStock && (line ? line.qty : 0) + 1 > stockOf(p)) { flash(`Stock insuficiente de "${p.name}". Disponible: ${fmtInt(stockOf(p))}`); return; }
     if (line) line.qty += 1;
-    else cart.push({ product: p, qty: 1, unitPrice: Number(p.sale_price) || 0 });
+    else {
+      const pr = priceFor(p);
+      cart.push({ product: p, qty: 1, unitPrice: pr.unitPrice, listPrice: pr.listPrice, label: pr.label, manual: false });
+    }
     success('');
     changed();
   };
@@ -200,7 +223,7 @@ export function mountPOS(root, opts) {
               </div>
             </div>
             <div class="flex justify-between items-center mt-1">
-              <span class="text-[10px] font-semibold text-amber-600">${over ? `Supera la existencia (${fmtInt(stockOf(l.product))})` : ''}</span>
+              <span class="text-[10px] font-semibold ${over ? 'text-amber-600' : 'text-rose-600'}">${over ? `Supera la existencia (${fmtInt(stockOf(l.product))})` : (l.label && l.unitPrice < l.listPrice ? `${esc(l.label)} · antes $${fmtNum(l.listPrice)}` : '')}</span>
               <span class="text-sm font-black text-emerald-600">$${fmtNum(l.qty * l.unitPrice)}</span>
             </div>
           </div>
@@ -219,7 +242,10 @@ export function mountPOS(root, opts) {
     list.querySelectorAll('[data-qty]').forEach(el => el.addEventListener('change', (e) => setQty(Number(e.target.dataset.qty), e.target.value)));
     list.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => { cart.splice(Number(b.dataset.del), 1); changed(); }));
     list.querySelectorAll('[data-price]').forEach(el => el.addEventListener('change', (e) => {
-      cart[Number(e.target.dataset.price)].unitPrice = Math.max(0, Math.round((parseFloat(e.target.value) || 0) * 100) / 100);
+      const l = cart[Number(e.target.dataset.price)];
+      l.unitPrice = Math.max(0, Math.round((parseFloat(e.target.value) || 0) * 100) / 100);
+      l.manual = true;
+      l.label = l.unitPrice < l.listPrice ? `Precio especial -${fmtNum((1 - l.unitPrice / l.listPrice) * 100).replace(/\.00$/, '')}%` : '';
       changed();
     }));
   };
@@ -245,6 +271,26 @@ export function mountPOS(root, opts) {
     success,
     onAction: (fn) => $('pos-action').addEventListener('click', fn),
     setCart: (c) => { cart = c.slice(); changed(); },
+    // Recalcula los precios no escritos a mano (p. ej. al elegir otro cliente).
+    repriceAll: () => {
+      for (const l of cart) {
+        if (l.manual) continue;
+        const pr = priceFor(l.product);
+        Object.assign(l, { unitPrice: pr.unitPrice, listPrice: pr.listPrice, label: pr.label });
+      }
+      changed();
+    },
+    // Descuento general (%) sobre el precio de lista de todas las líneas.
+    applyDiscount: (pct) => {
+      for (const l of cart) {
+        const base = l.listPrice || Number(l.product.sale_price) || l.unitPrice;
+        l.listPrice = base;
+        l.unitPrice = Math.round(base * (1 - pct / 100) * 100) / 100;
+        l.label = pct > 0 ? `Oferta -${pct}%` : '';
+        l.manual = true;
+      }
+      changed();
+    },
     refresh: () => { renderCategories(); changed(); }
   };
 }

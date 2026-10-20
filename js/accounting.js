@@ -205,7 +205,9 @@ function line(entryDate, account, debit, credit, concepto, refDoc, entidad, extr
     cantidad: ex.cantidad != null ? ex.cantidad : 0,
     unidad: ex.unidad || 'monto',
     precio_venta: ex.precio_venta != null ? round2(ex.precio_venta) : 0,
-    codigo_barra: ex.codigo_barra || ''
+    codigo_barra: ex.codigo_barra || '',
+    costo_unitario: ex.costo_unitario || 0,
+    precio_lista: ex.precio_lista || 0
   };
 }
 
@@ -218,7 +220,7 @@ export function buildIncomeLines(data) {
   return [
     line(data.date, data.paymentAccount, data.total, 0, data.concepto, data.refDoc, data.entidad),
     line(data.date, data.revenueAccount, 0, data.total, data.concepto, data.refDoc, data.entidad,
-      data.sale ? { cantidad: data.sale.qty, unidad: data.sale.unidad || 'unidades', precio_venta: data.sale.unitPrice, codigo_barra: data.sale.codigo || '' } : null)
+      data.sale ? { cantidad: data.sale.qty, unidad: data.sale.unidad || 'unidades', precio_venta: data.sale.unitPrice, codigo_barra: data.sale.codigo || '', costo_unitario: data.sale.unitCost || 0, precio_lista: data.sale.listPrice || 0 } : null)
   ];
 }
 

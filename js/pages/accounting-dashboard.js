@@ -136,7 +136,10 @@ const AccountingDashboard = {
     const pendingQuotes = quotes.filter(q => q.status === 'pendiente');
     const approvedQuotes = quotes.filter(q => q.status === 'aprobado');
     const noPrice = Store.getAll('products').filter(p => Number(p.stock) > 0 && !(Number(p.sale_price) > 0)).length;
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const dueTasks = Store.getAll('crm_activities').filter(a => a.kind === 'tarea' && !(a.done === true || String(a.done) === 'true') && a.due_date && a.due_date <= todayIso);
     const pendings = [
+      dueTasks.length && { href: '#/contabilidad/contactos', icon: '⏰', color: 'violet', title: `${dueTasks.length} seguimiento(s) de clientes para hoy o vencidos`, value: 'Ver clientes' },
       payableCount && { href: '#/contabilidad/pagos', icon: '🚢', color: 'orange', title: `${payableCount} contenedor(es) por pagar`, value: '$' + fmtNum(payableTotal) },
       withoutEntry && { href: '#/contabilidad/pagos', icon: '⚠️', color: 'red', title: `${withoutEntry} contenedor(es) completo(s) sin asiento`, value: 'Generar' },
       stats.porCobrar > 0.01 && { href: '#/contabilidad/por-cobrar', icon: '💵', color: 'sky', title: 'Clientes te deben', value: '$' + fmtNum(stats.porCobrar) },

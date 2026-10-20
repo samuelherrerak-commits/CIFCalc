@@ -21,12 +21,16 @@ const NUMERIC_FIELDS = {
   products: [
     'units_per_box', 'box_volume', 'weight_kg', 'fob_unit', 'tariff_rate', 'stock', 'avg_cost', 'sale_price'
   ],
-  movements: ['debit', 'credit']
+  movements: ['debit', 'credit', 'costo_unitario', 'precio_lista'],
+  contacts: ['discount_pct'],
+  promotions: ['discount_pct']
 };
 
 const BOOL_FIELDS = {
   containers: ['insurance_enabled', 'inventory_posted'],
-  accounts: ['is_active']
+  accounts: ['is_active'],
+  crm_activities: ['done'],
+  promotions: ['active']
 };
 // Valor cuando la celda viene vacía (p. ej. una columna recién agregada a la
 // hoja): una cuenta sin marca se considera activa.

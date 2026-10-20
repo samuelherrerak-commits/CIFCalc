@@ -14,6 +14,7 @@ export const ACCOUNTING_SECTIONS = [
   { title: 'Ingresos', tag: 'Lo que entra', tagColor: 'emerald', items: [
     { key: 'sales', path: '#/contabilidad/ventas', label: 'Ventas', icon: '🛒', color: 'emerald' },
     { key: 'quotes', path: '#/contabilidad/presupuestos', label: 'Presupuestos', icon: '📄', color: 'emerald' },
+    { key: 'promotions', path: '#/contabilidad/promociones', label: 'Promociones', icon: '🎁', color: 'emerald' },
     { key: 'income', path: '#/contabilidad/ingresos', label: 'Otros Ingresos', icon: '➕', color: 'emerald' }
   ] },
   { title: 'Costos y Gastos', tag: 'Lo que sale', tagColor: 'rose', items: [
@@ -27,9 +28,14 @@ export const ACCOUNTING_SECTIONS = [
     { key: 'payments', path: '#/contabilidad/pagos', label: 'Contenedores por Pagar', icon: '🚢', color: 'orange' },
     { key: 'payables', path: '#/contabilidad/por-pagar', label: 'Proveedores por Pagar', icon: '🧾', color: 'orange' }
   ] },
+  { title: 'Clientes', tag: 'CRM', tagColor: 'violet', items: [
+    { key: 'contacts', path: '#/contabilidad/contactos', label: 'Clientes y Contactos', icon: '👥', color: 'violet' }
+  ] },
+  { title: 'Análisis', tag: 'Reportes', tagColor: 'blue', items: [
+    { key: 'reports', path: '#/contabilidad/reportes', label: 'Reportes', icon: '📈', color: 'blue' }
+  ] },
   { title: 'Apoyo', tag: 'Referencia', tagColor: 'slate', items: [
-    { key: 'inventory', path: '#/contabilidad/inventario', label: 'Inventario', icon: '📦', color: 'slate' },
-    { key: 'contacts', path: '#/contabilidad/contactos', label: 'Contactos', icon: '👥', color: 'slate' }
+    { key: 'inventory', path: '#/contabilidad/inventario', label: 'Inventario', icon: '📦', color: 'slate' }
   ] },
   { title: 'Libros contables', items: [
     { key: 'accounts', path: '#/contabilidad/cuentas', label: 'Plan de Cuentas', icon: '📚', color: 'slate' },

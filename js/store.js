@@ -38,13 +38,15 @@ const STORE_KEYS = {
   sale_concepts: 'cif_sale_concepts',
   module_settings: 'cif_module_settings',
   contacts: 'cif_contacts',
-  quotes: 'cif_quotes'
+  quotes: 'cif_quotes',
+  crm_activities: 'cif_crm_activities',
+  promotions: 'cif_promotions'
 };
 
 // Tablas que el Web App de Sheets respalda (schemas definidos en Code.gs).
 // Las demás entidades (contabilidad, ventas, gastos) viven en Supabase.
-const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'contacts', 'quotes'];
-const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes', 'accounting_settings'];
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'contacts', 'quotes', 'crm_activities', 'promotions'];
+const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes', 'accounting_settings', 'crm_activities', 'promotions'];
 
 function readAll(key) {
   try {
@@ -735,6 +737,8 @@ function seed() {
   if (!localStorage.getItem(storageKey(STORE_KEYS.module_settings))) writeAll(STORE_KEYS.module_settings, []);
   if (!localStorage.getItem(storageKey(STORE_KEYS.contacts))) writeAll(STORE_KEYS.contacts, []);
   if (!localStorage.getItem(storageKey(STORE_KEYS.quotes))) writeAll(STORE_KEYS.quotes, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.crm_activities))) writeAll(STORE_KEYS.crm_activities, []);
+  if (!localStorage.getItem(storageKey(STORE_KEYS.promotions))) writeAll(STORE_KEYS.promotions, []);
 
   purgeDroppedColumns();
   localStorage.setItem(RETRY_KEY, JSON.stringify(getRetryQueue()));
@@ -1114,6 +1118,8 @@ const Store = {
       unidad: l.unidad || 'monto',
       precio_venta: Math.round((Number(l.precio_venta) || 0) * 100) / 100,
       codigo_barra: l.codigo_barra || '',
+      costo_unitario: Math.round((Number(l.costo_unitario) || 0) * 100) / 100,
+      precio_lista: Math.round((Number(l.precio_lista) || 0) * 100) / 100,
       source: opts.source || 'manual',
       source_ref: opts.sourceRef || null,
       created_at: ts,
@@ -1284,6 +1290,7 @@ const Store = {
   newContact(overrides = {}) {
     return {
       rif: '', name: '', type: 'cliente', email: '', phone: '', address: '',
+      stage: 'activo', tags: '', notes: '', discount_pct: 0, next_followup_date: '',
       ...overrides
     };
   },
@@ -1301,9 +1308,46 @@ const Store = {
       date: new Date().toISOString().slice(0, 10),
       valid_until: validUntil,
       contact_id: '', contact_name: '', concepto: '',
-      items: '[]', total: 0, status: 'pendiente', converted_ref: '',
+      items: '[]', total: 0, status: 'pendiente', converted_ref: '', kind: 'presupuesto',
       ...overrides
     };
+  },
+
+  // ============================================
+  // Precios: promociones generales y descuento especial del cliente. Nunca se
+  // suman: se aplica el mayor de los dos sobre el precio de venta (lista).
+  // ============================================
+  activePromotions(date = new Date().toISOString().slice(0, 10)) {
+    return readAll(STORE_KEYS.promotions).filter(p =>
+      p.active !== false && String(p.active) !== 'false' && Number(p.discount_pct) > 0 &&
+      (!p.start_date || p.start_date <= date) && (!p.end_date || p.end_date >= date));
+  },
+
+  bestPromotionFor(product, date) {
+    const cat = String(product.category || '').trim();
+    return this.activePromotions(date)
+      .filter(p => p.scope === 'todos' || (p.scope === 'producto' && p.target === product.id) || (p.scope === 'categoria' && p.target === cat))
+      .sort((a, b) => Number(b.discount_pct) - Number(a.discount_pct))[0] || null;
+  },
+
+  // → { listPrice, unitPrice, discountPct, label } para vender `product` a `contact`.
+  priceFor(product, contact, date) {
+    const listPrice = Number(product.sale_price) || 0;
+    const promo = this.bestPromotionFor(product, date);
+    const promoPct = promo ? Number(promo.discount_pct) : 0;
+    const clientPct = contact ? Number(contact.discount_pct) || 0 : 0;
+    const pct = Math.max(promoPct, clientPct);
+    const label = pct <= 0 ? '' : (promoPct >= clientPct ? `Promo ${promo.name || ''} -${pct}%`.replace('  ', ' ') : `Cliente -${pct}%`);
+    return { listPrice, discountPct: pct, unitPrice: Math.round(listPrice * (1 - pct / 100) * 100) / 100, label };
+  },
+
+  newPromotion(overrides = {}) {
+    const today = new Date().toISOString().slice(0, 10);
+    return { name: '', scope: 'categoria', target: '', discount_pct: 10, start_date: today, end_date: '', active: true, ...overrides };
+  },
+
+  newActivity(overrides = {}) {
+    return { contact_id: '', kind: 'actividad', channel: 'llamada', date: new Date().toISOString().slice(0, 10), due_date: '', note: '', done: false, ...overrides };
   },
 
   getQuoteItems(quote) {
