@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Briggs · Catálogo de grifería y accesorios de baño</title>
+  <meta name="description" content="Grifería, duchas y accesorios de baño Briggs en existencia. Arma tu pedido en línea y un asesor te atiende por WhatsApp.">
+  <meta name="theme-color" content="#0e141b">
+  <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/catalogo.css">
+</head>
+<body>
+  <a class="skip" href="#main">Saltar al contenido</a>
+  <div id="banner" class="banner" hidden></div>
+
+  <header class="top" id="top">
+    <div class="wrap top__in">
+      <a class="brand" href="#/" aria-label="Briggs, inicio">
+        <img src="assets/img/logo-light.png" alt="Briggs" width="234" height="40">
+      </a>
+      <nav class="nav" aria-label="Principal">
+        <a href="#/" data-nav="catalogo">Catálogo</a>
+        <a href="#/series" data-nav="series">Series</a>
+        <a href="#/nosotros" data-nav="nosotros">Nosotros</a>
+      </nav>
+      <button class="cartbtn" id="cart-open" type="button" aria-haspopup="dialog" aria-controls="drawer">
+        <span>Pedido</span><b id="cart-count" aria-label="productos en el pedido">0</b>
+      </button>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1"></main>
+
+  <footer class="foot" id="foot"></footer>
+
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-hidden="true" inert></aside>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript><p style="padding:2rem;font-family:sans-serif">Este catálogo necesita JavaScript. Escríbenos por WhatsApp al 0412-0298203.</p></noscript>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
