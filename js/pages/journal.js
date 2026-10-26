@@ -134,7 +134,7 @@ const Journal = {
     const body = `
       <div class="${card}">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-3">
-          <h2 class="text-sm font-bold text-slate-700">Diario Contable <span class="text-slate-400" id="journal-count"></span></h2>
+          <h2 class="text-sm font-semibold text-slate-900">Diario Contable <span class="text-slate-400" id="journal-count"></span></h2>
           <div class="flex items-center gap-2 flex-wrap">
             <input id="journal-search" type="text" placeholder="Buscar concepto o referencia…" class="${input}" style="width:220px">
             <select id="journal-account-filter" class="${input}" style="width:220px"></select>

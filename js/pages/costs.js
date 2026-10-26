@@ -105,7 +105,7 @@ const Costs = {
 
     const body = `
       <div class="${card} space-y-3">
-        <h2 class="text-sm font-bold text-slate-700">Registrar Costo</h2>
+        <h2 class="text-sm font-semibold text-slate-900">Registrar Costo</h2>
         <p class="text-xs text-slate-400">Un costo no mueve caja ni banco de inmediato — se registra contra una cuenta contrapartida (Proveedores, Contenedores por Pagar, etc.), a diferencia de un Gasto.</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
@@ -142,7 +142,7 @@ const Costs = {
       </div>
 
       <div class="${card}">
-        <h2 class="text-sm font-bold text-slate-700 mb-3">Costos Registrados</h2>
+        <h2 class="text-sm font-semibold text-slate-900 mb-3">Costos Registrados</h2>
         <table class="w-full text-left text-xs">
           <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2">Contraparte</th><th class="p-2 text-right">Neto</th><th class="p-2 text-right">IVA</th><th class="p-2 text-right">Total</th></tr></thead>
           <tbody id="costs-tbody"></tbody>

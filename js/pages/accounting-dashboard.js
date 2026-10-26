@@ -2,6 +2,7 @@ import Store from '../store.js';
 import { fmtNum, esc } from '../utils.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { card } from '../components/accounting-shell.js';
+import { icon } from '../components/icons.js';
 
 // Prefijo del ref_doc → tipo de actividad (igual patrón que recentActivity de LegalYa).
 const DOC_TYPES = {
@@ -94,33 +95,26 @@ const AccountingDashboard = {
     }
     const topProducts = [...productQty.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-    const statCard = (lbl, value, colorName, href, icon) => `
-      <a href="${href}" class="group block bg-white border border-slate-200 hover:border-${colorName}-300 hover:shadow-md rounded-2xl p-4 transition">
-        <div class="flex items-center justify-between mb-1">
-          <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wide">${esc(lbl)}</span>
-          <span class="w-8 h-8 rounded-xl bg-${colorName}-50 flex items-center justify-center">${icon}</span>
-        </div>
-        <div class="text-2xl font-black text-${colorName}-600">$${fmtNum(value)}</div>
-        <div class="text-[10px] font-semibold text-slate-300 group-hover:text-${colorName}-500 mt-1">Ver detalle →</div>
+    const statCard = (lbl, value, href) => `
+      <a href="${href}" class="block bg-white border border-slate-200 hover:border-slate-300 rounded-xl p-4 transition">
+        <div class="text-xs text-slate-500">${esc(lbl)}</div>
+        <div class="text-xl font-semibold text-slate-900 mt-1 tabular-nums">$${fmtNum(value)}</div>
       </a>
     `;
 
-    // Accesos rápidos (como el menú de inicio de LegalYa).
-    // Mismos colores que las secciones del menú: verde = ingresos, rojo =
-    // gastos, celeste = activo (te deben), naranja = pasivo (debes).
+    // Accesos rápidos: una acción principal y el resto discretos.
     const actions = [
-      ['#/contabilidad/ventas', 'Nueva venta', '🛒', 'bg-emerald-600 hover:bg-emerald-700 text-white'],
-      ['#/contabilidad/presupuestos/nuevo', 'Presupuesto', '📄', 'bg-emerald-500 hover:bg-emerald-600 text-white'],
-      ['#/contabilidad/gastos', 'Registrar gasto', '💸', 'bg-rose-500 hover:bg-rose-600 text-white'],
-      ['#/contabilidad/por-cobrar', 'Cobrar a clientes', '💵', 'bg-sky-500 hover:bg-sky-600 text-white'],
-      ['#/contabilidad/pagos', 'Pagar contenedor', '🚢', 'bg-orange-500 hover:bg-orange-600 text-white'],
-      ['#/contabilidad/inventario', 'Ver stock', '📦', 'bg-white hover:bg-slate-50 text-slate-800 border border-slate-200'],
-      ['#/contabilidad/contactos', 'Contactos', '👥', 'bg-slate-700 hover:bg-slate-800 text-white']
+      ['#/contabilidad/ventas', 'Nueva venta', 'cart', true],
+      ['#/contabilidad/presupuestos/nuevo', 'Presupuesto', 'file'],
+      ['#/contabilidad/gastos', 'Registrar gasto', 'wallet'],
+      ['#/contabilidad/por-cobrar', 'Cobrar', 'inbox'],
+      ['#/contabilidad/pagos', 'Pagar contenedor', 'ship'],
+      ['#/contabilidad/inventario', 'Inventario', 'box'],
+      ['#/contabilidad/contactos', 'Clientes', 'users']
     ];
-    const actionBtn = ([href, text, icon, cls]) => `
-      <a href="${href}" class="${cls} rounded-2xl p-4 flex flex-col justify-between min-h-[96px] shadow-sm hover:shadow-lg hover:-translate-y-0.5 active:scale-95 transition">
-        <span class="text-2xl">${icon}</span>
-        <span class="text-xs font-black uppercase tracking-wide">${text}</span>
+    const actionBtn = ([href, text, ic, primary]) => `
+      <a href="${href}" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition ${primary ? 'bg-blue-600 hover:bg-blue-700 text-white font-semibold' : 'bg-white border border-slate-200 hover:border-slate-300 text-slate-700'}">
+        ${icon(ic, 'w-4 h-4')}${text}
       </a>`;
 
     // Pendientes: lo que necesita atención, cada uno lleva a su pantalla.
@@ -139,85 +133,84 @@ const AccountingDashboard = {
     const todayIso = new Date().toISOString().slice(0, 10);
     const dueTasks = Store.getAll('crm_activities').filter(a => a.kind === 'tarea' && !(a.done === true || String(a.done) === 'true') && a.due_date && a.due_date <= todayIso);
     const pendings = [
-      dueTasks.length && { href: '#/contabilidad/contactos', icon: '⏰', color: 'violet', title: `${dueTasks.length} seguimiento(s) de clientes para hoy o vencidos`, value: 'Ver clientes' },
-      payableCount && { href: '#/contabilidad/pagos', icon: '🚢', color: 'orange', title: `${payableCount} contenedor(es) por pagar`, value: '$' + fmtNum(payableTotal) },
-      withoutEntry && { href: '#/contabilidad/pagos', icon: '⚠️', color: 'red', title: `${withoutEntry} contenedor(es) completo(s) sin asiento`, value: 'Generar' },
-      stats.porCobrar > 0.01 && { href: '#/contabilidad/por-cobrar', icon: '💵', color: 'sky', title: 'Clientes te deben', value: '$' + fmtNum(stats.porCobrar) },
-      pendingQuotes.length && { href: '#/contabilidad/presupuestos', icon: '⏳', color: 'amber', title: `${pendingQuotes.length} presupuesto(s) pendiente(s)`, value: '$' + fmtNum(pendingQuotes.reduce((s2, q) => s2 + (Number(q.total) || 0), 0)) },
-      approvedQuotes.length && { href: '#/contabilidad/presupuestos', icon: '👍', color: 'blue', title: `${approvedQuotes.length} presupuesto(s) aprobado(s) por vender`, value: 'Convertir' },
-      noPrice && { href: '#/contabilidad/inventario', icon: '🏷️', color: 'violet', title: `${noPrice} producto(s) con existencia sin precio`, value: 'Poner precio' }
+      dueTasks.length && { href: '#/contabilidad/contactos', icon: 'clock', title: `${dueTasks.length} seguimiento(s) de clientes para hoy o vencidos`, value: 'Ver clientes' },
+      payableCount && { href: '#/contabilidad/pagos', icon: 'ship', title: `${payableCount} contenedor(es) por pagar`, value: '$' + fmtNum(payableTotal) },
+      withoutEntry && { href: '#/contabilidad/pagos', icon: 'alert', warn: true, title: `${withoutEntry} contenedor(es) completo(s) sin asiento`, value: 'Generar' },
+      stats.porCobrar > 0.01 && { href: '#/contabilidad/por-cobrar', icon: 'inbox', title: 'Clientes te deben', value: '$' + fmtNum(stats.porCobrar) },
+      pendingQuotes.length && { href: '#/contabilidad/presupuestos', icon: 'file', title: `${pendingQuotes.length} presupuesto(s) pendiente(s)`, value: '$' + fmtNum(pendingQuotes.reduce((s2, q) => s2 + (Number(q.total) || 0), 0)) },
+      approvedQuotes.length && { href: '#/contabilidad/presupuestos', icon: 'check', title: `${approvedQuotes.length} presupuesto(s) aprobado(s) por vender`, value: 'Convertir' },
+      noPrice && { href: '#/contabilidad/inventario', icon: 'tag', title: `${noPrice} producto(s) con existencia sin precio`, value: 'Poner precio' }
     ].filter(Boolean);
     const pendingRow = (pd) => `
-      <a href="${pd.href}" class="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-${pd.color}-300 hover:bg-${pd.color}-50 transition">
-        <span class="w-9 h-9 rounded-xl bg-${pd.color}-100 flex items-center justify-center shrink-0">${pd.icon}</span>
-        <span class="flex-1 text-xs font-semibold text-slate-700">${pd.title}</span>
-        <span class="text-xs font-black text-${pd.color}-700 whitespace-nowrap">${pd.value} →</span>
+      <a href="${pd.href}" class="flex items-center gap-3 py-2.5 px-1 hover:bg-slate-50 rounded-lg transition">
+        <span class="${pd.warn ? 'text-amber-500' : 'text-slate-400'}">${icon(pd.icon)}</span>
+        <span class="flex-1 text-sm text-slate-700">${pd.title}</span>
+        <span class="text-xs text-slate-500 whitespace-nowrap">${pd.value} →</span>
       </a>`;
 
     const activityRow = (a) => `
       <a href="#/contabilidad/diario" class="flex items-center gap-3 py-2.5 px-1 -mx-1 rounded-lg hover:bg-slate-50 border-t border-slate-100 first:border-t-0">
-        <div class="w-8 h-8 rounded-full bg-${a.type.color}-100 flex items-center justify-center text-${a.type.color}-600 text-sm shrink-0">${a.type.icon}</div>
         <div class="flex-1 min-w-0">
-          <div class="text-xs font-bold text-slate-700 truncate">${esc(a.desc) || esc(a.type.label)}</div>
+          <div class="text-xs text-slate-700 truncate">${esc(a.desc) || esc(a.type.label)}</div>
           <div class="text-[10px] text-slate-400 truncate">${esc(a.refDoc)} ${a.entidad ? '· ' + esc(a.entidad) : ''} · ${esc(a.date || '')}</div>
         </div>
-        <div class="text-xs font-mono font-bold text-slate-700 shrink-0">$${fmtNum(a.amount)}</div>
+        <div class="text-xs font-mono text-slate-700 shrink-0">$${fmtNum(a.amount)}</div>
       </a>
     `;
 
     const today = new Date().toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' });
     const body = `
       <div>
-        <p class="text-[11px] font-bold uppercase tracking-widest text-blue-600">${esc(today)}</p>
-        <h1 class="text-2xl font-black text-slate-900">¿Qué quieres hacer hoy?</h1>
+        <p class="text-xs text-slate-400 first-letter:uppercase">${esc(today)}</p>
+        <h1 class="text-xl font-semibold text-slate-900">Resumen</h1>
       </div>
-      <div class="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-3">
+      <div class="flex flex-wrap gap-2">
         ${actions.map(actionBtn).join('')}
       </div>
 
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        ${statCard('Caja', stats.caja, 'emerald', '#/contabilidad/mayor', '💵')}
-        ${statCard('Banco', stats.banco, 'blue', '#/contabilidad/mayor', '🏦')}
-        ${statCard('Por Cobrar', stats.porCobrar, 'sky', '#/contabilidad/por-cobrar', '🧾')}
-        ${statCard('Gastos y Costos', stats.gastosCostos, 'rose', '#/contabilidad/gastos', '💸')}
+        ${statCard('Caja', stats.caja, '#/contabilidad/mayor')}
+        ${statCard('Banco', stats.banco, '#/contabilidad/mayor')}
+        ${statCard('Por cobrar', stats.porCobrar, '#/contabilidad/por-cobrar')}
+        ${statCard('Gastos y costos', stats.gastosCostos, '#/contabilidad/gastos')}
       </div>
 
       <div class="${card}">
-        <h2 class="text-sm font-bold text-slate-700 mb-2">Pendientes</h2>
+        <h2 class="text-sm font-semibold text-slate-900 mb-1">Pendientes</h2>
         ${pendings.length
-          ? `<div class="grid grid-cols-1 md:grid-cols-2 gap-2">${pendings.map(pendingRow).join('')}</div>`
-          : '<p class="text-xs text-emerald-600 font-semibold py-2">✅ Todo al día: no hay nada pendiente.</p>'}
+          ? `<div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 divide-y md:divide-y-0 divide-slate-100">${pendings.map(pendingRow).join('')}</div>`
+          : '<p class="text-sm text-slate-500 py-2">Todo al día: no hay nada pendiente.</p>'}
       </div>
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div class="lg:col-span-2 space-y-4">
           <div class="${card}">
-            <h2 class="text-sm font-bold text-slate-700 mb-1">Top Vendidos</h2>
+            <h2 class="text-sm font-semibold text-slate-900 mb-1">Top Vendidos</h2>
             ${topProducts.length === 0
               ? '<p class="text-xs text-slate-400 py-3">Sin ventas registradas todavía.</p>'
               : `<div class="space-y-1.5 pt-1">${topProducts.map(([name, qty], i) => `
                   <div class="flex items-center justify-between text-xs py-1">
                     <span class="text-slate-600 truncate">${i + 1}. ${esc(name)}</span>
-                    <span class="font-mono font-bold text-slate-500">${fmtNum(qty)} u.</span>
+                    <span class="font-mono text-slate-500">${fmtNum(qty)} u.</span>
                   </div>
                 `).join('')}</div>`
             }
           </div>
           <div class="${card}">
-            <h2 class="text-sm font-bold text-slate-700 mb-1">Mayores Deudores</h2>
+            <h2 class="text-sm font-semibold text-slate-900 mb-1">Mayores Deudores</h2>
             ${topDebtors.length === 0
               ? '<p class="text-xs text-slate-400 py-3">Sin cuentas por cobrar pendientes.</p>'
               : `<div class="space-y-1.5 pt-1">${topDebtors.map(([name, bal], i) => `
                   <div class="flex items-center justify-between text-xs py-1">
                     <span class="text-slate-600 truncate">${i + 1}. ${esc(name)}</span>
-                    <span class="font-mono font-bold text-amber-600">$${fmtNum(bal)}</span>
+                    <span class="font-mono text-slate-700">$${fmtNum(bal)}</span>
                   </div>
                 `).join('')}</div>`
             }
           </div>
         </div>
         <div class="${card}">
-          <h2 class="text-sm font-bold text-slate-700 mb-1">Actividad Reciente</h2>
+          <h2 class="text-sm font-semibold text-slate-900 mb-1">Actividad Reciente</h2>
           ${recentActivity.length === 0
             ? '<p class="text-xs text-slate-400 py-3">Sin movimientos registrados todavía.</p>'
             : recentActivity.map(activityRow).join('')

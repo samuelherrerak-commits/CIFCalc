@@ -17,9 +17,9 @@ export function invoiceFieldsHtml(fs, { input, label }) {
   const money = (id, placeholder = '0.00') => `<input id="${id}" type="number" min="0" step="0.01" placeholder="${placeholder}" class="${input} text-right font-mono">`;
   return `
     <label class="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer">
-      <input id="inv-on" type="checkbox" class="w-4 h-4 accent-blue-600"> 🧾 Registrar factura fiscal del proveedor (va al Libro de Compras)
+      <input id="inv-on" type="checkbox" class="w-4 h-4 accent-blue-600"> Registrar factura fiscal del proveedor <span class="font-normal text-slate-400">(va al Libro de Compras)</span>
     </label>
-    <div id="inv-box" class="hidden bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
+    <div id="inv-box" class="hidden bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
       <div class="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2">
         <div>
           <label class="${label}">N.º factura *</label>

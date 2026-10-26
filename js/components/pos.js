@@ -1,4 +1,5 @@
 import { fmtNum, fmtInt, esc } from '../utils.js';
+import { icon } from './icons.js';
 
 // Punto de venta compartido por Ventas y Presupuestos (estilo LegalYa): a la
 // izquierda el catálogo en tarjetas con buscador (nombre, categoría, código)
@@ -43,45 +44,45 @@ export function mountPOS(root, opts) {
   root.innerHTML = `
     <div class="pos-wrap grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem] gap-3 lg:h-[var(--pos-h,auto)]">
       <div class="flex flex-col gap-2 min-h-0 min-w-0">
-        <div class="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3 shrink-0">
+        <div class="flex items-center gap-3 shrink-0">
           <div class="relative flex-1">
-            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
-            <input id="pos-search" type="text" autocomplete="off" placeholder="Buscar por nombre, categoría o código…"
-              class="w-full pl-10 pr-3 py-2.5 rounded-xl bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white outline-none text-sm font-semibold">
+            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="pos-search" type="text" autocomplete="off" placeholder="Buscar por nombre, categoría o código"
+              class="w-full pl-9 pr-3 py-2 rounded-lg bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm">
           </div>
-          <span id="pos-count" class="hidden sm:block text-[11px] font-semibold text-slate-400 whitespace-nowrap pr-2"></span>
+          <span id="pos-count" class="hidden sm:block text-[11px] text-slate-400 whitespace-nowrap"></span>
         </div>
         <div id="pos-categories" class="flex gap-1.5 overflow-x-auto no-scrollbar shrink-0"></div>
         <div id="pos-grid" class="grid [grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr))] auto-rows-max content-start gap-2.5 lg:flex-1 lg:min-h-0 lg:overflow-y-auto thin-scroll pr-1 pb-1"></div>
       </div>
 
       <div class="min-h-0">
-        <div id="pos-cart-card" class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col lg:h-full scroll-mt-16">
-          <div class="px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex justify-between items-center shrink-0">
+        <div id="pos-cart-card" class="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col lg:h-full scroll-mt-16">
+          <div class="px-3 py-2.5 border-b border-slate-100 flex justify-between items-center shrink-0">
             <div class="flex items-baseline gap-2">
-              <h2 class="text-sm font-black uppercase tracking-wide">${esc(opts.title || 'Venta')}</h2>
-              <p id="pos-units" class="text-[11px] text-blue-100"></p>
+              <h2 class="text-sm font-semibold text-slate-900">${esc(opts.title || 'Venta')}</h2>
+              <p id="pos-units" class="text-[11px] text-slate-400"></p>
             </div>
-            <button id="pos-clear" class="hidden text-[11px] font-semibold bg-white/15 hover:bg-white/25 px-2 py-1 rounded-lg">Vaciar</button>
+            <button id="pos-clear" class="hidden text-[11px] text-slate-400 hover:text-red-600">Vaciar</button>
           </div>
           ${opts.headerFieldsHtml ? `<div class="px-3 py-2 border-b border-slate-100 space-y-2 shrink-0">${opts.headerFieldsHtml}</div>` : ''}
-          <div id="pos-cart" class="p-2.5 space-y-1.5 flex-1 min-h-[7rem] max-h-[45vh] lg:max-h-none overflow-y-auto thin-scroll"></div>
-          <div class="px-3 py-2.5 bg-slate-50 border-t border-slate-200 space-y-2 shrink-0">
+          <div id="pos-cart" class="px-3 flex-1 min-h-[7rem] max-h-[45vh] lg:max-h-none overflow-y-auto thin-scroll"></div>
+          <div class="px-3 py-2.5 border-t border-slate-100 space-y-2 shrink-0">
             <div id="pos-summary" class="space-y-0.5 text-[11px] text-slate-500"></div>
             <div class="flex justify-between items-end">
-              <span class="text-xs font-black uppercase text-slate-400">Total</span>
-              <span id="pos-total" class="text-2xl font-black tracking-tight text-slate-900"></span>
+              <span class="text-xs text-slate-500">Total</span>
+              <span id="pos-total" class="text-2xl font-semibold tracking-tight text-slate-900"></span>
             </div>
             ${opts.footerFieldsHtml || ''}
             <div id="pos-msg" class="text-xs font-semibold text-red-600 empty:hidden"></div>
-            <button id="pos-action" class="w-full py-3 rounded-xl font-black uppercase tracking-wide text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.99] shadow-lg transition">${esc(opts.actionLabel || 'Procesar')}</button>
-            <div id="pos-success" class="hidden text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl p-2.5"></div>
+            <button id="pos-action" class="w-full py-2.5 rounded-lg font-semibold text-sm text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.99] transition">${esc(opts.actionLabel || 'Procesar')}</button>
+            <div id="pos-success" class="hidden text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-2.5"></div>
           </div>
         </div>
       </div>
     </div>
-    <button id="pos-jump" type="button" class="hidden lg:!hidden fixed bottom-[4.25rem] md:bottom-4 inset-x-3 md:left-auto md:w-80 z-30 items-center justify-between gap-2 px-4 py-3 rounded-2xl bg-blue-600 text-white font-bold text-sm shadow-xl">
-      <span>🛒 Ver carrito <span id="pos-jump-n" class="text-blue-100 font-semibold"></span></span><span id="pos-jump-total" class="font-black"></span>
+    <button id="pos-jump" type="button" class="hidden lg:!hidden fixed bottom-[4.25rem] md:bottom-4 inset-x-3 md:left-auto md:w-80 z-30 items-center justify-between gap-2 px-4 py-3 rounded-xl bg-slate-900 text-white font-medium text-sm shadow-lg">
+      <span class="flex items-center gap-2">${icon('cart', 'w-4 h-4')} Ver carrito <span id="pos-jump-n" class="text-slate-400"></span></span><span id="pos-jump-total" class="font-semibold"></span>
     </button>
   `;
   // Alto disponible: desde donde empieza el punto de venta hasta el borde
@@ -124,8 +125,8 @@ export function mountPOS(root, opts) {
     const cats = [...new Set(visibleProducts().map(p => String(p.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     if (category && category !== SUGGESTED && !cats.includes(category)) category = '';
     const chip = (value, text) => `
-      <button data-cat="${esc(value)}" class="px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition ${
-        category === value ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:border-blue-300 hover:text-blue-700'
+      <button data-cat="${esc(value)}" class="px-2.5 py-1 rounded-md text-xs whitespace-nowrap transition ${
+        category === value ? 'bg-slate-900 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
       }">${esc(text)}</button>`;
     const wrap = $('pos-categories');
     const sugCount = visibleProducts().filter(p => suggested.has(p.id)).length;
@@ -153,37 +154,36 @@ export function mountPOS(root, opts) {
     const grid = $('pos-grid');
     grid.innerHTML = list.length === 0
       ? `<div class="col-span-full py-16 text-center text-slate-400">
-           <div class="text-4xl mb-2">📦</div>
-           <p class="text-sm font-semibold">${all.length ? 'Ningún producto coincide con la búsqueda' : (capToStock ? 'Sin productos con existencia' : 'Sin productos en el catálogo')}</p>
+           <div class="flex justify-center mb-2 text-slate-300">${icon('box', 'w-8 h-8')}</div>
+           <p class="text-sm">${all.length ? 'Ningún producto coincide con la búsqueda' : (capToStock ? 'Sin productos con existencia' : 'Sin productos en el catálogo')}</p>
            <p class="text-xs mt-1">${all.length ? 'Prueba con otro nombre, categoría o código.' : (capToStock ? 'El inventario se llena al completar un contenedor.' : '')}</p>
          </div>`
       : list.map(p => {
         const line = inCart(p.id);
         const left = stockOf(p) - (line ? line.qty : 0);
-        const stockBadge = capToStock
-          ? `<span class="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold text-white ${left > 0 ? 'bg-emerald-500' : 'bg-red-500'}">${left > 0 ? fmtInt(left) + ' disp.' : 'Agotado'}</span>`
-          : `<span class="absolute top-2 left-2 px-2 py-0.5 rounded-full text-[10px] font-bold ${stockOf(p) > 0 ? 'bg-emerald-500 text-white' : 'bg-slate-200 text-slate-600'}">${stockOf(p) > 0 ? fmtInt(stockOf(p)) + ' en stock' : 'Sin existencia'}</span>`;
+        // Existencia como texto discreto (rojo solo si se agotó).
+        const stockText = capToStock
+          ? (left > 0 ? `${fmtInt(left)} disp.` : '<span class="text-red-500">Agotado</span>')
+          : (stockOf(p) > 0 ? `${fmtInt(stockOf(p))} en stock` : 'Sin existencia');
+        const pr = priceFor(p);
+        const priceHtml = !(pr.listPrice > 0)
+          ? '<span class="text-xs text-amber-600">Sin precio</span>'
+          : pr.discountPct > 0
+            ? `<span class="flex items-baseline gap-1"><span class="font-semibold text-sm text-slate-900">$${fmtNum(pr.unitPrice)}</span><span class="text-[10px] text-slate-400 line-through">$${fmtNum(pr.listPrice)}</span></span>`
+            : `<span class="font-semibold text-sm text-slate-900">$${fmtNum(pr.listPrice)}</span>`;
         return `
-        <button data-add="${esc(p.id)}" class="group relative text-left bg-white rounded-xl border-2 ${line ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-100 hover:border-blue-400'} shadow-sm hover:shadow-md active:scale-[0.98] transition overflow-hidden flex flex-col ${capToStock && left <= 0 ? 'opacity-60' : ''}">
-          <div class="relative aspect-[4/3] bg-white flex-shrink-0 border-b border-slate-50">
+        <button data-add="${esc(p.id)}" class="group relative text-left bg-white rounded-xl border ${line ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-200 hover:border-slate-300'} active:scale-[0.98] transition overflow-hidden flex flex-col ${capToStock && left <= 0 ? 'opacity-50' : ''}">
+          <div class="relative aspect-[4/3] bg-white flex-shrink-0">
             ${p.foto_url
-              ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-full h-full object-contain p-1.5" alt="">`
-              : '<div class="w-full h-full flex items-center justify-center text-3xl text-slate-200">📦</div>'}
-            ${stockBadge}
-            ${line ? `<span class="absolute top-2 right-2 min-w-[1.5rem] h-6 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">${fmtInt(line.qty)}</span>` : ''}
+              ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-full h-full object-contain p-2" alt="">`
+              : `<div class="w-full h-full flex items-center justify-center text-slate-200">${icon('box', 'w-8 h-8')}</div>`}
+            ${line ? `<span class="absolute top-1.5 right-1.5 min-w-[1.25rem] h-5 px-1 rounded-full bg-blue-600 text-white text-[11px] font-semibold flex items-center justify-center">${fmtInt(line.qty)}</span>` : ''}
+            ${suggested.has(p.id) ? '<span class="absolute top-1.5 left-1.5 text-[10px] text-amber-700 bg-amber-50 px-1.5 rounded">★ Lo compra</span>' : ''}
           </div>
-          <div class="px-2.5 py-2 flex-1 flex flex-col gap-0.5">
-            ${p.category ? `<span class="text-[9px] font-semibold uppercase tracking-wide text-violet-600 truncate">${esc(p.category)}</span>` : ''}
-            <span class="text-[13px] font-bold text-slate-800 leading-tight line-clamp-2" title="${esc(p.name)}" data-name>${esc(p.name) || 'Sin nombre'}</span>
-            <span class="text-[10px] font-mono text-slate-400">${esc(p.sku_briggs)}</span>
-            ${suggested.has(p.id) ? '<span class="self-start text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800">⭐ Lo compra</span>' : ''}
-            ${(() => {
-              const pr = priceFor(p);
-              if (!(pr.listPrice > 0)) return '<span class="mt-auto pt-1 font-black text-xs text-amber-600">Sin precio</span>';
-              return pr.discountPct > 0
-                ? `<span class="mt-auto pt-1 flex items-baseline gap-1.5 flex-wrap"><span class="font-black text-base text-emerald-700">$${fmtNum(pr.unitPrice)}</span><span class="text-[11px] text-slate-400 line-through">$${fmtNum(pr.listPrice)}</span><span class="text-[10px] font-bold text-rose-600">-${fmtNum(pr.discountPct).replace(/\.00$/, '')}%</span></span>`
-                : `<span class="mt-auto pt-1 font-black text-base text-slate-900">$${fmtNum(pr.listPrice)}</span>`;
-            })()}
+          <div class="px-2.5 pb-2 pt-1 flex-1 flex flex-col gap-0.5">
+            <span class="text-[13px] text-slate-700 leading-tight line-clamp-2" title="${esc(p.name)}" data-name>${esc(p.name) || 'Sin nombre'}</span>
+            <span class="text-[10px] font-mono text-slate-400 truncate">${esc(p.sku_briggs)}</span>
+            <span class="mt-auto pt-1 flex items-center justify-between gap-1">${priceHtml}<span class="text-[10px] text-slate-400 whitespace-nowrap">${stockText}</span></span>
           </div>
         </button>`;
       }).join('');
@@ -218,33 +218,33 @@ export function mountPOS(root, opts) {
   const renderCart = () => {
     const list = $('pos-cart');
     list.innerHTML = cart.length === 0
-      ? `<div class="py-6 text-center">
-           <div class="text-3xl mb-1 text-slate-300">🛒</div>
-           <p class="text-sm font-bold uppercase text-slate-400">Carrito vacío</p>
-           <p class="text-xs mt-1 text-slate-400">Toca un producto para agregarlo</p>
+      ? `<div class="py-8 text-center text-slate-400">
+           <div class="flex justify-center mb-2 text-slate-300">${icon('cart', 'w-7 h-7')}</div>
+           <p class="text-sm">Carrito vacío</p>
+           <p class="text-xs mt-0.5">Toca un producto para agregarlo</p>
          </div>`
       : cart.map((l, i) => {
         const over = !capToStock && l.qty > stockOf(l.product);
         return `
-        <div class="flex gap-2 p-2 rounded-xl bg-slate-50 border border-slate-100">
+        <div class="flex gap-2 py-2 border-b border-slate-100 last:border-b-0">
           ${l.product.foto_url
             ? `<img src="${esc(l.product.foto_url)}" loading="lazy" decoding="async" class="w-10 h-10 object-contain bg-white rounded-lg border border-slate-200 flex-shrink-0" alt="">`
-            : '<div class="w-10 h-10 rounded-lg border border-slate-200 bg-white flex items-center justify-center text-slate-300 flex-shrink-0">📦</div>'}
+            : `<div class="w-10 h-10 rounded-lg border border-slate-200 bg-white flex items-center justify-center text-slate-300 flex-shrink-0">${icon('box', 'w-5 h-5')}</div>`}
           <div class="flex-1 min-w-0">
             <div class="flex justify-between gap-2">
-              <p class="text-xs font-bold text-slate-800 truncate" title="${esc(l.product.name)}">${esc(l.product.name)}</p>
+              <p class="text-xs text-slate-800 truncate" title="${esc(l.product.name)}">${esc(l.product.name)}</p>
               <button data-del="${i}" title="Quitar" class="text-slate-300 hover:text-red-500 text-sm leading-none">✕</button>
             </div>
             <div class="flex items-center gap-1.5 mt-1">
               <div class="flex items-center">
-                <button data-minus="${i}" class="w-6 h-6 rounded-md bg-white border border-slate-200 hover:bg-slate-100 font-bold text-slate-600 text-sm leading-none">−</button>
-                <input data-qty="${i}" type="number" min="0" ${capToStock ? `max="${stockOf(l.product)}"` : ''} step="1" value="${l.qty}" class="w-10 text-center text-sm font-bold bg-transparent outline-none">
-                <button data-plus="${i}" class="w-6 h-6 rounded-md bg-white border border-slate-200 hover:bg-slate-100 font-bold text-slate-600 text-sm leading-none">+</button>
+                <button data-minus="${i}" class="w-6 h-6 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-500 text-sm leading-none">−</button>
+                <input data-qty="${i}" type="number" min="0" ${capToStock ? `max="${stockOf(l.product)}"` : ''} step="1" value="${l.qty}" class="w-10 text-center text-sm bg-transparent outline-none">
+                <button data-plus="${i}" class="w-6 h-6 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-500 text-sm leading-none">+</button>
               </div>
               <div class="flex items-center gap-0.5 text-[11px] text-slate-400">
                 × $<input data-price="${i}" type="number" min="0" step="0.01" value="${l.unitPrice || ''}" placeholder="0.00" class="w-16 px-1 py-0.5 border ${l.unitPrice > 0 ? 'border-slate-200 bg-white' : 'border-amber-400 bg-amber-50'} rounded text-right text-xs">
               </div>
-              <span class="ml-auto text-sm font-black text-emerald-600 whitespace-nowrap">$${fmtNum(l.qty * l.unitPrice)}</span>
+              <span class="ml-auto text-sm font-semibold text-slate-900 whitespace-nowrap">$${fmtNum(l.qty * l.unitPrice)}</span>
             </div>
             ${over || (l.label && l.unitPrice < l.listPrice) ? `<p class="text-[10px] font-semibold mt-0.5 ${over ? 'text-amber-600' : 'text-rose-600'}">${over ? `Supera la existencia (${fmtInt(stockOf(l.product))})` : `${esc(l.label)} · antes $${fmtNum(l.listPrice)}`}</p>` : ''}
           </div>
@@ -253,7 +253,7 @@ export function mountPOS(root, opts) {
 
     const sm = summary();
     $('pos-summary').innerHTML = sm && sm.rows.length
-      ? sm.rows.map(([k, v]) => `<div class="flex justify-between"><span>${esc(k)}</span><span class="font-mono font-semibold text-slate-700">$${fmtNum(v)}</span></div>`).join('')
+      ? sm.rows.map(([k, v]) => `<div class="flex justify-between"><span>${esc(k)}</span><span class="font-mono text-slate-600">$${fmtNum(v)}</span></div>`).join('')
       : '';
     $('pos-total').textContent = `$${fmtNum(sm ? sm.total : subtotal())}`;
     $('pos-units').textContent = cart.length ? `${fmtInt(units())} unidad${units() === 1 ? '' : 'es'} · ${cart.length} producto${cart.length === 1 ? '' : 's'}` : '';

@@ -1,16 +1,18 @@
+import { icon } from './icons.js';
+
 const Nav = {
   render(active = '') {
     const links = [
-      { path: '#/', key: 'dashboard', label: 'Dashboard', icon: '📊' },
-      { path: '#/productos', key: 'products', label: 'Productos', icon: '📦' },
-      { path: '#/contabilidad/resumen', key: 'contabilidad', label: 'Contabilidad', icon: '📒' }
+      { path: '#/', key: 'dashboard', label: 'Dashboard', icon: 'chart' },
+      { path: '#/productos', key: 'products', label: 'Productos', icon: 'box' },
+      { path: '#/contabilidad/resumen', key: 'contabilidad', label: 'Contabilidad', icon: 'book' }
     ];
     const nav = document.getElementById('navbar');
     nav.innerHTML = `
-      <nav class="bg-slate-900 text-white shadow-md">
+      <nav class="bg-white border-b border-slate-200">
         <div class="px-4 md:px-6 h-12 flex items-center justify-between">
-          <a href="#/" class="flex items-center gap-2 font-bold text-lg">
-            <span class="text-2xl">🚚</span>
+          <a href="#/" class="flex items-center gap-2 font-semibold text-[15px] text-slate-900">
+            <span class="w-7 h-7 rounded-lg bg-slate-900 text-white flex items-center justify-center">${icon('box', 'w-4 h-4')}</span>
             <span class="hidden sm:inline">Maestro de Costo</span>
             <span id="nav-respaldo" class="hidden text-[10px] bg-amber-500 text-white font-bold px-2 py-0.5 rounded-full" title="Se trabaja con los datos guardados en este navegador y se reintenta solo.">Sin conexión con Sheets</span>
           </a>
@@ -18,9 +20,9 @@ const Nav = {
             ${links.map(l => `
               <li>
                 <a href="${l.path}"
-                   class="px-3 py-2 rounded-lg text-sm font-semibold transition
-                          ${active === l.key ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-800 hover:text-white'}">
-                  <span class="sm:hidden">${l.icon}</span>
+                   class="flex items-center px-3 py-1.5 rounded-lg text-sm transition
+                          ${active === l.key ? 'bg-slate-100 text-slate-900 font-semibold' : 'text-slate-500 hover:text-slate-900'}">
+                  <span class="sm:hidden">${icon(l.icon)}</span>
                   <span class="hidden sm:inline">${l.label}</span>
                 </a>
               </li>

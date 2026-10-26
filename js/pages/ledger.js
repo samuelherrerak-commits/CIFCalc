@@ -81,7 +81,7 @@ const Ledger = {
     const body = `
       <div class="${card}">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
-          <h2 class="text-sm font-bold text-slate-700">Mayor por Cuenta</h2>
+          <h2 class="text-sm font-semibold text-slate-900">Mayor por Cuenta</h2>
           <div class="flex items-center gap-2">
             <select id="ledger-account" class="${input}" style="width:260px">
               ${accounts.map(a => `<option value="${a.id}">${esc(a.codigo)} — ${esc(a.nombre)}</option>`).join('')}
@@ -99,7 +99,7 @@ const Ledger = {
       </div>
 
       <div class="${card}">
-        <h2 class="text-sm font-bold text-slate-700">Balance de Comprobación</h2>
+        <h2 class="text-sm font-semibold text-slate-900">Balance de Comprobación</h2>
         <p class="text-xs text-slate-400 mb-3">Solo cuentas con movimientos registrados</p>
         <table class="w-full text-left text-xs">
           <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">

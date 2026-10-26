@@ -107,7 +107,7 @@ const Expenses = {
 
     const body = `
       <div class="${card} space-y-3">
-        <h2 class="text-sm font-bold text-slate-700">Registrar Gasto</h2>
+        <h2 class="text-sm font-semibold text-slate-900">Registrar Gasto</h2>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label class="${label}">Fecha *</label>
@@ -145,7 +145,7 @@ const Expenses = {
       </div>
 
       <div class="${card}">
-        <h2 class="text-sm font-bold text-slate-700 mb-3">Gastos Registrados</h2>
+        <h2 class="text-sm font-semibold text-slate-900 mb-3">Gastos Registrados</h2>
         <table class="w-full text-left text-xs">
           <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2">Beneficiario</th><th class="p-2 text-right">Neto</th><th class="p-2 text-right">IVA</th><th class="p-2 text-right">Total</th></tr></thead>
           <tbody id="expenses-tbody"></tbody>

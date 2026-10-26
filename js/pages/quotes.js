@@ -112,10 +112,10 @@ function renderHome(app) {
       const list = quotes.filter(q => q.status === key);
       const sum = list.reduce((s, q) => s + (Number(q.total) || 0), 0);
       return `
-        <button data-filter="${key}" class="text-left rounded-2xl border-2 p-4 transition ${homeFilter === key ? `border-${st.color}-400 bg-${st.color}-50` : 'border-slate-100 bg-white hover:border-slate-200'}">
+        <button data-filter="${key}" class="text-left rounded-xl border p-4 transition ${homeFilter === key ? 'border-blue-500 ring-1 ring-blue-500 bg-white' : 'border-slate-200 bg-white hover:border-slate-300'}">
           <div class="flex items-center justify-between">
-            <span class="text-[11px] font-bold uppercase tracking-wide text-${st.color}-600">${st.icon} ${st.label}${key === 'convertido' ? '' : 's'}</span>
-            <span class="text-xl font-black text-slate-800">${fmtInt(list.length)}</span>
+            <span class="text-xs text-slate-500">${st.label}${key === 'convertido' ? '' : 's'}</span>
+            <span class="text-xl font-semibold text-slate-800">${fmtInt(list.length)}</span>
           </div>
           <div class="text-sm font-mono font-semibold text-slate-500 mt-1">$${fmtNum(sum)}</div>
         </button>`;
@@ -143,7 +143,7 @@ function renderHome(app) {
     const wrap = document.getElementById('q-list');
     wrap.innerHTML = list.length === 0
       ? `<div class="py-12 text-center text-slate-400">
-           <div class="text-4xl mb-2">📄</div>
+           
            <p class="text-sm font-semibold">Sin presupuestos ${homeFilter === 'todos' ? '' : (FILTERS.find(f => f[0] === homeFilter) || [, ''])[1].toLowerCase()}</p>
          </div>`
       : list.map(x => {
@@ -152,7 +152,7 @@ function renderHome(app) {
         const units = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
         const thumbs = items.slice(0, 4).map(it => it.foto_url
           ? `<img src="${esc(it.foto_url)}" loading="lazy" class="w-8 h-8 rounded-lg object-cover border-2 border-white -ml-2 first:ml-0" alt="">`
-          : '<div class="w-8 h-8 rounded-lg bg-slate-100 border-2 border-white -ml-2 first:ml-0 flex items-center justify-center text-xs">📦</div>').join('');
+          : '<div class="w-8 h-8 rounded-lg bg-slate-100 border-2 border-white -ml-2 first:ml-0 flex items-center justify-center text-xs"></div>').join('');
         const btn = (attr, text, cls) => `<button ${attr}="${esc(x.id)}" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold ${cls}">${text}</button>`;
         return `
         <div class="flex flex-col md:flex-row md:items-center gap-3 p-4 rounded-2xl border ${x.id === lastEmittedId ? 'border-emerald-300 bg-emerald-50/40' : 'border-slate-100 bg-white'} hover:shadow-sm transition">
@@ -161,7 +161,7 @@ function renderHome(app) {
             <div class="min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="font-mono font-bold text-slate-800">${esc(x.quote_number)}</span>
-                ${x.kind === 'oferta' ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-violet-700 bg-violet-100">🎯 Oferta</span>' : ''}
+                ${x.kind === 'oferta' ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-violet-700 bg-violet-100">Oferta</span>' : ''}
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-${st.color}-700 bg-${st.color}-100">${st.label}</span>
                 ${isExpired(x) ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-red-700 bg-red-100">Vencido</span>' : ''}
                 ${x.converted_ref ? `<span class="text-[10px] font-mono text-emerald-700">→ ${esc(x.converted_ref)}</span>` : ''}
@@ -170,13 +170,13 @@ function renderHome(app) {
               <div class="text-[11px] text-slate-400">${esc(x.date)}${x.valid_until ? ' · válido hasta ' + esc(x.valid_until) : ''} · ${fmtInt(units)} unid. en ${items.length} producto${items.length === 1 ? '' : 's'}</div>
             </div>
           </div>
-          <div class="text-xl font-black text-slate-900 md:w-32 md:text-right">$${fmtNum(x.total)}</div>
+          <div class="text-xl font-semibold text-slate-900 md:w-32 md:text-right">$${fmtNum(x.total)}</div>
           <div class="flex flex-wrap gap-1.5 md:justify-end md:w-[22rem]">
-            ${btn('data-print', '🖨 Imprimir', 'bg-slate-100 text-slate-700 hover:bg-slate-200')}
-            <a target="_blank" rel="noopener" href="${esc(whatsappQuoteLink(x, x.contact_id ? Store.getById('contacts', x.contact_id) : null))}" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-white hover:bg-emerald-600">💬 WhatsApp</a>
+            ${btn('data-print', 'Imprimir', 'bg-slate-100 text-slate-700 hover:bg-slate-200')}
+            <a target="_blank" rel="noopener" href="${esc(whatsappQuoteLink(x, x.contact_id ? Store.getById('contacts', x.contact_id) : null))}" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-white hover:bg-emerald-600">WhatsApp</a>
             ${x.status === 'pendiente' ? btn('data-edit', 'Editar', 'bg-slate-100 text-slate-700 hover:bg-slate-200') : ''}
-            ${x.status === 'pendiente' ? btn('data-approve', '👍 Aprobar', 'bg-blue-600 text-white hover:bg-blue-700') : ''}
-            ${x.status === 'aprobado' ? btn('data-convert', '🛒 Convertir en venta', 'bg-emerald-600 text-white hover:bg-emerald-700') : ''}
+            ${x.status === 'pendiente' ? btn('data-approve', 'Aprobar', 'bg-blue-600 text-white hover:bg-blue-700') : ''}
+            ${x.status === 'aprobado' ? btn('data-convert', 'Convertir en venta', 'bg-emerald-600 text-white hover:bg-emerald-700') : ''}
             ${x.status === 'aprobado' ? btn('data-unapprove', 'Volver a pendiente', 'bg-slate-100 text-slate-700 hover:bg-slate-200') : ''}
             ${x.status === 'pendiente' || x.status === 'aprobado' ? btn('data-reject', 'Rechazar', 'text-red-600 hover:bg-red-50') : ''}
           </div>
@@ -206,16 +206,16 @@ function renderHome(app) {
         <p class="text-xs text-slate-400">No generan asiento contable ni rebajan el inventario hasta convertirse en venta.</p>
       </div>
       <div class="flex items-center gap-2">
-        <button id="btn-business" class="text-xs font-semibold text-slate-500 hover:text-blue-700 px-2">⚙ Datos de la empresa</button>
+        <button id="btn-business" class="text-xs font-semibold text-slate-500 hover:text-blue-700 px-2">Datos de la empresa</button>
         <a href="#/contabilidad/presupuestos/nuevo" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2.5 px-4 rounded-xl shadow-sm transition">+ Nuevo presupuesto</a>
       </div>
     </div>
     ${emitted && emitted.status === 'pendiente' ? `
       <div class="flex items-center justify-between gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-sm text-emerald-800">
-        <span>✅ ${emitted.kind === 'oferta' ? 'Oferta' : 'Presupuesto'} <strong>${esc(emitted.quote_number)}</strong> emitido por <strong>$${fmtNum(emitted.total)}</strong>. Quedó como pendiente.</span>
+        <span>${emitted.kind === 'oferta' ? 'Oferta' : 'Presupuesto'} <strong>${esc(emitted.quote_number)}</strong> emitido por <strong>$${fmtNum(emitted.total)}</strong>. Quedó como pendiente.</span>
         <span class="flex gap-1.5 flex-shrink-0">
-          <a target="_blank" rel="noopener" href="${esc(whatsappQuoteLink(emitted, emitted.contact_id ? Store.getById('contacts', emitted.contact_id) : null))}" class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg">💬 WhatsApp</a>
-          <button id="btn-print-emitted" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg">🖨 Imprimir</button>
+          <a target="_blank" rel="noopener" href="${esc(whatsappQuoteLink(emitted, emitted.contact_id ? Store.getById('contacts', emitted.contact_id) : null))}" class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg">WhatsApp</a>
+          <button id="btn-print-emitted" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg">Imprimir</button>
         </span>
       </div>` : ''}
     <div id="q-tiles" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
@@ -277,7 +277,7 @@ function renderBuilder(app, editId, opts = {}) {
       <div class="flex items-center gap-3">
         <a href="#/contabilidad/presupuestos" class="w-9 h-9 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-600">←</a>
         <div>
-          <h2 class="text-lg font-bold text-slate-800">${editing ? `Editar ${isOffer ? 'oferta' : 'presupuesto'} ${esc(editing.quote_number)}` : (isOffer ? '🎯 Nueva oferta' : 'Nuevo presupuesto')}</h2>
+          <h2 class="text-lg font-bold text-slate-800">${editing ? `Editar ${isOffer ? 'oferta' : 'presupuesto'} ${esc(editing.quote_number)}` : (isOffer ? 'Nueva oferta' : 'Nuevo presupuesto')}</h2>
           <p class="text-xs text-slate-400">${isOffer
             ? 'Los productos que este cliente ya compra aparecen primero (⭐). Aplica un descuento a toda la oferta o cambia el precio de cada línea; luego imprímela o mándala por WhatsApp.'
             : 'Igual que una venta, con los productos disponibles. Al emitirlo queda pendiente; no toca la contabilidad ni el inventario.'}</p>
@@ -307,7 +307,7 @@ function renderBuilder(app, editId, opts = {}) {
     footerFieldsHtml: `
       <details id="f-more" class="rounded-lg border border-slate-200 bg-white" ${isOffer ? 'open' : ''}>
         <summary class="px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer flex items-center justify-between gap-2">
-          <span>📝 Fecha, validez, notas y descuento</span><span class="text-slate-400">▾</span>
+          <span>Fecha, validez, notas y descuento</span><span class="text-slate-400">▾</span>
         </summary>
         <div class="px-2.5 pb-2.5 space-y-2">
           <div class="grid grid-cols-2 gap-2">
