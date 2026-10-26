@@ -12,13 +12,25 @@ const TIPOS = {
 };
 
 // Series del catálogo impreso. EM agrupa duchas y accesorios que el catálogo
-// presenta dentro de Equinox. GRA no figura en el PDF: se muestra tal cual.
+// presenta dentro de Equinox. GRA es Gravity (así está en la hoja de productos).
 const SERIES = {
   EQU: 'Equinox', EM: 'Equinox', ECL: 'Eclipse', SEL: 'Selene', CAL: 'Callisto',
-  LUN: 'Luna', ZEN: 'Zenith', TRI: 'Tritón', GRA: 'GRA'
+  LUN: 'Luna', ZEN: 'Zenith', TRI: 'Tritón', GRA: 'Gravity'
 };
 
 const ACABADOS = { CR: 'Cromado', SG: 'Steel Grey', BB: 'Negro', RG: 'Oro rosa' };
+
+// Etiquetas de presentación para lo que ya viene escrito en la hoja (inglés, sin acentos).
+// Clave: texto de la hoja en minúsculas y sin acentos. Lo que no esté aquí se muestra tal cual.
+const CAT_LABEL = {
+  'bano / lavamanos (griferia)': 'Lavamanos', 'accesorios de bano': 'Accesorios de baño',
+  'mezclador de ducha': 'Mezcladores de ducha', 'sistema de ducha integrado': 'Sistemas de ducha',
+  'regaderas / cabezas de ducha': 'Cabezales de ducha', 'regadera de mano': 'Regaderas de mano',
+  'brazos de ducha': 'Brazos de ducha', 'valvula': 'Válvulas', 'freestanding griferia': 'Grifería de piso',
+  'trim de ducha': 'Trim de ducha'
+};
+const COL_LABEL = { accessories: 'Accesorios', luna: 'Luna', callisto: 'Callisto' };
+const FIN_LABEL = { 'steel gray': 'Steel Grey', 'brushed black': 'Negro cepillado', 'rose gold': 'Oro rosa', 'no aplica': '' };
 
 export const slug = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
   .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -108,9 +120,10 @@ function parseWebSpecs(text) {
 
 export function normalizeProduct(p) {
   const s = parseSku(p.sku_briggs || p.sku);
-  const category = p.category || TIPOS[s.type] || 'Otros';
-  const series = p.collection || (s.type === 'AC' ? 'Accesorios' : (SERIES[s.series] || (s.series || 'Briggs')));
-  const finish = p.color || ACABADOS[s.finishCode] || '';
+  const label = (map, v) => { const t = String(v || '').trim(); return t ? (map[strip(t)] ?? t) : ''; };
+  const category = label(CAT_LABEL, p.category) || TIPOS[s.type] || 'Otros';
+  const series = label(COL_LABEL, p.collection) || (s.type === 'AC' ? 'Accesorios' : (SERIES[s.series] || (s.series || 'Briggs')));
+  const finish = String(p.color || '').trim() ? label(FIN_LABEL, p.color) : (ACABADOS[s.finishCode] || '');
   const raw = cleanName(p.name);
   const name = nombreEs(p.name);
   const med = medidas(p.name);
