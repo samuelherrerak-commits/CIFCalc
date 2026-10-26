@@ -17,6 +17,9 @@ function quoteTax(lines) {
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { input, label } from '../components/accounting-shell.js';
 
+const inputSm = input.replace('p-2', 'px-2 py-1.5');
+const labelSm = 'block text-[10px] font-semibold text-slate-500 mb-0.5';
+
 // Presupuestos: mismo punto de venta que Ventas, pero al emitir NO se genera
 // asiento ni se toca el stock — solo queda el documento como Pendiente.
 // Flujo: Pendiente → Aprobado → Convertido (en Ventas), o Rechazado.
@@ -299,28 +302,37 @@ function renderBuilder(app, editId, opts = {}) {
         <label class="${label}">Cliente</label>
         <select id="f-contact" class="${input}">${contactOptions(contacts, 'cliente', presetContact)}</select>
       </div>`,
+    // Fecha, validez, notas y descuento en un desplegable: el carrito cabe
+    // en la pantalla y el botón de emitir queda siempre a la vista.
     footerFieldsHtml: `
-      <div class="grid grid-cols-2 gap-2">
-        <div>
-          <label class="${label}">Fecha *</label>
-          <input id="f-date" type="date" value="${esc(editing ? editing.date : today())}" class="${input}">
+      <details id="f-more" class="rounded-lg border border-slate-200 bg-white" ${isOffer ? 'open' : ''}>
+        <summary class="px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer flex items-center justify-between gap-2">
+          <span>📝 Fecha, validez, notas y descuento</span><span class="text-slate-400">▾</span>
+        </summary>
+        <div class="px-2.5 pb-2.5 space-y-2">
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="${labelSm}">Fecha *</label>
+              <input id="f-date" type="date" value="${esc(editing ? editing.date : today())}" class="${inputSm}">
+            </div>
+            <div>
+              <label class="${labelSm}">Válido hasta</label>
+              <input id="f-valid" type="date" value="${esc(editing ? (editing.valid_until || '') : Store.newQuote().valid_until)}" class="${inputSm}">
+            </div>
+          </div>
+          <div>
+            <label class="${labelSm}">Notas</label>
+            <input id="f-concepto" type="text" placeholder="${isOffer ? 'Oferta especial por volumen…' : 'Venta al mayor…'}" value="${esc(editing ? editing.concepto : '')}" class="${inputSm}">
+          </div>
+          <div class="flex items-end gap-2">
+            <div class="flex-1">
+              <label class="${labelSm}">Descuento a toda la ${isOffer ? 'oferta' : 'cotización'} %</label>
+              <input id="f-discount" type="number" min="0" max="90" step="0.5" placeholder="0" class="${inputSm}">
+            </div>
+            <button id="f-discount-apply" type="button" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white">Aplicar</button>
+          </div>
         </div>
-        <div>
-          <label class="${label}">Válido hasta</label>
-          <input id="f-valid" type="date" value="${esc(editing ? (editing.valid_until || '') : Store.newQuote().valid_until)}" class="${input}">
-        </div>
-      </div>
-      <div>
-        <label class="${label}">Notas</label>
-        <input id="f-concepto" type="text" placeholder="${isOffer ? 'Oferta especial por volumen…' : 'Venta al mayor…'}" value="${esc(editing ? editing.concepto : '')}" class="${input}">
-      </div>
-      <div class="flex items-end gap-2">
-        <div class="flex-1">
-          <label class="${label}">Descuento a toda la ${isOffer ? 'oferta' : 'cotización'} %</label>
-          <input id="f-discount" type="number" min="0" max="90" step="0.5" placeholder="0" class="${input}">
-        </div>
-        <button id="f-discount-apply" type="button" class="px-3 py-2 rounded-lg text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white">Aplicar</button>
-      </div>`,
+      </details>`,
     onCartChange: (cart) => {
       if (!editing && !opts.cliente) draftCart = cart.map(l => ({ productId: l.product.id, qty: l.qty, unitPrice: l.unitPrice }));
     }
@@ -336,7 +348,7 @@ function renderBuilder(app, editId, opts = {}) {
     if (cart.length === 0) { pos.flash('Agrega al menos un producto.'); return; }
     const noPrice = cart.find(l => !(l.unitPrice > 0));
     if (noPrice) { pos.flash(`Indica el precio de "${noPrice.product.name}".`); return; }
-    if (!date) { pos.flash('La fecha es obligatoria.'); return; }
+    if (!date) { document.getElementById('f-more').open = true; pos.flash('La fecha es obligatoria.'); return; }
     if (validUntil && validUntil < date) { pos.flash('"Válido hasta" no puede ser anterior a la fecha.'); return; }
 
     const contact = contacts.find(c => c.id === contactId);

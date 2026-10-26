@@ -9,6 +9,10 @@ import { openBusinessProfileModal } from '../components/business-profile.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { input, label } from '../components/accounting-shell.js';
 
+// Campos compactos del carrito.
+const inputSm = input.replace('p-2', 'px-2 py-1.5');
+const labelSm = 'block text-[10px] font-semibold text-slate-500 mb-0.5';
+
 // El carrito sobrevive al cambiar de pestaña o al refresco tras la sincronización.
 let savedCart = []; // [{ productId, qty, unitPrice }]
 // Venta fiscal (con factura: IVA y Libro de Ventas) o sin factura (nota de
@@ -114,7 +118,7 @@ const Sales = {
     const renderPayMethods = () => {
       const wrap = document.getElementById('f-pay-methods');
       wrap.innerHTML = PAY_METHODS.map(m => `
-        <button type="button" data-pay="${m.key}" class="py-2.5 rounded-xl text-xs font-bold border-2 transition ${
+        <button type="button" data-pay="${m.key}" title="Forma de pago" class="py-2 rounded-xl text-xs font-bold border-2 transition ${
           payMethod === m.key ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300'
         }">${m.label}</button>`).join('');
       wrap.querySelectorAll('[data-pay]').forEach(b => b.addEventListener('click', () => { payMethod = b.dataset.pay; pos.flash(''); renderPayMethods(); }));
@@ -177,12 +181,12 @@ const Sales = {
 
     const body = `
       ${sourceQuote ? `<div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-800">Carrito precargado desde el presupuesto <strong>${esc(sourceQuote.quote_number)}</strong>.${shortages.length ? `<div class="mt-1 text-amber-700">⚠ Sin existencia suficiente, se ajustó: ${esc(shortages.join(', '))}.</div>` : ''}</div>` : ''}
-      <div class="flex justify-end -mb-2">
-        <button id="btn-business" class="text-xs font-semibold text-slate-500 hover:text-blue-700">⚙ Datos de la empresa (para la nota de venta)</button>
-      </div>
       <div id="pos-root"></div>
       <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-        <h2 class="text-sm font-bold text-slate-700 mb-3">Ventas Recientes</h2>
+        <div class="flex items-center justify-between gap-2 mb-3">
+          <h2 class="text-sm font-bold text-slate-700">Ventas Recientes</h2>
+          <button id="btn-business" class="text-xs font-semibold text-slate-500 hover:text-blue-700">⚙ Datos de la empresa (para la nota)</button>
+        </div>
         <table class="w-full text-left text-xs">
           <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2">Cliente</th><th class="p-2 text-right">Ítems</th><th class="p-2 text-right">Total</th><th class="p-2"></th></tr></thead>
           <tbody id="sales-tbody"></tbody>
@@ -209,37 +213,43 @@ const Sales = {
           <label class="${label}">Cliente</label>
           <select id="f-contact" class="${input}">${contactOptions(contacts, 'cliente', sourceQuote ? sourceQuote.contact_id : '')}</select>
         </div>`,
+      // Lo que se decide en cada venta (tipo y forma de pago) queda a la
+      // vista; fecha, concepto y N.º de factura van en un desplegable para
+      // que el carrito quepa en la pantalla sin desplazarse.
       footerFieldsHtml: `
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="${label}">Fecha *</label>
-            <input id="f-date" type="date" value="${new Date().toISOString().slice(0, 10)}" class="${input}">
-          </div>
-          <div>
-            <label class="${label}">Concepto</label>
-            <input id="f-concepto" type="text" placeholder="Venta" class="${input}">
-          </div>
-        </div>
-        ${fs.ivaEnabled ? `
+        ${fs.ivaEnabled ? `<div id="f-fiscal" class="grid grid-cols-2 gap-1.5"></div>` : ''}
         <div>
-          <label class="${label}">Tipo de venta *</label>
-          <div id="f-fiscal" class="grid grid-cols-2 gap-2"></div>
+          <div id="f-pay-methods" class="grid grid-cols-3 gap-1.5"></div>
+          <select id="f-pay-account" class="${inputSm} hidden mt-1.5"></select>
         </div>
-        <div id="f-invoice-fields" class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="${label}">N.º factura fiscal</label>
-            <input id="f-invoice" type="text" placeholder="Opcional" class="${input}">
+        <details id="f-more" class="rounded-lg border border-slate-200 bg-white">
+          <summary class="px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer flex items-center justify-between gap-2">
+            <span>📝 Fecha, concepto${fs.ivaEnabled ? ' y N.º de factura' : ''}</span><span id="f-more-sum" class="text-slate-400 truncate"></span>
+          </summary>
+          <div class="px-2.5 pb-2.5 space-y-2">
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="${labelSm}">Fecha *</label>
+                <input id="f-date" type="date" value="${new Date().toISOString().slice(0, 10)}" class="${inputSm}">
+              </div>
+              <div>
+                <label class="${labelSm}">Concepto</label>
+                <input id="f-concepto" type="text" placeholder="Venta" class="${inputSm}">
+              </div>
+            </div>
+            ${fs.ivaEnabled ? `
+            <div id="f-invoice-fields" class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="${labelSm}">N.º factura fiscal</label>
+                <input id="f-invoice" type="text" placeholder="Opcional" class="${inputSm}">
+              </div>
+              <div>
+                <label class="${labelSm}">N.º de control</label>
+                <input id="f-control" type="text" placeholder="00-000000" class="${inputSm}">
+              </div>
+            </div>` : ''}
           </div>
-          <div>
-            <label class="${label}">N.º de control</label>
-            <input id="f-control" type="text" placeholder="00-000000" class="${input}">
-          </div>
-        </div>` : ''}
-        <div>
-          <label class="${label}">Forma de pago *</label>
-          <div id="f-pay-methods" class="grid grid-cols-3 gap-2"></div>
-          <select id="f-pay-account" class="${input} hidden mt-2"></select>
-        </div>
+        </details>
 `,
       onCartChange: (cart) => {
         if (!sourceQuote) savedCart = cart.map(l => ({ productId: l.product.id, qty: l.qty, unitPrice: l.unitPrice }));
@@ -253,9 +263,9 @@ const Sales = {
       const wrap = document.getElementById('f-fiscal');
       if (!wrap) return;
       const opt = (val, text, hint) => `
-        <button type="button" data-fiscal="${val}" class="py-2 px-2 rounded-xl text-xs font-bold border-2 transition text-left leading-tight ${
-          saleFiscal === val ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300'
-        }">${text}<span class="block text-[10px] font-semibold ${saleFiscal === val ? 'text-blue-100' : 'text-slate-400'}">${hint}</span></button>`;
+        <button type="button" data-fiscal="${val}" title="${hint}" class="py-1.5 px-2 rounded-xl text-xs font-bold border-2 transition ${
+          saleFiscal === val ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-300'
+        }">${text}</button>`;
       wrap.innerHTML = opt(true, '🧾 Con factura', 'Fiscal · IVA y Libro de Ventas') + opt(false, '📄 Sin factura', 'Nota de entrega · sin IVA');
       wrap.querySelectorAll('[data-fiscal]').forEach(b => b.addEventListener('click', () => {
         saleFiscal = b.dataset.fiscal === 'true';
@@ -263,6 +273,19 @@ const Sales = {
         pos.refresh(); // el total cambia (con o sin IVA)
       }));
       document.getElementById('f-invoice-fields').classList.toggle('hidden', !saleFiscal);
+      renderMoreSummary();
+    };
+    // Resumen del desplegable cerrado: fecha (si no es hoy), concepto y factura.
+    const renderMoreSummary = () => {
+      const el = document.getElementById('f-more-sum');
+      if (!el) return;
+      const d = document.getElementById('f-date').value;
+      const parts = [d && d !== new Date().toISOString().slice(0, 10) ? d.split('-').reverse().join('/') : 'Hoy'];
+      const c = document.getElementById('f-concepto').value.trim();
+      if (c) parts.push(c);
+      const inv = (document.getElementById('f-invoice') || {}).value;
+      if (isFiscal() && inv) parts.push(`Fact. ${inv}`);
+      el.textContent = parts.join(' · ');
     };
 
     pos.onAction(() => {
@@ -276,7 +299,7 @@ const Sales = {
       if (noPrice) { pos.flash(`Indica el precio de "${noPrice.product.name}".`); return; }
       const over = cart.find(l => l.qty > (Number((Store.getById('products', l.product.id) || l.product).stock) || 0));
       if (over) { pos.flash(`La existencia de "${over.product.name}" cambió; revisa la cantidad.`); return; }
-      if (!date) { pos.flash('La fecha es obligatoria.'); return; }
+      if (!date) { document.getElementById('f-more').open = true; pos.flash('La fecha es obligatoria.'); return; }
       if (!payMethod) { pos.flash('Elige la forma de pago: Efectivo, Banco o Crédito.'); return; }
       if (payMethod === 'credito' && !contactId) { pos.flash('Una venta a crédito necesita un cliente (queda en Cuentas por Cobrar).'); return; }
 
@@ -341,6 +364,7 @@ const Sales = {
       document.getElementById('f-contact').value = '';
       document.getElementById('f-concepto').value = '';
       ['f-invoice', 'f-control'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      renderMoreSummary();
       pos.setCart([]);
       payMethod = '';
       renderPayMethods();
@@ -364,8 +388,10 @@ const Sales = {
     }, { signal });
     document.getElementById('btn-business').addEventListener('click', () => openBusinessProfileModal(Store), { signal });
 
+    ['f-date', 'f-concepto', 'f-invoice'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', renderMoreSummary, { signal }); });
     renderPayMethods();
     renderFiscal();
+    renderMoreSummary();
     renderRecentSales();
     return () => destroy.abort();
   }

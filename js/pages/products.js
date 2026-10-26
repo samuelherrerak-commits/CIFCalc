@@ -795,14 +795,14 @@ const Products = {
     };
 
     app.innerHTML = `
-      <header class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-xl shadow-sm border border-slate-200 gap-4">
-        <div>
-          <h1 class="text-2xl font-bold text-slate-900">Maestro de Costo — Catálogo de Productos</h1>
+      <header class="flex flex-col xl:flex-row justify-between items-start xl:items-center bg-white p-5 rounded-xl shadow-sm border border-slate-200 gap-4">
+        <div class="shrink-0">
+          <h1 class="text-2xl font-bold text-slate-900">Catálogo de Productos</h1>
           <p class="text-sm text-slate-500">Base de datos maestra de productos para tus contenedores</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center gap-2 w-full xl:w-auto">
           <input id="products-search" type="text" placeholder="Buscar por SKU, SKU BRIGGS, nombre, proveedor…"
-                 class="w-72 p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+                 class="w-full sm:w-72 p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
           <button id="btn-import" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar de Contenedores</button>
           <button id="btn-import-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar Excel</button>
           <input id="excel-file-input" type="file" accept=".xlsx,.xls" class="hidden">
