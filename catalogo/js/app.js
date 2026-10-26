@@ -7,11 +7,12 @@ import { waLink, orderMessage, productMessage } from './whatsapp.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const IMG = 'assets/img/';
+// Absoluta respecto a este módulo: sirve igual desde /catalogo/ y /catalogo/prueba/.
+const IMG = new URL('../assets/img/', import.meta.url).href;
 
 const SERIE_IMG = {
   equinox: 'ecl-banco', eclipse: 'eclipse', selene: 'grifo-agua', callisto: 'lavabo', luna: 'lluvia',
-  zenith: 'empotrado', triton: 'mar', accesorios: 'toallero', gra: 'textura'
+  zenith: 'empotrado', triton: 'mar', accesorios: 'toallero', gravity: 'textura'
 };
 
 let ctx = null;                      // catálogo cargado
@@ -39,7 +40,7 @@ function priceHtml(p) {
   const u = shownUnit(p, ctxFor());
   const old = u.pct > 0 ? `<s>${money(u.shownList)}</s>` : '';
   const note = u.exento ? 'Exento de IVA' : (ctx.fs.ivaEnabled ? 'IVA incluido' : '');
-  const bsLine = ctx.usd ? ` · ${bs(u.shown * ctx.usd)}` : '';
+  const bsLine = ctx.usdt ? ` · ${bs(u.shown * ctx.usdt)}` : '';
   return `<span class="price">${old}${money(u.shown)}<small>${note}${bsLine}</small></span>`;
 }
 
@@ -127,7 +128,7 @@ function totalsHtml(t) {
     if (t.tax_reducida) rows.push(`<div><span>IVA ${ctx.fs.rateReducida}%</span><span>${money(t.tax_reducida)}</span></div>`);
   }
   rows.push(`<div class="grand"><span>Total</span><span>${money(t.total)}</span></div>`);
-  if (ctx.usd) rows.push(`<div><span>Referencia en bolívares</span><span>${bs(t.total * ctx.usd)}</span></div>`);
+  if (ctx.usdt) rows.push(`<div><span>Referencia en bolívares (USDT)</span><span>${bs(t.total * ctx.usdt)}</span></div>`);
   return rows.join('');
 }
 
@@ -263,7 +264,7 @@ function viewProduct(id) {
   if (!p) return `<div class="wrap"><div class="empty"><p class="display">Producto no disponible</p><p>Este producto ya no está en existencia o no existe.</p><a class="btn" href="#/">Volver al catálogo</a></div></div>`;
   document.title = `${p.name} · ${p.sku} · Briggs`;
   const sibs = ctx.products.filter((x) => x.family === p.family && x.finish);
-  const related = ctx.products.filter((x) => x.seriesKey === p.seriesKey && x.id !== p.id && x.categoryKey === p.categoryKey).slice(0, 4);
+  const sug = suggestions(p);
   const buyable = p.price > 0;
   const inCart = cart.qtyOf(p.id);
   return `<div class="wrap">
@@ -274,6 +275,7 @@ function viewProduct(id) {
         <div><p class="runhead">Serie ${esc(p.series)}</p><h1 class="display" style="margin-top:8px">${esc(p.name)}</h1></div>
         <p class="sku" style="font-size:.9375rem">${esc(p.sku)}</p>
         ${priceHtml(p)}
+        ${p.price > 0 && ctx.usdt ? `<p class="stocknote" style="margin-top:-12px">Bolívares a tasa USDT: Bs ${new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2 }).format(ctx.usdt)} por USDT.</p>` : ''}
         ${sibs.length > 1 ? `<div><p class="stocknote" style="margin-bottom:8px">Acabado</p><div class="finishes">${sibs.map((s) => s.id === p.id
           ? `<span aria-current="true">${esc(s.finish)}</span>` : `<a href="#/p/${esc(s.id)}">${esc(s.finish)}</a>`).join('')}</div></div>` : (p.finish ? `<p class="stocknote">Acabado: ${esc(p.finish)}</p>` : '')}
         ${buyable ? `<div class="buyrow">
@@ -288,8 +290,31 @@ function viewProduct(id) {
         <a class="link" href="${waLink(productMessage(p))}" target="_blank" rel="noopener" style="font-size:.9375rem">¿Dudas con este producto? Escríbenos por WhatsApp</a>
       </div>
     </div>
-    ${related.length ? `<section class="related"><h2 class="display h2">Más de la serie ${esc(p.series)}</h2><div class="grid">${related.map((x, i) => cardHtml(x, i)).join('')}</div></section>` : ''}
+    ${railHtml('serie', p.series === 'Accesorios' ? 'Más accesorios de baño' : `De la colección ${p.series}`, 'Productos de la misma serie para completar tu baño', sug.serie)}
+    ${railHtml('rel', 'Productos relacionados', 'Otras opciones que también podrían interesarte', sug.related)}
   </div>`;
+}
+
+// Sugerencias tipo "comprados juntos": misma colección (complementos primero) y relacionados de otras series.
+function suggestions(p) {
+  const others = ctx.products.filter((x) => x.id !== p.id && x.family !== p.family);   // las variantes de acabado ya se ven arriba
+  const byCode = (x, y) => x.sku.localeCompare(y.sku, undefined, { numeric: true });
+  const serie = others.filter((x) => x.seriesKey === p.seriesKey)
+    .sort((x, y) => (x.categoryKey === p.categoryKey) - (y.categoryKey === p.categoryKey) || byCode(x, y)).slice(0, 16);
+  const used = new Set(serie.map((x) => x.id));
+  let related = others.filter((x) => !used.has(x.id) && x.categoryKey === p.categoryKey).sort(byCode);
+  if (related.length < 4) related = related.concat(others.filter((x) => !used.has(x.id) && x.categoryKey !== p.categoryKey).sort(byCode));
+  return { serie, related: related.slice(0, 16) };
+}
+
+const chev = (d) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="${d < 0 ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'}"/></svg>`;
+function railHtml(id, title, sub, list) {
+  if (!list.length) return '';
+  return `<section class="related" aria-labelledby="r-${id}">
+    <div class="rail__head"><div><h2 class="display h2" id="r-${id}">${esc(title)}</h2><p class="count">${esc(sub)}</p></div>
+      <div class="rail__ctl"><button class="iconbtn rail__btn" type="button" data-rail="${id}" data-dir="-1" aria-label="Ver anteriores">${chev(-1)}</button>
+        <button class="iconbtn rail__btn" type="button" data-rail="${id}" data-dir="1" aria-label="Ver siguientes">${chev(1)}</button></div></div>
+    <div class="rail" id="rail-${id}" role="region" aria-label="${esc(title)}" tabindex="0">${list.map((x) => cardHtml(x, 0).replace('card enter', 'card')).join('')}</div></section>`;
 }
 
 let slotData = [];
@@ -368,7 +393,7 @@ function route() {
   const main = $('#main');
   markNav(path);
   let anchor = '';
-  document.title = 'Briggs · Catálogo de grifería y accesorios de baño';
+  document.title = ctx.mode === 'borrador' ? 'Borrador · Tienda online Briggs' : 'Briggs · Catálogo de grifería y accesorios de baño';
   if (path === '/' || path === '/series' || path === '/nosotros') {
     if (path === '/') {
       filters.serie = params.get('serie') || ''; filters.cat = params.get('cat') || '';
@@ -481,7 +506,7 @@ function bindCheckout() {
         items: lines.map((l) => ({ id: l.product.id, qty: l.qty })), customer,
         meet: meetStart ? { start: meetStart } : null, website: ''
       }, { total: totals.total, items: lines.map((l) => ({ sku: l.product.sku, qty: l.qty })), customer });
-      const text = orderMessage({ number: res.quote_number, lines, totals, customer, meetStart, meetLink: res.meet_link });
+      const text = orderMessage({ number: res.quote_number, lines, totals, customer, meetStart, meetLink: res.meet_link, draft: ctx.mode === 'borrador' });
       lastOrder = { number: res.quote_number, total: res.total ?? totals.total, name: customer.name, text, meetStart, meetLink: res.meet_link, saved: res.saved };
       try { sessionStorage.setItem('cat_last_order', JSON.stringify(lastOrder)); } catch { /* sin almacenamiento */ }
       cart.clear(); updateBadge(false);
@@ -501,6 +526,12 @@ function bindGlobal() {
   $('#scrim').addEventListener('click', closeDrawer);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('#drawer').classList.contains('on')) closeDrawer(); });
   document.addEventListener('click', (e) => {
+    const rb = e.target.closest('[data-rail]');
+    if (rb) {
+      const r = $('#rail-' + rb.dataset.rail);
+      if (r) r.scrollBy({ left: Number(rb.dataset.dir) * r.clientWidth * 0.85, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+      return;
+    }
     const add = e.target.closest('[data-add]');
     if (add) {
       if (addToCart(add.dataset.add)) {
@@ -540,7 +571,8 @@ async function init() {
   }
   cart.reconcile(ctx.products);
   if (ctx.banner) { const b = $('#banner'); b.textContent = ctx.banner; b.hidden = false; }
-  document.documentElement.style.setProperty('--banner-h', ctx.banner ? '32px' : '0px');
+  const setBannerH = () => document.documentElement.style.setProperty('--banner-h', ctx.banner ? $('#banner').offsetHeight + 'px' : '0px');
+  setBannerH(); window.addEventListener('resize', setBannerH);
   renderFooter(); updateBadge(false); bindGlobal(); route();
 }
 init();

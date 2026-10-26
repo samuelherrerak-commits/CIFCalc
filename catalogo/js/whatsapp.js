@@ -9,9 +9,10 @@ const fechaMeet = (iso) => {
 };
 
 // Resumen del pedido para el asesor. `lines` = [{ product, qty, unit }]
-export function orderMessage({ number, lines, totals, customer, meetStart, meetLink }) {
+export function orderMessage({ number, lines, totals, customer, meetStart, meetLink, draft }) {
   const rows = lines.map((l) => `• ${l.qty} × ${l.product.name} (${l.product.sku}) — ${money(l.unit * l.qty)}`);
   return [
+    draft ? '[PRUEBA DEL BORRADOR DE LA TIENDA — precios ficticios, no es un pedido real]' : '',
     `Hola ${CONFIG.STORE_NAME}, quiero confirmar mi pedido ${number}:`,
     '',
     ...rows,

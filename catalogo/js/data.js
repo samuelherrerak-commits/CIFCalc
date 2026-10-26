@@ -2,10 +2,13 @@
 //   vivo   → rutas públicas del Apps Script (fase B; requiere CONFIG.API_URL)
 //   prueba → productos del Modo prueba de CIFCalc (mismo origen: localStorage "sbx_cif_*")
 //   demo   → catalogo/mock/catalog.json (productos reales, existencias y precios ficticios)
+//   borrador → catalogo/mock/borrador.json: TODOS los productos del módulo de productos con precio
+//              ficticio. Lo usa /catalogo/prueba/ (la página lo declara con <html data-modo="borrador">).
 // Elegir manualmente con ?fuente=vivo|prueba|demo.
 import { CONFIG } from './config.js';
 import { normalizeProduct, enInventario } from './normalize.js';
 import { fiscalOf } from './price.js';
+import { loadUsdt } from './rates.js';
 
 const readSbx = (table) => {
   try {
@@ -22,6 +25,14 @@ async function fromDemo() {
   const d = await res.json();
   return { raw: d.products, store: d.store, rate: d.rate, promos: d.promotions || [],
     banner: 'Datos de demostración: existencias y precios ficticios.' };
+}
+
+async function fromBorrador() {
+  const res = await fetch(new URL('../mock/borrador.json', import.meta.url));
+  if (!res.ok) throw new Error('No se pudo cargar el catálogo borrador');
+  const d = await res.json();
+  return { raw: d.products, store: d.store, rate: d.rate, promos: [],
+    banner: 'Borrador de la tienda online: los precios y las existencias son ficticios.' };
 }
 
 function fromPrueba() {
@@ -49,6 +60,7 @@ async function fromVivo() {
 }
 
 export function pickMode() {
+  if (document.documentElement.dataset.modo === 'borrador') return 'borrador';
   const forced = new URLSearchParams(location.search).get('fuente');
   if (['vivo', 'prueba', 'demo'].includes(forced)) return forced;
   if (CONFIG.API_URL) return 'vivo';
@@ -57,12 +69,15 @@ export function pickMode() {
 
 export async function loadCatalog() {
   const mode = pickMode();
-  const src = mode === 'vivo' ? await fromVivo() : mode === 'prueba' ? fromPrueba() : await fromDemo();
+  const src = mode === 'vivo' ? await fromVivo() : mode === 'prueba' ? fromPrueba()
+    : mode === 'borrador' ? await fromBorrador() : await fromDemo();
   const all = src.raw.map(normalizeProduct);
   const products = all.filter(enInventario);   // regla: solo lo que está en inventario
+  // Bolívares a tasa USDT (nunca BCV). Respaldo: la tasa USDT guardada en la hoja / el borrador.
+  const usdt = await loadUsdt(src.rate && src.rate.usdt);
   return {
     mode, banner: src.banner, products, hiddenCount: all.length - products.length,
-    fs: fiscalOf(src.store), promos: src.promos, usd: Number(src.rate && src.rate.usd_bcv) || 0,
+    fs: fiscalOf(src.store), promos: src.promos, usdt: usdt.value, usdtLive: usdt.live,
     terms: (src.store && src.store.terms) || ''
   };
 }

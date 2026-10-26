@@ -2,6 +2,11 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <script>
+    // Sin la barra final (/catalogo) las rutas relativas apuntarían a la raíz del
+    // sitio y cargarían los archivos de la app interna. Se corrige antes de cargar nada.
+    if (!/\/(index\.html)?$/.test(location.pathname)) location.replace(location.pathname + '/' + location.search + location.hash);
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Briggs · Catálogo de grifería y accesorios de baño</title>
   <meta name="description" content="Grifería, duchas y accesorios de baño Briggs en existencia. Arma tu pedido en línea y un asesor te atiende por WhatsApp.">
@@ -41,6 +46,10 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <noscript><p style="padding:2rem;font-family:sans-serif">Este catálogo necesita JavaScript. Escríbenos por WhatsApp al 0412-0298203.</p></noscript>
-  <script type="module" src="js/app.js"></script>
+  <script>
+    if (/\/(index\.html)?$/.test(location.pathname)) {
+      var s = document.createElement('script'); s.type = 'module'; s.src = 'js/app.js'; document.head.appendChild(s);
+    }
+  </script>
 </body>
 </html>
