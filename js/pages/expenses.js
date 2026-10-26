@@ -2,6 +2,7 @@ import Store from '../store.js';
 import { fmtNum, esc, num } from '../utils.js';
 import { buildExpenseLines, buildTwoLineEntry, withRoundingPlug } from '../accounting.js';
 import { contactOptions, quickAddContact } from '../components/contact-picker.js';
+import { invoiceFieldsHtml, mountInvoiceFields, purchaseFiscalDoc } from '../components/invoice-fields.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { btnPrimary, card, input, label } from '../components/accounting-shell.js';
 
@@ -18,44 +19,35 @@ const Expenses = {
     const accountOptions = (list) => list.map(a => `<option value="${a.id}">${esc(a.codigo)} — ${esc(a.nombre)}</option>`).join('');
     const diffAccount = () => accounts.find(a => a.codigo === '6.9.01.01');
     const fs = Store.getFiscalSettings();
-    const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
-    // Factura con IVA: el monto es la base imponible y el IVA va a IVA
-    // Acreditable (crédito fiscal), con su registro en el Libro de Compras.
-    const withIva = () => !!(document.getElementById('f-has-iva') || {}).checked;
-    const ivaCalc = () => {
-      const base = num(document.getElementById('f-total'));
-      const exempt = withIva() ? num(document.getElementById('f-exempt')) : 0;
-      const tipo = (document.getElementById('f-iva-tipo') || {}).value || 'general';
-      const rate = tipo === 'reducida' ? fs.rateReducida : fs.rateGeneral;
-      const tax = withIva() ? r2(base * rate / 100) : 0;
-      return { base, exempt, tipo, rate, tax, total: r2(base + exempt + tax) };
+    let invoice = null; // bloque de factura fiscal (exento + bases imponibles + IVA)
+    // Una fila por documento (ref_doc): neto del gasto/costo, IVA y total.
+    const recentDocs = () => {
+      const byRef = new Map();
+      for (const m of Store.getAll('movements').filter(x => x.source === 'expense')) {
+        if (!byRef.has(m.ref_doc)) byRef.set(m.ref_doc, []);
+        byRef.get(m.ref_doc).push(m);
+      }
+      const fiscal = new Map(Store.getAll('fiscal_docs').filter(d => d.ref_doc).map(d => [d.ref_doc, d]));
+      return [...byRef.entries()].map(([ref, lines]) => {
+        const iva = lines.filter(l => String(l.codigo_cuenta) === '1.1.03.01').reduce((s, l) => s + (Number(l.debit) || 0), 0);
+        const debits = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
+        const first = lines[0];
+        return { ref, date: first.entry_date, created: first.created_at, concepto: String(first.concepto || '').split('|')[0].trim(), entidad: first.entidad, net: debits - iva, iva, total: debits, invoice: (fiscal.get(ref) || {}).invoice_number };
+      }).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.created || '').localeCompare(String(a.created || ''))).slice(0, 30);
     };
-    const renderIva = () => {
-      const on = withIva();
-      document.getElementById('iva-fields').classList.toggle('hidden', !on);
-      document.getElementById('lbl-total').textContent = on ? 'Base imponible *' : 'Monto Total *';
-      const c = ivaCalc();
-      document.getElementById('iva-preview').innerHTML = on
-        ? `IVA ${c.rate}%: <strong>$${fmtNum(c.tax)}</strong> · Total factura: <strong>$${fmtNum(c.total)}</strong>`
-        : '';
-    };
-
-    const recentExpenses = () => Store.getAll('movements')
-      .filter(m => m.source === 'expense')
-      .sort((a, b) => new Date(b.entry_date || 0) - new Date(a.entry_date || 0))
-      .slice(0, 30);
-
     const renderList = () => {
       const tbody = document.getElementById('expenses-tbody');
-      const list = recentExpenses();
+      const list = recentDocs();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="4" class="p-4 text-center text-slate-400">Sin gastos registrados todavía.</td></tr>`
-        : list.map(m => `
+        ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin gastos registrados todavía.</td></tr>`
+        : list.map(d => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-2">${esc(m.entry_date)}</td>
-            <td class="p-2">${esc(m.ref_doc)} — ${esc(m.concepto)}</td>
-            <td class="p-2 text-right font-mono">${m.debit > 0 ? '$' + fmtNum(m.debit) : ''}</td>
-            <td class="p-2 text-slate-500">${esc(m.entidad)}</td>
+            <td class="p-2">${esc(d.date)}</td>
+            <td class="p-2">${esc(d.ref)} — ${esc(d.concepto)}${d.invoice ? ` <span class="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full">Fact. ${esc(d.invoice)}</span>` : ''}</td>
+            <td class="p-2 text-slate-500">${esc(d.entidad)}</td>
+            <td class="p-2 text-right font-mono">$${fmtNum(d.net)}</td>
+            <td class="p-2 text-right font-mono text-slate-500">${d.iva ? '$' + fmtNum(d.iva) : '—'}</td>
+            <td class="p-2 text-right font-mono font-semibold">$${fmtNum(d.total)}</td>
           </tr>
         `).join('');
     };
@@ -75,51 +67,41 @@ const Expenses = {
       const contact = contacts.find(c => c.id === document.getElementById('f-contact').value);
       const entidad = contact ? contact.name : '';
       const concepto = document.getElementById('f-concepto').value.trim();
-      const iva = ivaCalc();
-      const total = iva.base;
+      const inv = invoice.active() ? invoice.read() : null;
+      // Con factura: el gasto es lo exento + la base imponible (sin IVA) y el
+      // IVA va aparte a IVA Acreditable; sin factura, el monto escrito.
+      const total = inv ? inv.net : num(document.getElementById('f-total'));
       const msgEl = document.getElementById('expense-msg');
       msgEl.textContent = '';
 
       if (!date) { msgEl.textContent = 'La fecha es obligatoria.'; return; }
       if (!expenseId) { msgEl.textContent = 'Selecciona la categoría de gasto.'; return; }
       if (!paymentId) { msgEl.textContent = 'Selecciona la cuenta de pago (Efectivo/Banco/Proveedores).'; return; }
+      const invMsg = invoice.validate();
+      if (invMsg) { msgEl.textContent = invMsg; return; }
       if (total <= 0) { msgEl.textContent = 'El monto debe ser mayor a 0.'; return; }
       if (!concepto) { msgEl.textContent = 'El concepto es obligatorio.'; return; }
-
-      const invoiceNumber = withIva() ? document.getElementById('f-invoice').value.trim() : '';
-      if (withIva() && !invoiceNumber) { msgEl.textContent = 'Indica el N.º de la factura del proveedor (va al Libro de Compras).'; return; }
 
       const refDoc = `GST-${Date.now().toString().slice(-6)}`;
       const paymentAccount = accounts.find(a => a.id === paymentId);
       const data = {
-        date, total: r2(total + iva.exempt), concepto, entidad, refDoc,
+        date, total, concepto, entidad, refDoc,
         paymentAccount,
         expenseAccount: accounts.find(a => a.id === expenseId)
       };
 
       let lines = buildExpenseLines(data);
-      if (iva.tax > 0) {
+      if (inv && inv.tax > 0) {
         const ivaAccount = accounts.find(a => a.codigo === '1.1.03.01') || Store.ensureCatalogAccount('1.1.03.01');
-        lines = lines.concat(buildTwoLineEntry({ date, total: iva.tax, concepto: `${concepto} | IVA crédito fiscal`, entidad, refDoc, debitAccount: ivaAccount, creditAccount: paymentAccount }));
+        lines = lines.concat(buildTwoLineEntry({ date, total: inv.tax, concepto: `${concepto} | IVA crédito fiscal`, entidad, refDoc, debitAccount: ivaAccount, creditAccount: paymentAccount }));
       }
       Store.postJournalRows(withRoundingPlug(lines, diffAccount(), date, refDoc), { source: 'expense' });
-      if (withIva()) {
-        Store.insert('fiscal_docs', Store.newFiscalDoc({
-          book: 'compras', date, doc_type: 'factura', invoice_number: invoiceNumber,
-          control_number: document.getElementById('f-control').value.trim(),
-          rif: contact ? contact.rif || '' : '', name: entidad || concepto,
-          total: iva.total, exempt: iva.exempt,
-          base_general: iva.tipo === 'general' ? total : 0, tax_general: iva.tipo === 'general' ? iva.tax : 0,
-          base_reducida: iva.tipo === 'reducida' ? total : 0, tax_reducida: iva.tipo === 'reducida' ? iva.tax : 0,
-          ref_doc: refDoc, tasa_bcv: Store.usdRateFor(date), notes: concepto
-        }));
-        ['f-invoice', 'f-control', 'f-exempt'].forEach(id => { document.getElementById(id).value = ''; });
-      }
+      if (inv) Store.insert('fiscal_docs', purchaseFiscalDoc(Store, inv, { date, contact, entidad, concepto, refDoc }));
 
       document.getElementById('f-total').value = '';
       document.getElementById('f-concepto').value = '';
       document.getElementById('f-contact').value = '';
-      renderIva();
+      invoice.reset();
       renderList();
     };
 
@@ -157,32 +139,7 @@ const Expenses = {
             <input id="f-concepto" type="text" class="${input}">
           </div>
         </div>
-        ${fs.ivaEnabled ? `
-        <label class="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer">
-          <input id="f-has-iva" type="checkbox" class="w-4 h-4 accent-blue-600"> 🧾 Factura con IVA (crédito fiscal — va al Libro de Compras)
-        </label>` : ''}
-        <div id="iva-fields" class="hidden grid grid-cols-2 lg:grid-cols-4 gap-3 bg-blue-50 border border-blue-100 rounded-xl p-3">
-          <div>
-            <label class="${label}">N.º factura *</label>
-            <input id="f-invoice" type="text" class="${input}">
-          </div>
-          <div>
-            <label class="${label}">N.º de control</label>
-            <input id="f-control" type="text" placeholder="00-000000" class="${input}">
-          </div>
-          <div>
-            <label class="${label}">Alícuota</label>
-            <select id="f-iva-tipo" class="${input}">
-              <option value="general">General ${fs.rateGeneral}%</option>
-              <option value="reducida">Reducida ${fs.rateReducida}%</option>
-            </select>
-          </div>
-          <div>
-            <label class="${label}">Monto exento</label>
-            <input id="f-exempt" type="number" min="0" step="0.01" placeholder="0.00" class="${input}">
-          </div>
-          <div id="iva-preview" class="col-span-2 lg:col-span-4 text-xs text-blue-900"></div>
-        </div>
+        ${invoiceFieldsHtml(fs, { input, label })}
         <div id="expense-msg" class="text-xs text-red-600"></div>
         <button id="btn-save-expense" class="${btnPrimary}">Registrar Gasto</button>
       </div>
@@ -190,7 +147,7 @@ const Expenses = {
       <div class="${card}">
         <h2 class="text-sm font-bold text-slate-700 mb-3">Gastos Registrados</h2>
         <table class="w-full text-left text-xs">
-          <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2 text-right">Monto</th><th class="p-2">Beneficiario</th></tr></thead>
+          <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2">Beneficiario</th><th class="p-2 text-right">Neto</th><th class="p-2 text-right">IVA</th><th class="p-2 text-right">Total</th></tr></thead>
           <tbody id="expenses-tbody"></tbody>
         </table>
       </div>
@@ -200,10 +157,7 @@ const Expenses = {
 
     document.getElementById('btn-save-expense').addEventListener('click', saveExpense);
     document.getElementById('f-contact').addEventListener('change', handleContactChange);
-    ['f-has-iva', 'f-total', 'f-exempt', 'f-iva-tipo'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener('input', renderIva);
-    });
+    invoice = mountInvoiceFields(fs, { totalInput: document.getElementById('f-total'), totalLabel: document.getElementById('lbl-total') });
 
     renderList();
 
