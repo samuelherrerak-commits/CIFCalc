@@ -100,6 +100,9 @@ async function resolve() {
   const { handler, key, params } = parseHash();
   Nav.render(key);
   const app = document.getElementById('app');
+  // Contabilidad ocupa todo el ancho (menú lateral pegado a la izquierda);
+  // el resto de páginas, centradas.
+  app.className = key === 'contabilidad' ? 'w-full' : 'max-w-7xl mx-auto space-y-5 p-4 md:p-8';
   app.innerHTML = '<div class="text-center py-20 text-slate-400">Cargando…</div>';
 
   const page = pages[handler];

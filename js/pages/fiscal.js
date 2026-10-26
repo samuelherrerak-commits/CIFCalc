@@ -162,6 +162,69 @@ function renderBook(el, book, fs) {
       </tbody>
     </table>`;
 
+  // Vista en pantalla: columnas agrupadas para que el libro quepa sin
+  // desplazamiento horizontal (la impresión y el CSV llevan todas las
+  // columnas del formato SENIAT).
+  const docCell = (d) => {
+    const t = (DOC_TYPES[d.doc_type] || DOC_TYPES.factura).label;
+    const num = d.invoice_number || (book === 'ventas' ? d.ref_doc : '');
+    const extra = [
+      d.control_number && `Control ${esc(d.control_number)}`,
+      d.affected_invoice && `Afecta ${esc(d.affected_invoice)}`,
+      d.import_form && `Planilla ${esc(d.import_form)}`,
+      d.import_file && `Exp. ${esc(d.import_file)}`
+    ].filter(Boolean).join(' · ');
+    return `<div class="font-semibold text-slate-700">${esc(t)} ${num ? `<span class="font-mono">${esc(num)}</span>` : ''}</div>
+      <div class="text-[10px] text-slate-400">${txType(d)}${extra ? ' · ' + extra : ''}</div>`;
+  };
+  const baseCell = (a, d) => {
+    const parts = [];
+    if (a.base_general) parts.push(`${money(a.base_general)}${Number(d.base_reducida) ? ` <span class="text-[9px] text-slate-400">${fs.rateGeneral}%</span>` : ''}`);
+    if (a.base_reducida) parts.push(`${money(a.base_reducida)} <span class="text-[9px] text-slate-400">${fs.rateReducida}%</span>`);
+    return parts.join('<br>') || money(0);
+  };
+  const screenTableHtml = () => {
+    const th = (h, right) => `<th class="px-2 py-2 ${right ? 'text-right' : 'text-left'} border-b border-slate-200">${h}</th>`;
+    return `
+    <table class="w-full text-[11px]">
+      <thead><tr class="text-[9px] font-bold uppercase tracking-wide text-slate-500 bg-slate-50">
+        ${th('N.º')}${th('Fecha')}${th(book === 'ventas' ? 'Cliente' : 'Proveedor')}${th('Documento')}
+        ${th(book === 'ventas' ? 'Total venta' : 'Total compra', 1)}${th(book === 'ventas' ? 'Exento' : 'Exento / sin crédito', 1)}${th('Base imponible', 1)}${th('IVA', 1)}
+        ${book === 'ventas' ? th('Retenido', 1) : ''}${currency === 'bs' ? th('Tasa', 1) : ''}${th('')}
+      </tr></thead>
+      <tbody>
+        ${rows.length === 0 ? `<tr><td colspan="12" class="p-6 text-center text-slate-400">Sin documentos en ${esc(monthLabel(month))}.</td></tr>` : rows.map(d => {
+          const a = docAmounts(d, currency);
+          return `
+          <tr class="border-b border-slate-100 hover:bg-slate-50 align-top ${d.status === 'anulada' ? 'line-through text-slate-400' : ''}">
+            <td class="px-2 py-1.5 text-slate-400">${d.n}</td>
+            <td class="px-2 py-1.5 whitespace-nowrap">${fmtDate(d.date)}</td>
+            <td class="px-2 py-1.5 max-w-[14rem]"><div class="font-semibold text-slate-700 truncate" title="${esc(d.name)}">${esc(d.name) || '—'}</div><div class="text-[10px] text-slate-400 font-mono">${esc(d.rif) || 'Sin RIF'}</div></td>
+            <td class="px-2 py-1.5">${docCell(d)}</td>
+            <td class="px-2 py-1.5 text-right font-mono font-semibold whitespace-nowrap">${money(a.total)}</td>
+            <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap">${money(a.exempt)}</td>
+            <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap">${baseCell(a, d)}</td>
+            <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap text-blue-700">${money(r2(a.tax_general + a.tax_reducida))}</td>
+            ${book === 'ventas' ? `<td class="px-2 py-1.5 text-right font-mono whitespace-nowrap">${a.withheld ? money(a.withheld) : '—'}${d.withholding_number ? `<div class="text-[10px] text-slate-400">${esc(d.withholding_number)}</div>` : ''}</td>` : ''}
+            ${currency === 'bs' ? `<td class="px-2 py-1.5 text-right font-mono text-slate-400">${Number(d.tasa_bcv) > 0 ? fmtNum(d.tasa_bcv) : '<span class="text-red-600 font-bold">falta</span>'}</td>` : ''}
+            <td class="px-2 py-1.5 text-right whitespace-nowrap">
+              ${d.virtual ? '<span class="text-[9px] font-bold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded-full mr-1">auto</span>' : ''}
+              <button data-edit-doc="${esc(d.id)}" class="text-blue-600 hover:text-blue-800 font-semibold">Editar</button>
+            </td>
+          </tr>`; }).join('')}
+        ${rows.length ? `<tr class="font-bold bg-slate-50">
+          <td colspan="4" class="px-2 py-2 text-right">Totales</td>
+          <td class="px-2 py-2 text-right font-mono">${money(tot.total)}</td>
+          <td class="px-2 py-2 text-right font-mono">${money(tot.exempt)}</td>
+          <td class="px-2 py-2 text-right font-mono">${money(r2(tot.base_general + tot.base_reducida))}</td>
+          <td class="px-2 py-2 text-right font-mono text-blue-700">${money(r2(tot.tax_general + tot.tax_reducida))}</td>
+          ${book === 'ventas' ? `<td class="px-2 py-2 text-right font-mono">${money(tot.withheld)}</td>` : ''}
+          <td colspan="${currency === 'bs' ? 2 : 1}"></td>
+        </tr>` : ''}
+      </tbody>
+    </table>`;
+  };
+
   const summaryHtml = (forPrint) => `
     <table class="${forPrint ? '' : 'w-full text-xs'}" style="${forPrint ? 'width:60%;margin-top:10px' : ''}">
       <thead><tr class="${forPrint ? '' : 'text-[10px] font-bold uppercase text-slate-500'}"><th class="${forPrint ? '' : 'p-2 text-left'}">Resumen del período</th><th class="${forPrint ? '' : 'p-2 text-right'}">Base imponible</th><th class="${forPrint ? '' : 'p-2 text-right'}">${book === 'ventas' ? 'Débito fiscal' : 'Crédito fiscal'}</th></tr></thead>
@@ -184,7 +247,7 @@ function renderBook(el, book, fs) {
       </div>
       ${missingRate ? `<div class="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">⚠ ${missingRate} documento(s) sin tasa BCV: en Bs salen en 0. Edítalos para ponerles la tasa del día, o carga las tasas en la pestaña Tasas BCV.</div>` : ''}
       ${book === 'compras' && rows.some(d => d.virtual) ? `<div class="text-xs text-violet-800 bg-violet-50 border border-violet-200 rounded-lg p-2">Las filas <strong>auto</strong> son el IVA de importación de contenedores completados (sale del asiento de cierre). Edítalas para ponerles el N.º de planilla de importación (DUA), el expediente y la tasa del día de la liquidación en aduana.</div>` : ''}
-      <div class="overflow-x-auto -mx-4 px-4">${tableHtml(false)}</div>
+      <div class="overflow-x-auto thin-scroll">${screenTableHtml()}</div>
       <div class="max-w-2xl">${summaryHtml(false)}</div>
     </div>`;
 

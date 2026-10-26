@@ -20,11 +20,25 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    /* Barras de desplazamiento finas (menú lateral, catálogo del punto de venta). */
+    .thin-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+    .thin-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+    .thin-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+    .no-scrollbar { scrollbar-width: none; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    details > summary { list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
+  </style>
 </head>
-<body class="bg-slate-50 text-slate-800 p-4 md:p-8">
+<body class="bg-slate-50 text-slate-800 min-h-screen">
 
-  <div id="navbar"></div>
-  <main id="app" class="max-w-7xl mx-auto space-y-5"></main>
+  <!-- Encabezado fijo: franja de modo prueba (si aplica) + barra de navegación.
+       Su alto queda en la variable CSS --top para el menú lateral. -->
+  <header id="topbar" class="sticky top-0 z-50">
+    <div id="navbar"></div>
+  </header>
+  <main id="app" class="max-w-7xl mx-auto space-y-5 p-4 md:p-8"></main>
 
   <script type="module" src="js/app.js"></script>
 </body>

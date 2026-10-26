@@ -96,33 +96,46 @@ function sandboxCard() {
 
 const AccountingTabs = {
   render(active) {
+    // Menú lateral pegado a la izquierda, a toda la altura bajo el encabezado
+    // (--top). De md a xl es un riel de solo íconos (con el nombre al pasar el
+    // mouse) para dejarle el ancho al contenido; desde xl, completo.
     const link = (it) => `
-      <a href="${it.path}" class="group flex items-center gap-2.5 px-2 py-1.5 rounded-xl text-[13px] font-semibold transition ${
+      <a href="${it.path}" title="${it.label}" class="group flex items-center justify-center xl:justify-start gap-2.5 px-1.5 xl:px-2 py-1 rounded-xl text-[13px] font-semibold transition ${
         it.key === active ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
       }">
         <span class="w-7 h-7 rounded-lg flex items-center justify-center text-sm shrink-0 ${
           it.key === active ? 'bg-white/20' : `bg-${it.color}-50 group-hover:bg-white`
         }">${it.icon}</span>
-        <span class="truncate">${it.label}</span>
+        <span class="truncate hidden xl:inline">${it.label}</span>
       </a>`;
 
+    const usd = Store.ratesFor(new Date().toISOString().slice(0, 10));
     const sidebar = `
-      <aside class="hidden md:flex md:flex-col w-60 shrink-0">
-        <div class="sticky top-4 bg-white border border-slate-200 rounded-2xl shadow-sm p-3 flex flex-col gap-2.5 max-h-[calc(100vh-2rem)] overflow-y-auto">
-          <div class="px-2 pt-1">
-            <p class="text-lg font-black tracking-tight text-slate-900 leading-none">Contabilidad</p>
-            <p class="text-[10px] font-bold uppercase tracking-widest text-blue-600 mt-1">Maestro de Costo</p>
+      <aside class="hidden md:flex flex-col shrink-0 w-[4.25rem] xl:w-56 sticky top-[var(--top,3rem)] h-[calc(100vh-var(--top,3rem))] bg-white border-r border-slate-200">
+        <div class="px-2 xl:px-3 pt-3 pb-2 space-y-2 shrink-0">
+          <div class="hidden xl:block px-1">
+            <p class="text-base font-black tracking-tight text-slate-900 leading-none">Contabilidad</p>
+            <p class="text-[9px] font-bold uppercase tracking-widest text-blue-600 mt-1">Maestro de Costo</p>
           </div>
-          ${ratesCard()}
-          ${sandboxCard()}
-          <nav class="space-y-2.5">
-            ${ACCOUNTING_SECTIONS.map(s => `
-              <div>
-                ${sectionTitle(s, 'px-2.5 mb-1')}
-                <div class="space-y-0.5">${s.items.map(link).join('')}</div>
-              </div>`).join('')}
-          </nav>
+          <div class="hidden xl:block">${ratesCard()}</div>
+          <a href="#/contabilidad/fiscal/tasas" title="Tasas del día${usd ? ` · USD BCV ${fmtRate(usd.usd_bcv)}` : ''}" class="xl:hidden flex flex-col items-center rounded-xl bg-emerald-50 border border-emerald-100 py-1">
+            <span class="text-sm leading-none">💱</span><span class="text-[9px] font-black text-emerald-800 font-mono">${usd ? Math.round(usd.usd_bcv) : '—'}</span>
+          </a>
         </div>
+        <nav class="flex-1 min-h-0 overflow-y-auto thin-scroll px-2 xl:px-3 pb-2 space-y-2">
+          ${ACCOUNTING_SECTIONS.map((s, i) => `
+            <div>
+              ${sectionTitle(s, 'hidden xl:flex px-2 mb-0.5')}
+              ${i ? '<div class="xl:hidden border-t border-slate-100 mx-1 mb-1.5"></div>' : ''}
+              <div class="space-y-0.5">${s.items.map(link).join('')}</div>
+            </div>`).join('')}
+        </nav>
+        ${Store.isSandbox() ? '' : `
+        <div class="shrink-0 border-t border-slate-100 p-2 xl:px-3">
+          <button data-sbx="enter" title="Entrar al modo prueba" class="w-full flex items-center justify-center xl:justify-start gap-2 rounded-xl border border-dashed border-slate-300 hover:border-amber-400 hover:bg-amber-50 px-2 py-1.5 transition">
+            <span>🧪</span><span class="hidden xl:inline text-[11px] font-bold text-slate-600">Modo prueba</span>
+          </button>
+        </div>`}
       </aside>`;
 
     const mobileBar = `

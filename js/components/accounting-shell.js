@@ -14,11 +14,13 @@ export function badge(colorName, text) {
 
 const AccountingShell = {
   // tabs: HTML de AccountingTabs.render(active) — menú lateral + barra móvil.
+  // Menú lateral a toda la altura, pegado a la izquierda; el contenido usa el
+  // resto del ancho. En el teléfono, barra inferior (de ahí el pb-24).
   wrap(tabsHtml, bodyHtml) {
     return `
-      <div class="flex gap-5 items-start pb-20 md:pb-0">
+      <div class="flex items-start">
         ${tabsHtml}
-        <div class="flex-1 min-w-0 space-y-5">
+        <div class="flex-1 min-w-0 p-3 sm:p-4 lg:p-5 pb-24 md:pb-5 space-y-4">
           ${bodyHtml}
         </div>
       </div>

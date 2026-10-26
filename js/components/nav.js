@@ -8,7 +8,7 @@ const Nav = {
     const nav = document.getElementById('navbar');
     nav.innerHTML = `
       <nav class="bg-slate-900 text-white shadow-md">
-        <div class="max-w-7xl mx-auto px-4 md:px-8 h-14 flex items-center justify-between">
+        <div class="px-4 md:px-6 h-12 flex items-center justify-between">
           <a href="#/" class="flex items-center gap-2 font-bold text-lg">
             <span class="text-2xl">🚚</span>
             <span class="hidden sm:inline">Maestro de Costo</span>

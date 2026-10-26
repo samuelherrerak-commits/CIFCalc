@@ -9,8 +9,18 @@ import { openBusinessProfileModal } from '../components/business-profile.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { input, label } from '../components/accounting-shell.js';
 
+// Campos compactos del carrito.
+const inputSm = input.replace('p-2', 'px-2 py-1.5');
+const labelSm = 'block text-[10px] font-semibold text-slate-500 mb-0.5';
+
 // El carrito sobrevive al cambiar de pestaña o al refresco tras la sincronización.
 let savedCart = []; // [{ productId, qty, unitPrice }]
+// Venta fiscal (con factura: IVA y Libro de Ventas) o sin factura (nota de
+// entrega: sin IVA, solo el asiento contable). Se recuerda mientras la app
+// esté abierta.
+let saleFiscal = true;
+// Las ventas sin factura usan el prefijo NE- (nota de entrega) en vez de VTA-.
+export const isNonFiscalRef = (refDoc) => String(refDoc || '').startsWith('NE-');
 
 // Reconstruye la nota de venta desde el diario (las líneas de una venta
 // comparten ref_doc; las de Ingresos por Ventas llevan cantidad/precio y el
@@ -43,6 +53,7 @@ export function saleDocumentFromJournal(refDoc) {
   } : null;
   return {
     kind: 'sale', number: refDoc, date: lines[0].entry_date,
+    title: isNonFiscalRef(refDoc) ? 'Nota de entrega' : undefined,
     client: contact ? { name: contact.name, rif: contact.rif, address: contact.address, phone: contact.phone, email: contact.email } : { name: entidad },
     items,
     paymentMethod: payAccount ? (payAccount.tipo_especifico === 'Clientes' ? `Crédito (${payAccount.nombre})` : payAccount.nombre) : (payLine ? payLine.cuenta_contable : ''),
@@ -64,11 +75,13 @@ const Sales = {
     const accounts = Store.getAll('accounts').filter(a => a.is_active !== false);
     const fs = Store.getFiscalSettings();
     const selectedContact = () => contacts.find(c => c.id === (document.getElementById('f-contact') || {}).value);
-    const taxOf = (cart) => computeTax(cart.map(l => ({ amount: l.qty * l.unitPrice, tipo: ivaTipoOf(l.product) })), fs);
+    // Sin factura no se cobra IVA: el monto cobrado es todo ingreso.
+    const isFiscal = () => fs.ivaEnabled && saleFiscal;
+    const taxOf = (cart) => computeTax(cart.map(l => ({ amount: l.qty * l.unitPrice, tipo: ivaTipoOf(l.product) })), { ...fs, ivaEnabled: isFiscal() });
     // IVA que retiene el cliente si es contribuyente especial (75 % o 100 %).
     const retentionOf = (t) => {
       const pct = Number((selectedContact() || {}).iva_retention_pct) || 0;
-      return fs.ivaEnabled && pct > 0 ? Math.round(t.tax * pct) / 100 : 0;
+      return isFiscal() && pct > 0 ? Math.round(t.tax * pct) / 100 : 0;
     };
     let contacts = Store.getAll('contacts');
     let products = Store.getAll('products');
@@ -105,7 +118,7 @@ const Sales = {
     const renderPayMethods = () => {
       const wrap = document.getElementById('f-pay-methods');
       wrap.innerHTML = PAY_METHODS.map(m => `
-        <button type="button" data-pay="${m.key}" class="py-2.5 rounded-xl text-xs font-bold border-2 transition ${
+        <button type="button" data-pay="${m.key}" title="Forma de pago" class="py-2 rounded-xl text-xs font-bold border-2 transition ${
           payMethod === m.key ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300'
         }">${m.label}</button>`).join('');
       wrap.querySelectorAll('[data-pay]').forEach(b => b.addEventListener('click', () => { payMethod = b.dataset.pay; pos.flash(''); renderPayMethods(); }));
@@ -127,6 +140,7 @@ const Sales = {
     };
 
     const recentSales = () => {
+      const fiscalByRef = new Map(Store.getAll('fiscal_docs').filter(d => d.book === 'ventas' && d.ref_doc).map(d => [d.ref_doc, d]));
       const byRef = new Map();
       for (const m of Store.getAll('movements').filter(x => x.source === 'sale')) {
         if (!byRef.has(m.ref_doc)) byRef.set(m.ref_doc, []);
@@ -138,7 +152,8 @@ const Sales = {
           const items = lines.filter(l => Number(l.cantidad) > 0 && l.unidad === 'unidades' && Number(l.precio_venta) > 0);
           // Total cobrado (con IVA): lo que entró al debe, menos el redondeo.
           const total = lines.filter(l => Number(l.debit) > 0 && String(l.codigo_cuenta) !== '6.9.01.01').reduce((s, l) => s + (Number(l.debit) || 0), 0);
-          return { refDoc, date: first.entry_date, created: first.created_at, entidad: first.entidad, itemCount: items.length, total };
+          const fd = fiscalByRef.get(refDoc);
+          return { refDoc, date: first.entry_date, created: first.created_at, entidad: first.entidad, itemCount: items.length, total, fiscal: fd ? (fd.invoice_number || 'sí') : null, nonFiscal: isNonFiscalRef(refDoc) };
         })
         .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0) || new Date(b.created || 0) - new Date(a.created || 0))
         .slice(0, 20);
@@ -152,7 +167,9 @@ const Sales = {
         : list.map(s => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
             <td class="p-2">${esc(s.date)}</td>
-            <td class="p-2 font-mono">${esc(s.refDoc)}</td>
+            <td class="p-2 font-mono">${esc(s.refDoc)}
+              ${s.fiscal ? `<span class="ml-1 font-sans text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full">🧾 Fiscal${s.fiscal !== 'sí' ? ' ' + esc(s.fiscal) : ''}</span>` : ''}
+              ${s.nonFiscal ? '<span class="ml-1 font-sans text-[10px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-full">Sin factura</span>' : ''}</td>
             <td class="p-2 text-slate-500">${esc(s.entidad) || '—'}</td>
             <td class="p-2 text-right">${s.itemCount}</td>
             <td class="p-2 text-right font-mono font-semibold text-emerald-700">$${fmtNum(s.total)}</td>
@@ -164,12 +181,12 @@ const Sales = {
 
     const body = `
       ${sourceQuote ? `<div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-800">Carrito precargado desde el presupuesto <strong>${esc(sourceQuote.quote_number)}</strong>.${shortages.length ? `<div class="mt-1 text-amber-700">⚠ Sin existencia suficiente, se ajustó: ${esc(shortages.join(', '))}.</div>` : ''}</div>` : ''}
-      <div class="flex justify-end -mb-2">
-        <button id="btn-business" class="text-xs font-semibold text-slate-500 hover:text-blue-700">⚙ Datos de la empresa (para la nota de venta)</button>
-      </div>
       <div id="pos-root"></div>
       <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-        <h2 class="text-sm font-bold text-slate-700 mb-3">Ventas Recientes</h2>
+        <div class="flex items-center justify-between gap-2 mb-3">
+          <h2 class="text-sm font-bold text-slate-700">Ventas Recientes</h2>
+          <button id="btn-business" class="text-xs font-semibold text-slate-500 hover:text-blue-700">⚙ Datos de la empresa (para la nota)</button>
+        </div>
         <table class="w-full text-left text-xs">
           <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2">Cliente</th><th class="p-2 text-right">Ítems</th><th class="p-2 text-right">Total</th><th class="p-2"></th></tr></thead>
           <tbody id="sales-tbody"></tbody>
@@ -189,40 +206,50 @@ const Sales = {
       summary: (cart) => {
         const t = taxOf(cart);
         const ret = retentionOf(t);
-        return { rows: taxSummaryRows(t, fs).concat(ret ? [[`Retención IVA ${selectedContact().iva_retention_pct}% (la paga el cliente al SENIAT)`, -ret]] : []), total: t.total };
+        return { rows: taxSummaryRows(t, { ...fs, ivaEnabled: isFiscal() }).concat(ret ? [[`Retención IVA ${selectedContact().iva_retention_pct}% (la paga el cliente al SENIAT)`, -ret]] : []), total: t.total };
       },
       headerFieldsHtml: `
         <div>
           <label class="${label}">Cliente</label>
           <select id="f-contact" class="${input}">${contactOptions(contacts, 'cliente', sourceQuote ? sourceQuote.contact_id : '')}</select>
         </div>`,
+      // Lo que se decide en cada venta (tipo y forma de pago) queda a la
+      // vista; fecha, concepto y N.º de factura van en un desplegable para
+      // que el carrito quepa en la pantalla sin desplazarse.
       footerFieldsHtml: `
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="${label}">Fecha *</label>
-            <input id="f-date" type="date" value="${new Date().toISOString().slice(0, 10)}" class="${input}">
-          </div>
-          <div>
-            <label class="${label}">Concepto</label>
-            <input id="f-concepto" type="text" placeholder="Venta" class="${input}">
-          </div>
-        </div>
-        ${fs.ivaEnabled ? `
-        <div class="grid grid-cols-2 gap-2">
-          <div>
-            <label class="${label}">N.º factura fiscal</label>
-            <input id="f-invoice" type="text" placeholder="Opcional" class="${input}">
-          </div>
-          <div>
-            <label class="${label}">N.º de control</label>
-            <input id="f-control" type="text" placeholder="00-000000" class="${input}">
-          </div>
-        </div>` : ''}
+        ${fs.ivaEnabled ? `<div id="f-fiscal" class="grid grid-cols-2 gap-1.5"></div>` : ''}
         <div>
-          <label class="${label}">Forma de pago *</label>
-          <div id="f-pay-methods" class="grid grid-cols-3 gap-2"></div>
-          <select id="f-pay-account" class="${input} hidden mt-2"></select>
+          <div id="f-pay-methods" class="grid grid-cols-3 gap-1.5"></div>
+          <select id="f-pay-account" class="${inputSm} hidden mt-1.5"></select>
         </div>
+        <details id="f-more" class="rounded-lg border border-slate-200 bg-white">
+          <summary class="px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer flex items-center justify-between gap-2">
+            <span>📝 Fecha, concepto${fs.ivaEnabled ? ' y N.º de factura' : ''}</span><span id="f-more-sum" class="text-slate-400 truncate"></span>
+          </summary>
+          <div class="px-2.5 pb-2.5 space-y-2">
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="${labelSm}">Fecha *</label>
+                <input id="f-date" type="date" value="${new Date().toISOString().slice(0, 10)}" class="${inputSm}">
+              </div>
+              <div>
+                <label class="${labelSm}">Concepto</label>
+                <input id="f-concepto" type="text" placeholder="Venta" class="${inputSm}">
+              </div>
+            </div>
+            ${fs.ivaEnabled ? `
+            <div id="f-invoice-fields" class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="${labelSm}">N.º factura fiscal</label>
+                <input id="f-invoice" type="text" placeholder="Opcional" class="${inputSm}">
+              </div>
+              <div>
+                <label class="${labelSm}">N.º de control</label>
+                <input id="f-control" type="text" placeholder="00-000000" class="${inputSm}">
+              </div>
+            </div>` : ''}
+          </div>
+        </details>
 `,
       onCartChange: (cart) => {
         if (!sourceQuote) savedCart = cart.map(l => ({ productId: l.product.id, qty: l.qty, unitPrice: l.unitPrice }));
@@ -232,6 +259,35 @@ const Sales = {
     // Una venta solo toca Caja/Banco/CxC (debe) e Ingresos por Ventas (haber) —
     // el inventario es de referencia (stock en products), nunca una cuenta de
     // activo tocada aquí.
+    const renderFiscal = () => {
+      const wrap = document.getElementById('f-fiscal');
+      if (!wrap) return;
+      const opt = (val, text, hint) => `
+        <button type="button" data-fiscal="${val}" title="${hint}" class="py-1.5 px-2 rounded-xl text-xs font-bold border-2 transition ${
+          saleFiscal === val ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-300'
+        }">${text}</button>`;
+      wrap.innerHTML = opt(true, '🧾 Con factura', 'Fiscal · IVA y Libro de Ventas') + opt(false, '📄 Sin factura', 'Nota de entrega · sin IVA');
+      wrap.querySelectorAll('[data-fiscal]').forEach(b => b.addEventListener('click', () => {
+        saleFiscal = b.dataset.fiscal === 'true';
+        renderFiscal();
+        pos.refresh(); // el total cambia (con o sin IVA)
+      }));
+      document.getElementById('f-invoice-fields').classList.toggle('hidden', !saleFiscal);
+      renderMoreSummary();
+    };
+    // Resumen del desplegable cerrado: fecha (si no es hoy), concepto y factura.
+    const renderMoreSummary = () => {
+      const el = document.getElementById('f-more-sum');
+      if (!el) return;
+      const d = document.getElementById('f-date').value;
+      const parts = [d && d !== new Date().toISOString().slice(0, 10) ? d.split('-').reverse().join('/') : 'Hoy'];
+      const c = document.getElementById('f-concepto').value.trim();
+      if (c) parts.push(c);
+      const inv = (document.getElementById('f-invoice') || {}).value;
+      if (isFiscal() && inv) parts.push(`Fact. ${inv}`);
+      el.textContent = parts.join(' · ');
+    };
+
     pos.onAction(() => {
       const cart = pos.getCart();
       const date = document.getElementById('f-date').value;
@@ -243,7 +299,7 @@ const Sales = {
       if (noPrice) { pos.flash(`Indica el precio de "${noPrice.product.name}".`); return; }
       const over = cart.find(l => l.qty > (Number((Store.getById('products', l.product.id) || l.product).stock) || 0));
       if (over) { pos.flash(`La existencia de "${over.product.name}" cambió; revisa la cantidad.`); return; }
-      if (!date) { pos.flash('La fecha es obligatoria.'); return; }
+      if (!date) { document.getElementById('f-more').open = true; pos.flash('La fecha es obligatoria.'); return; }
       if (!payMethod) { pos.flash('Elige la forma de pago: Efectivo, Banco o Crédito.'); return; }
       if (payMethod === 'credito' && !contactId) { pos.flash('Una venta a crédito necesita un cliente (queda en Cuentas por Cobrar).'); return; }
 
@@ -254,7 +310,8 @@ const Sales = {
       const revAccount = revenueAccount();
       if (!revAccount) { pos.flash('Falta la cuenta "Ingresos por Ventas" en el Plan de Cuentas.'); return; }
 
-      const refDoc = `VTA-${Date.now().toString().slice(-6)}`;
+      const fiscal = isFiscal();
+      const refDoc = `${fiscal ? 'VTA' : 'NE'}-${Date.now().toString().slice(-6)}`;
       const tax = taxOf(cart);
       const withheld = retentionOf(tax);
       const ivaAccount = tax.tax > 0 ? (accounts.find(a => a.codigo === '2.1.04.01') || Store.ensureCatalogAccount('2.1.04.01')) : null;
@@ -288,8 +345,8 @@ const Sales = {
         Store.update('products', { id: l.product.id, stock: (Number(current.stock) || 0) - l.qty });
       }
       if (sourceQuote) Store.update('quotes', { id: sourceQuote.id, status: 'convertido', converted_ref: refDoc });
-      // Registro para el Libro de Ventas.
-      if (fs.ivaEnabled) {
+      // Registro para el Libro de Ventas (solo ventas con factura).
+      if (fiscal) {
         Store.insert('fiscal_docs', Store.newFiscalDoc({
           book: 'ventas', date, doc_type: 'factura',
           invoice_number: (document.getElementById('f-invoice') || {}).value?.trim() || '',
@@ -307,13 +364,14 @@ const Sales = {
       document.getElementById('f-contact').value = '';
       document.getElementById('f-concepto').value = '';
       ['f-invoice', 'f-control'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      renderMoreSummary();
       pos.setCart([]);
       payMethod = '';
       renderPayMethods();
       pos.refresh();
       pos.success(`
         <div class="flex items-center justify-between gap-2">
-          <span>✅ Venta <strong>${esc(refDoc)}</strong> registrada por <strong>$${fmtNum(total)}</strong>${entidad ? ' a ' + esc(entidad) : ''}${entidad.endsWith('.') ? '' : '.'}</span>
+          <span>✅ ${fiscal ? 'Venta' : 'Venta sin factura'} <strong>${esc(refDoc)}</strong> registrada por <strong>$${fmtNum(total)}</strong>${entidad ? ' a ' + esc(entidad) : ''}${entidad.endsWith('.') ? '' : '.'}</span>
           <button id="btn-print-last" class="flex-shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg">🖨 Imprimir nota</button>
         </div>`);
       document.getElementById('btn-print-last').addEventListener('click', () => printSale(refDoc));
@@ -330,7 +388,10 @@ const Sales = {
     }, { signal });
     document.getElementById('btn-business').addEventListener('click', () => openBusinessProfileModal(Store), { signal });
 
+    ['f-date', 'f-concepto', 'f-invoice'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', renderMoreSummary, { signal }); });
     renderPayMethods();
+    renderFiscal();
+    renderMoreSummary();
     renderRecentSales();
     return () => destroy.abort();
   }

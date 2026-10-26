@@ -19,8 +19,8 @@ export function invoiceFieldsHtml(fs, { input, label }) {
     <label class="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer">
       <input id="inv-on" type="checkbox" class="w-4 h-4 accent-blue-600"> 🧾 Registrar factura fiscal del proveedor (va al Libro de Compras)
     </label>
-    <div id="inv-box" class="hidden bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-3">
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div id="inv-box" class="hidden bg-blue-50 border border-blue-100 rounded-xl p-3 space-y-2">
+      <div class="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2">
         <div>
           <label class="${label}">N.º factura *</label>
           <input id="inv-number" type="text" class="${input}">
@@ -29,21 +29,31 @@ export function invoiceFieldsHtml(fs, { input, label }) {
           <label class="${label}">N.º de control</label>
           <input id="inv-control" type="text" placeholder="00-000000" class="${input}">
         </div>
+        <div class="col-span-2 sm:col-span-1">
+          <label class="${label}" title="Renglones sin IVA">Exento / no sujeto</label>
+          ${money('inv-exempt')}
+        </div>
+        <div>
+          <label class="${label}">Base imponible ${esc(fs.rateGeneral)}%</label>
+          ${money('inv-base-g')}
+        </div>
+        <div>
+          <label class="${label}">IVA ${esc(fs.rateGeneral)}%</label>
+          ${money('inv-tax-g')}
+        </div>
+        <div>
+          <label class="${label}">Base imponible ${esc(fs.rateReducida)}%</label>
+          ${money('inv-base-r')}
+        </div>
+        <div>
+          <label class="${label}">IVA ${esc(fs.rateReducida)}%</label>
+          ${money('inv-tax-r')}
+        </div>
       </div>
-      <div class="overflow-x-auto">
-        <table class="w-full text-xs">
-          <thead><tr class="text-[10px] font-bold uppercase text-slate-500">
-            <th class="p-1.5 text-left">Renglones de la factura</th><th class="p-1.5 text-right w-36">Base imponible</th><th class="p-1.5 text-right w-36">IVA</th>
-          </tr></thead>
-          <tbody>
-            <tr><td class="p-1.5">Exento / no sujeto <span class="text-slate-400">(sin IVA)</span></td><td class="p-1.5">${money('inv-exempt')}</td><td class="p-1.5 text-right text-slate-400">—</td></tr>
-            <tr><td class="p-1.5">Gravado alícuota general (${esc(fs.rateGeneral)}%)</td><td class="p-1.5">${money('inv-base-g')}</td><td class="p-1.5">${money('inv-tax-g')}</td></tr>
-            <tr><td class="p-1.5">Gravado alícuota reducida (${esc(fs.rateReducida)}%)</td><td class="p-1.5">${money('inv-base-r')}</td><td class="p-1.5">${money('inv-tax-r')}</td></tr>
-          </tbody>
-        </table>
+      <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <div id="inv-summary" class="flex flex-wrap gap-x-4 gap-y-1 text-xs"></div>
+        <p class="text-[11px] text-slate-500">El IVA se calcula solo sobre la base imponible; corrígelo si la factura trae otro monto por redondeo.</p>
       </div>
-      <div id="inv-summary" class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs"></div>
-      <p class="text-[11px] text-slate-500">El IVA se calcula solo sobre la base imponible; si la factura trae otro monto por redondeo, corrígelo en la columna IVA.</p>
     </div>`;
 }
 
@@ -85,7 +95,7 @@ export function mountInvoiceFields(fs, { totalInput, totalLabel, onChange } = {}
     }
     if (totalLabel) totalLabel.textContent = active ? 'Total factura (calculado)' : 'Monto Total *';
     const t = read();
-    const tile = (k, v, strong) => `<div class="rounded-lg bg-white border border-blue-100 px-2.5 py-1.5"><p class="text-[10px] font-bold uppercase text-slate-400">${k}</p><p class="font-mono ${strong ? 'font-black text-slate-900' : 'font-semibold text-slate-700'}">$${fmtNum(v)}</p></div>`;
+    const tile = (k, v, strong) => `<span class="text-slate-500">${k}: <span class="font-mono ${strong ? 'font-black text-slate-900' : 'font-semibold text-slate-700'}">$${fmtNum(v)}</span></span>`;
     $('inv-summary').innerHTML = tile('Exento', t.exempt) + tile('Base imponible', r2(t.base_general + t.base_reducida)) + tile('IVA (crédito fiscal)', t.tax) + tile('Total factura', t.total, true);
     if (onChange) onChange(t);
   };

@@ -118,8 +118,8 @@ const Expenses = {
             <select id="f-expense" class="${input}">${accountOptions(byTipo('Gasto'))}</select>
           </div>
           <div>
-            <label id="lbl-total" class="${label}">Monto Total *</label>
-            <input id="f-total" type="number" min="0" step="0.01" class="${input}">
+            <label class="${label}">Beneficiario</label>
+            <select id="f-contact" class="${input}">${contactOptions(contacts, 'proveedor')}</select>
           </div>
           <div>
             <label class="${label}">Forma de Pago *</label>
@@ -130,13 +130,13 @@ const Expenses = {
               <optgroup label="Crédito (CxP)">${accountOptions(byTipoEspecifico('Proveedores'))}</optgroup>
             </select>
           </div>
-          <div>
-            <label class="${label}">Beneficiario</label>
-            <select id="f-contact" class="${input}">${contactOptions(contacts, 'proveedor')}</select>
-          </div>
-          <div class="sm:col-span-2 lg:col-span-2">
+          <div class="sm:col-span-2 lg:col-span-3">
             <label class="${label}">Concepto *</label>
             <input id="f-concepto" type="text" class="${input}">
+          </div>
+          <div>
+            <label id="lbl-total" class="${label}">Monto Total *</label>
+            <input id="f-total" type="number" min="0" step="0.01" class="${input}">
           </div>
         </div>
         ${invoiceFieldsHtml(fs, { input, label })}
