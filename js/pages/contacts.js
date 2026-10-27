@@ -20,7 +20,7 @@ export const STAGES = {
   perdido: { label: 'Perdido', color: 'slate', icon: '✕' }
 };
 const CHANNELS = {
-  llamada: '📞 Llamada', whatsapp: '💬 WhatsApp', visita: '🤝 Visita', correo: '✉️ Correo', nota: '📝 Nota'
+  llamada: 'Llamada', whatsapp: 'WhatsApp', visita: 'Visita', correo: 'Correo', nota: 'Nota'
 };
 const today = () => new Date().toISOString().slice(0, 10);
 // Vuelve a pintar la vista actual pasando por el router (limpia los listeners).
@@ -59,7 +59,7 @@ function contactModal(existing, onSaved) {
       <div class="p-5 grid grid-cols-2 gap-3">
         <div class="col-span-2"><label class="${label}">Nombre / Razón social *</label><input id="m-name" class="${input}" value="${esc(c.name)}"></div>
         <div><label class="${label}">Rol</label><select id="m-type" class="${input}">${Object.entries(TYPE_LABEL).map(([k, v]) => `<option value="${k}" ${c.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-        <div><label class="${label}">Etapa</label><select id="m-stage" class="${input}">${Object.entries(STAGES).map(([k, v]) => `<option value="${k}" ${(c.stage || 'activo') === k ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}</select></div>
+        <div><label class="${label}">Etapa</label><select id="m-stage" class="${input}">${Object.entries(STAGES).map(([k, v]) => `<option value="${k}" ${(c.stage || 'activo') === k ? 'selected' : ''}>${v.label}</option>`).join('')}</select></div>
         <div><label class="${label}">Cédula / RIF</label><input id="m-rif" class="${input}" value="${esc(c.rif)}" placeholder="J-12345678-9"></div>
         <div><label class="${label}">Teléfono / WhatsApp</label><input id="m-phone" class="${input}" value="${esc(c.phone)}" placeholder="0414-1234567"></div>
         <div class="col-span-2"><label class="${label}">Correo</label><input id="m-email" type="email" class="${input}" value="${esc(c.email)}"></div>
@@ -137,15 +137,15 @@ function renderList(app) {
     const due = clients.filter(c => c.next_followup_date && c.next_followup_date <= t).length;
     const dormant = clients.filter(c => { const s = statFor(c); return s && daysBetween(s.last, t) > 60; }).length;
     const tile = (txt, val, color, stage) => `
-      <button data-stage-tile="${stage}" class="text-left rounded-2xl border p-4 transition ${listState.stage === stage && stage ? `border-${color}-400 bg-${color}-50` : 'border-slate-200 bg-white hover:border-slate-300'}">
-        <div class="text-[11px] font-bold uppercase tracking-wide text-${color}-600">${txt}</div>
-        <div class="text-2xl font-black text-slate-900">${fmtInt(val)}</div>
+      <button data-stage-tile="${stage}" class="text-left rounded-xl border p-4 transition ${listState.stage === stage && stage ? 'border-blue-500 ring-1 ring-blue-500 bg-white' : 'border-slate-200 bg-white hover:border-slate-300'}">
+        <div class="text-xs text-slate-500">${txt}</div>
+        <div class="text-2xl font-semibold text-slate-900">${fmtInt(val)}</div>
       </button>`;
     document.getElementById('crm-tiles').innerHTML =
-      tile('✅ Clientes activos', clients.filter(c => (c.stage || 'activo') === 'activo').length, 'emerald', 'activo') +
-      tile('🌱 Prospectos', clients.filter(c => c.stage === 'prospecto').length, 'sky', 'prospecto') +
-      tile('⏰ Seguimientos para hoy', due, 'rose', '') +
-      tile('💤 Sin comprar +60 días', dormant, 'amber', '');
+      tile('Clientes activos', clients.filter(c => (c.stage || 'activo') === 'activo').length, 'emerald', 'activo') +
+      tile('Prospectos', clients.filter(c => c.stage === 'prospecto').length, 'sky', 'prospecto') +
+      tile('Seguimientos para hoy', due, 'rose', '') +
+      tile('Sin comprar +60 días', dormant, 'amber', '');
     document.querySelectorAll('[data-stage-tile]').forEach(b => b.addEventListener('click', () => {
       if (!b.dataset.stageTile) { listState.sort = b.textContent.includes('Seguimientos') ? 'followup' : 'last'; }
       else listState.stage = listState.stage === b.dataset.stageTile ? '' : b.dataset.stageTile;
@@ -163,11 +163,11 @@ function renderList(app) {
         return `
         <a href="#/contabilidad/contactos/${esc(c.id)}" class="flex flex-col md:flex-row md:items-center gap-3 p-3 rounded-2xl border border-slate-100 hover:border-violet-300 hover:shadow-sm bg-white transition">
           <div class="flex items-center gap-3 flex-1 min-w-0">
-            <div class="w-11 h-11 rounded-2xl bg-violet-100 text-violet-700 font-black flex items-center justify-center shrink-0">${esc(initials(c.name))}</div>
+            <div class="w-11 h-11 rounded-2xl bg-violet-100 text-violet-700 font-semibold flex items-center justify-center shrink-0">${esc(initials(c.name))}</div>
             <div class="min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="font-bold text-slate-800 truncate">${esc(c.name)}</span>
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-${st.color}-700 bg-${st.color}-100">${st.icon} ${st.label}</span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-${st.color}-700 bg-${st.color}-100">${st.label}</span>
                 ${c.type !== 'cliente' ? `<span class="text-[10px] font-semibold text-slate-400">${TYPE_LABEL[c.type] || ''}</span>` : ''}
                 ${Number(c.discount_pct) > 0 ? `<span class="text-[10px] font-bold text-rose-600">-${fmtNum(c.discount_pct).replace(/\.00$/, '')}%</span>` : ''}
               </div>
@@ -175,10 +175,10 @@ function renderList(app) {
             </div>
           </div>
           <div class="grid grid-cols-4 gap-3 text-right md:w-[30rem] shrink-0">
-            <div><div class="text-[10px] uppercase font-bold text-slate-400">Compras</div><div class="text-sm font-black text-slate-800">$${fmtNum(s ? s.revenue : 0)}</div><div class="text-[10px] text-slate-400">${s ? s.orders : 0} venta(s)</div></div>
+            <div><div class="text-[10px] uppercase font-bold text-slate-400">Compras</div><div class="text-sm font-semibold text-slate-800">$${fmtNum(s ? s.revenue : 0)}</div><div class="text-[10px] text-slate-400">${s ? s.orders : 0} venta(s)</div></div>
             <div><div class="text-[10px] uppercase font-bold text-slate-400">Última</div><div class="text-xs font-bold text-slate-700">${ago(s && s.last)}</div></div>
             <div><div class="text-[10px] uppercase font-bold text-slate-400">Por cobrar</div><div class="text-xs font-bold ${owed > 0.01 ? 'text-sky-700' : 'text-slate-300'}">$${fmtNum(Math.max(0, owed))}</div></div>
-            <div><div class="text-[10px] uppercase font-bold text-slate-400">Seguimiento</div><div class="text-xs font-bold ${overdue ? 'text-rose-600' : 'text-slate-500'}">${c.next_followup_date ? (overdue ? '⏰ ' : '') + esc(c.next_followup_date) : '—'}</div></div>
+            <div><div class="text-[10px] uppercase font-bold text-slate-400">Seguimiento</div><div class="text-xs font-bold ${overdue ? 'text-rose-600' : 'text-slate-500'}">${c.next_followup_date ? (overdue ? '' : '') + esc(c.next_followup_date) : '—'}</div></div>
           </div>
         </a>`;
       }).join('');
@@ -187,7 +187,7 @@ function renderList(app) {
   const body = `
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <div>
-        <h1 class="text-xl font-black text-slate-900">Clientes y Contactos</h1>
+        <h1 class="text-xl font-semibold text-slate-900">Clientes y Contactos</h1>
         <p class="text-xs text-slate-500">Lo que compra cada cliente, su seguimiento y sus ofertas. Toca un contacto para ver su ficha.</p>
       </div>
       <button id="btn-new" class="${btnPrimary}">+ Nuevo contacto</button>
@@ -201,7 +201,7 @@ function renderList(app) {
             <option value="">Todos los roles</option><option value="cliente">Clientes</option><option value="proveedor">Proveedores</option>
           </select>
           <select id="crm-stage" class="${input}" style="width:150px">
-            <option value="">Todas las etapas</option>${Object.entries(STAGES).map(([k, v]) => `<option value="${k}">${v.icon} ${v.label}</option>`).join('')}
+            <option value="">Todas las etapas</option>${Object.entries(STAGES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}
           </select>
           <select id="crm-sort" class="${input}" style="width:190px">
             <option value="revenue">Mayor comprador</option><option value="last">Compra más reciente</option>
@@ -262,11 +262,11 @@ function renderProfile(app, contactId) {
   const kpi = (lbl, val, sub = '') => `
     <div class="bg-white border border-slate-200 rounded-2xl p-3">
       <div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">${lbl}</div>
-      <div class="text-lg font-black text-slate-900">${val}</div>
+      <div class="text-lg font-semibold text-slate-900">${val}</div>
       ${sub ? `<div class="text-[10px] text-slate-400">${sub}</div>` : ''}
     </div>`;
 
-  const tabs = [['compras', '🧾 Compras'], ['productos', '📦 Lo que compra'], ['seguimiento', '📞 Seguimiento'], ['ofertas', '🎯 Ofertas'], ['datos', '👤 Datos']];
+  const tabs = [['compras', 'Compras'], ['productos', 'Lo que compra'], ['seguimiento', 'Seguimiento'], ['ofertas', 'Ofertas'], ['datos', 'Datos']];
 
   const renderTab = () => {
     document.getElementById('pf-tabs').innerHTML = tabs.map(([k, v]) => `
@@ -297,25 +297,25 @@ function renderProfile(app, contactId) {
           <td class="p-2 text-right">${d.items}</td><td class="p-2 text-right">${fmtInt(d.qty)}</td>
           <td class="p-2 text-right font-bold">$${fmtNum(d.total)}</td>
           <td class="p-2 text-right ${d.margin >= 0 ? 'text-emerald-700' : 'text-red-600'}">$${fmtNum(d.margin)}</td>
-          <td class="p-2 text-right"><button data-print-sale="${esc(d.refDoc)}" class="text-blue-600 font-semibold">🖨</button></td></tr>`).join('')}</tbody></table>`;
+          <td class="p-2 text-right"><button data-print-sale="${esc(d.refDoc)}" class="text-slate-500 hover:text-blue-600">Imprimir</button></td></tr>`).join('')}</tbody></table>`;
   };
 
   const productosHtml = () => `
     ${bought.length === 0 ? '<p class="text-sm text-slate-400 py-6 text-center">Aún no ha comprado productos.</p>' : `
       <div class="grid grid-cols-1 md:grid-cols-2 gap-2">${bought.map(([, r]) => `
         <div class="flex items-center gap-3 p-2.5 rounded-xl border border-slate-100">
-          ${r.foto ? `<img src="${esc(r.foto)}" class="w-12 h-12 rounded-lg object-cover border border-slate-200" alt="">` : '<div class="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center">📦</div>'}
+          ${r.foto ? `<img src="${esc(r.foto)}" class="w-12 h-12 rounded-lg object-cover border border-slate-200" alt="">` : '<div class="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center"></div>'}
           <div class="flex-1 min-w-0">
             <div class="text-xs font-bold text-slate-800 truncate">${esc(r.name)}</div>
             <div class="text-[10px] text-slate-400">${esc(r.sku)} · ${r.times.size} compra(s) · última ${esc(r.lastDate)} a $${fmtNum(r.lastPrice)}</div>
           </div>
-          <div class="text-right"><div class="text-sm font-black">${fmtInt(r.qty)} u.</div><div class="text-[10px] text-slate-400">$${fmtNum(r.revenue)}</div></div>
+          <div class="text-right"><div class="text-sm font-semibold">${fmtInt(r.qty)} u.</div><div class="text-[10px] text-slate-400">$${fmtNum(r.revenue)}</div></div>
         </div>`).join('')}</div>`}
     ${crossSell.length ? `
-      <h3 class="text-xs font-bold text-slate-600 mt-5 mb-2">💡 Podría interesarle (de las categorías que compra, con existencia)</h3>
+      <h3 class="text-xs font-bold text-slate-600 mt-5 mb-2">Podría interesarle (de las categorías que compra, con existencia)</h3>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-2">${crossSell.map(p => `
         <div class="rounded-xl border border-slate-100 p-2">
-          ${p.foto_url ? `<img src="${esc(p.foto_url)}" class="w-full aspect-square object-cover rounded-lg" alt="">` : '<div class="w-full aspect-square rounded-lg bg-slate-100 flex items-center justify-center text-2xl">📦</div>'}
+          ${p.foto_url ? `<img src="${esc(p.foto_url)}" class="w-full aspect-square object-cover rounded-lg" alt="">` : '<div class="w-full aspect-square rounded-lg bg-slate-100 flex items-center justify-center text-2xl"></div>'}
           <div class="text-[11px] font-bold text-slate-700 mt-1 line-clamp-2">${esc(p.name)}</div>
           <div class="text-[10px] text-slate-400">${fmtInt(p.stock)} disp. · $${fmtNum(p.sale_price)}</div>
         </div>`).join('')}</div>` : ''}`;
@@ -345,7 +345,7 @@ function renderProfile(app, contactId) {
             </div>
           </div>
           <div class="rounded-2xl border border-slate-200 p-3 space-y-2">
-            <h3 class="text-xs font-bold text-slate-700">⏰ Programar próximo seguimiento</h3>
+            <h3 class="text-xs font-bold text-slate-700">Programar próximo seguimiento</h3>
             <input id="task-note" class="${input}" placeholder="Llamar para confirmar el pedido…">
             <div class="flex gap-2 items-end">
               <div class="flex-1"><label class="${label}">¿Cuándo?</label><input id="task-date" type="date" class="${input}"></div>
@@ -367,7 +367,7 @@ function renderProfile(app, contactId) {
           <h3 class="text-xs font-bold text-slate-700 mb-2">Historial</h3>
           ${timeline.length === 0 ? '<p class="text-xs text-slate-400">Sin actividad todavía.</p>' : `<ol class="relative border-l-2 border-slate-100 ml-3 space-y-3">${timeline.map(e => `
             <li class="ml-4">
-              <span class="absolute -left-[13px] w-6 h-6 rounded-full bg-white border border-slate-200 flex items-center justify-center text-xs">${e.icon}</span>
+              <span class="absolute -left-[13px] w-6 h-6 rounded-full bg-white border border-slate-200 flex items-center justify-center"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span></span>
               <div class="text-[10px] text-slate-400">${esc(e.date)}</div>
               <div class="text-xs font-bold text-slate-700">${esc(e.title)}</div>
               ${e.text ? `<div class="text-xs text-slate-500 whitespace-pre-line">${esc(e.text)}</div>` : ''}
@@ -381,25 +381,25 @@ function renderProfile(app, contactId) {
     return `
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
         <p class="text-xs text-slate-500">Arma una oferta con los productos que ya compra (⭐) o los que te interese mover, con un descuento especial, e imprímela o mándala por WhatsApp.</p>
-        <a href="#/contabilidad/presupuestos/nuevo?cliente=${esc(contact.id)}&tipo=oferta" class="${btnPrimary} whitespace-nowrap">🎯 Nueva oferta</a>
+        <a href="#/contabilidad/presupuestos/nuevo?cliente=${esc(contact.id)}&tipo=oferta" class="${btnPrimary} whitespace-nowrap">Nueva oferta</a>
       </div>
       ${quotes.length === 0 ? '<p class="text-sm text-slate-400 py-6 text-center">Sin ofertas ni presupuestos para este cliente.</p>' : quotes.map(q => `
         <div class="flex flex-col sm:flex-row sm:items-center gap-2 p-3 rounded-xl border border-slate-100 mb-2">
           <div class="flex-1">
-            <div class="text-xs font-bold text-slate-800">${q.kind === 'oferta' ? '🎯 Oferta' : '📄 Presupuesto'} ${esc(q.quote_number)} <span class="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600">${esc(q.status)}</span></div>
+            <div class="text-xs font-bold text-slate-800">${q.kind === 'oferta' ? 'Oferta' : 'Presupuesto'} ${esc(q.quote_number)} <span class="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600">${esc(q.status)}</span></div>
             <div class="text-[11px] text-slate-400">${esc(q.date)}${q.valid_until ? ' · válida hasta ' + esc(q.valid_until) : ''} · ${Store.getQuoteItems(q).length} producto(s)</div>
           </div>
-          <div class="text-lg font-black text-slate-900">$${fmtNum(q.total)}</div>
+          <div class="text-lg font-semibold text-slate-900">$${fmtNum(q.total)}</div>
           <div class="flex gap-1.5">
-            <button data-print-quote="${esc(q.id)}" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200">🖨 Imprimir</button>
-            ${contact.phone ? `<a target="_blank" rel="noopener" href="${esc(whatsappQuoteLink(q, contact))}" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white">💬 WhatsApp</a>` : ''}
+            <button data-print-quote="${esc(q.id)}" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 hover:bg-slate-200">Imprimir</button>
+            ${contact.phone ? `<a target="_blank" rel="noopener" href="${esc(whatsappQuoteLink(q, contact))}" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white">WhatsApp</a>` : ''}
           </div>
         </div>`).join('')}`;
   };
 
   const datosHtml = () => `
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-      ${[['Rol', TYPE_LABEL[contact.type]], ['Etapa', `${st.icon} ${st.label}`], ['Cédula / RIF', contact.rif], ['Teléfono', contact.phone], ['Correo', contact.email], ['Dirección', contact.address],
+      ${[['Rol', TYPE_LABEL[contact.type]], ['Etapa', `${st.label}`], ['Cédula / RIF', contact.rif], ['Teléfono', contact.phone], ['Correo', contact.email], ['Dirección', contact.address],
         ['Descuento especial', Number(contact.discount_pct) > 0 ? `${contact.discount_pct}%` : 'Ninguno'], ['Etiquetas', contact.tags], ['Retención de IVA', Number(contact.iva_retention_pct) > 0 ? `${contact.iva_retention_pct}% (contribuyente especial)` : 'No retiene'], ['Cliente desde', s.first || '—']]
         .map(([k, v]) => `<div class="rounded-xl bg-slate-50 p-3"><div class="text-[10px] uppercase font-bold text-slate-400">${k}</div><div class="font-semibold text-slate-800">${esc(v) || '—'}</div></div>`).join('')}
       <div class="md:col-span-2 rounded-xl bg-slate-50 p-3"><div class="text-[10px] uppercase font-bold text-slate-400">Notas</div><div class="text-slate-700 whitespace-pre-line">${esc(contact.notes) || '—'}</div></div>
@@ -466,12 +466,12 @@ function renderProfile(app, contactId) {
     <a href="#/contabilidad/contactos" class="text-xs font-semibold text-slate-500 hover:text-violet-700">← Clientes y Contactos</a>
     <div class="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center gap-4">
       <div class="flex items-center gap-4 flex-1 min-w-0">
-        <div class="w-16 h-16 rounded-2xl bg-violet-600 text-white text-xl font-black flex items-center justify-center shrink-0">${esc(initials(contact.name))}</div>
+        <div class="w-16 h-16 rounded-2xl bg-violet-600 text-white text-xl font-semibold flex items-center justify-center shrink-0">${esc(initials(contact.name))}</div>
         <div class="min-w-0">
-          <h1 class="text-xl font-black text-slate-900 truncate">${esc(contact.name)}</h1>
+          <h1 class="text-xl font-semibold text-slate-900 truncate">${esc(contact.name)}</h1>
           <div class="flex items-center gap-2 flex-wrap mt-1">
             <select id="pf-stage" class="text-[11px] font-bold rounded-full px-2 py-1 border-0 bg-${st.color}-100 text-${st.color}-700">
-              ${Object.entries(STAGES).map(([k, v]) => `<option value="${k}" ${(contact.stage || 'activo') === k ? 'selected' : ''}>${v.icon} ${v.label}</option>`).join('')}
+              ${Object.entries(STAGES).map(([k, v]) => `<option value="${k}" ${(contact.stage || 'activo') === k ? 'selected' : ''}>${v.label}</option>`).join('')}
             </select>
             <span class="text-xs text-slate-400">${esc(TYPE_LABEL[contact.type] || '')}${contact.rif ? ' · ' + esc(contact.rif) : ''}</span>
             ${Number(contact.discount_pct) > 0 ? `<span class="text-[11px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">Descuento especial -${fmtNum(contact.discount_pct).replace(/\.00$/, '')}%</span>` : ''}
@@ -480,10 +480,10 @@ function renderProfile(app, contactId) {
         </div>
       </div>
       <div class="flex gap-2 flex-wrap">
-        ${wa ? `<a href="${esc(wa)}" target="_blank" rel="noopener" class="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-600 text-white">💬 WhatsApp</a>` : ''}
-        ${contact.phone ? `<a href="tel:${esc(contact.phone)}" class="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700">📞 Llamar</a>` : ''}
-        <a href="#/contabilidad/presupuestos/nuevo?cliente=${esc(contact.id)}&tipo=oferta" class="px-3 py-2 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white">🎯 Nueva oferta</a>
-        <button id="pf-followup" class="px-3 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 hover:border-violet-300 text-slate-700">⏰ Seguimiento</button>
+        ${wa ? `<a href="${esc(wa)}" target="_blank" rel="noopener" class="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-600 text-white">WhatsApp</a>` : ''}
+        ${contact.phone ? `<a href="tel:${esc(contact.phone)}" class="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700">Llamar</a>` : ''}
+        <a href="#/contabilidad/presupuestos/nuevo?cliente=${esc(contact.id)}&tipo=oferta" class="px-3 py-2 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white">Nueva oferta</a>
+        <button id="pf-followup" class="px-3 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 hover:border-violet-300 text-slate-700">Seguimiento</button>
       </div>
     </div>
     <div class="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">

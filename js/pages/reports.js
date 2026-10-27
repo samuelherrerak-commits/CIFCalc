@@ -267,7 +267,7 @@ const Reports = {
       document.getElementById('rep-kpis').innerHTML = def.kpis.map(([k, lbl, kind]) => `
         <div class="bg-white border border-slate-200 rounded-2xl p-3">
           <div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">${lbl}</div>
-          <div class="text-lg font-black text-slate-900">${fmt(r.totals[k], kind)}</div>
+          <div class="text-lg font-semibold text-slate-900">${fmt(r.totals[k], kind)}</div>
           ${cmp ? `<div class="flex items-center gap-1.5">${delta(r.totals[k], r.ptotals[k], kind)}<span class="text-[10px] text-slate-400">antes ${fmt(r.ptotals[k], kind)}</span></div>` : ''}
         </div>`).join('');
 
@@ -282,7 +282,7 @@ const Reports = {
       const box = document.getElementById('rep-chart');
       const width = Math.max(320, box.clientWidth || 800);
       box.innerHTML = r.cur.length === 0
-        ? '<div class="py-16 text-center text-slate-400"><div class="text-3xl mb-2">📭</div><p class="text-sm font-semibold">No hay datos para este periodo y filtros.</p><p class="text-xs">Prueba con otro periodo (por ejemplo "Todo") o quita filtros.</p></div>'
+        ? '<div class="py-16 text-center text-slate-400"><p class="text-sm font-semibold">No hay datos para este periodo y filtros.</p><p class="text-xs">Prueba con otro periodo (por ejemplo "Todo") o quita filtros.</p></div>'
         : (gType === 'time' ? columnChart(pts, mKind, width, cmp) : barChart(pts, mKind, width, cmp));
       document.getElementById('rep-legend').innerHTML = cmp && r.cur.length
         ? `<span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm" style="background:${C_CUR}"></span>Periodo elegido</span><span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm" style="background:${C_PREV}"></span>Periodo anterior</span>`
@@ -351,12 +351,12 @@ const Reports = {
     const body = `
       <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
         <div>
-          <h1 class="text-xl font-black text-slate-900">Reportes</h1>
+          <h1 class="text-xl font-semibold text-slate-900">Reportes</h1>
           <p class="text-xs text-slate-500">Elige el periodo, filtra, agrupa y mide lo que quieras. Pasa el mouse por el gráfico para ver el detalle.</p>
         </div>
         <div class="flex gap-1 bg-slate-100 p-1 rounded-xl">
-          <a href="#/contabilidad/reportes/ventas" class="px-4 py-1.5 rounded-lg text-xs font-bold ${def.key === 'ventas' ? 'bg-white shadow text-emerald-700' : 'text-slate-500'}">🛒 Ventas</a>
-          <a href="#/contabilidad/reportes/gastos" class="px-4 py-1.5 rounded-lg text-xs font-bold ${def.key === 'gastos' ? 'bg-white shadow text-rose-700' : 'text-slate-500'}">💸 Gastos y Costos</a>
+          <a href="#/contabilidad/reportes/ventas" class="px-4 py-1.5 rounded-lg text-xs font-bold ${def.key === 'ventas' ? 'bg-white shadow text-emerald-700' : 'text-slate-500'}">Ventas</a>
+          <a href="#/contabilidad/reportes/gastos" class="px-4 py-1.5 rounded-lg text-xs font-bold ${def.key === 'gastos' ? 'bg-white shadow text-rose-700' : 'text-slate-500'}">Gastos y Costos</a>
         </div>
       </div>
 
@@ -384,7 +384,7 @@ const Reports = {
 
       <div class="${card}">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <h2 id="rep-chart-title" class="text-sm font-bold text-slate-700"></h2>
+          <h2 id="rep-chart-title" class="text-sm font-semibold text-slate-900"></h2>
           <div id="rep-legend" class="flex gap-3 text-[11px] text-slate-500"></div>
         </div>
         <div class="relative">
@@ -395,7 +395,7 @@ const Reports = {
 
       <div class="${card}">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
-          <h2 class="text-sm font-bold text-slate-700">Tabla <span class="font-normal text-slate-400 text-xs">· toca un encabezado para ordenar</span></h2>
+          <h2 class="text-sm font-semibold text-slate-900">Tabla <span class="font-normal text-slate-400 text-xs">· toca un encabezado para ordenar</span></h2>
           <div class="flex gap-2">
             <button id="rep-csv" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700">⬇ CSV de la tabla</button>
             <button id="rep-csv-lines" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700">⬇ CSV del detalle</button>

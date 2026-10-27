@@ -178,7 +178,7 @@ const Inventory = {
       <div id="panel-stock" class="${card}">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
           <div>
-            <h2 class="text-sm font-bold text-slate-700">Existencias</h2>
+            <h2 class="text-sm font-semibold text-slate-900">Existencias</h2>
             <p class="text-xs text-slate-400">Entra al completar un contenedor, sale con cada venta. Es de referencia, no una cuenta contable.</p>
           </div>
           <div class="flex items-center gap-3">
@@ -198,7 +198,7 @@ const Inventory = {
       </div>
 
       <div id="panel-movimientos" class="${card} hidden">
-        <h2 class="text-sm font-bold text-slate-700 mb-3">Movimientos de Inventario</h2>
+        <h2 class="text-sm font-semibold text-slate-900 mb-3">Movimientos de Inventario</h2>
         <table class="w-full text-left text-xs">
           <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Tipo</th><th class="p-2">Referencia</th><th class="p-2">Producto</th><th class="p-2 text-right">Cantidad</th></tr></thead>
           <tbody id="history-tbody"></tbody>

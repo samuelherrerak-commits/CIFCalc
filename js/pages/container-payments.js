@@ -141,7 +141,7 @@ const ContainerPayments = {
 
     const body = `
       <div class="${card}">
-        <h2 class="text-sm font-bold text-slate-700 mb-1">Pagos de Contenedores</h2>
+        <h2 class="text-sm font-semibold text-slate-900 mb-1">Pagos de Contenedores</h2>
         <p class="text-xs text-slate-400 mb-3">Saldo pendiente contra Contenedores por Pagar de cada contenedor ya completado.</p>
         <table class="w-full text-left text-xs">
           <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">

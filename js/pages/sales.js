@@ -104,9 +104,9 @@ const Sales = {
     // con ese tipo específico; si no hay ninguna (p. ej. se borró el plan de
     // cuentas) se crea la del catálogo sugerido al procesar la venta.
     const PAY_METHODS = [
-      { key: 'efectivo', label: '💵 Efectivo', te: 'Efectivo', codigo: '1.1.01.01' },
-      { key: 'banco', label: '🏦 Banco', te: 'Banco', codigo: '1.1.01.02' },
-      { key: 'credito', label: '🧾 Crédito', te: 'Clientes', codigo: '1.1.02.01' }
+      { key: 'efectivo', label: 'Efectivo', te: 'Efectivo', codigo: '1.1.01.01' },
+      { key: 'banco', label: 'Banco', te: 'Banco', codigo: '1.1.01.02' },
+      { key: 'credito', label: 'Crédito', te: 'Clientes', codigo: '1.1.02.01' }
     ];
     let payMethod = '';
     const accountsFor = (m) => accounts.filter(a => a.tipo_especifico === m.te).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
@@ -118,8 +118,8 @@ const Sales = {
     const renderPayMethods = () => {
       const wrap = document.getElementById('f-pay-methods');
       wrap.innerHTML = PAY_METHODS.map(m => `
-        <button type="button" data-pay="${m.key}" title="Forma de pago" class="py-2 rounded-xl text-xs font-bold border-2 transition ${
-          payMethod === m.key ? 'border-blue-600 bg-blue-600 text-white shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-blue-300'
+        <button type="button" data-pay="${m.key}" title="Forma de pago" class="py-1.5 rounded-md text-xs transition ${
+          payMethod === m.key ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-slate-500 hover:text-slate-900'
         }">${m.label}</button>`).join('');
       wrap.querySelectorAll('[data-pay]').forEach(b => b.addEventListener('click', () => { payMethod = b.dataset.pay; pos.flash(''); renderPayMethods(); }));
       // Si hay más de una cuenta de ese tipo (p. ej. dos bancos), se elige cuál.
@@ -168,12 +168,12 @@ const Sales = {
           <tr class="border-b border-slate-100 hover:bg-slate-50">
             <td class="p-2">${esc(s.date)}</td>
             <td class="p-2 font-mono">${esc(s.refDoc)}
-              ${s.fiscal ? `<span class="ml-1 font-sans text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full">🧾 Fiscal${s.fiscal !== 'sí' ? ' ' + esc(s.fiscal) : ''}</span>` : ''}
-              ${s.nonFiscal ? '<span class="ml-1 font-sans text-[10px] font-semibold text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded-full">Sin factura</span>' : ''}</td>
+              ${s.fiscal ? `<span class="ml-1 font-sans text-[10px] text-slate-500">· Factura${s.fiscal !== 'sí' ? ' ' + esc(s.fiscal) : ''}</span>` : ''}
+              ${s.nonFiscal ? '<span class="ml-1 font-sans text-[10px] text-slate-400">· Sin factura</span>' : ''}</td>
             <td class="p-2 text-slate-500">${esc(s.entidad) || '—'}</td>
             <td class="p-2 text-right">${s.itemCount}</td>
-            <td class="p-2 text-right font-mono font-semibold text-emerald-700">$${fmtNum(s.total)}</td>
-            <td class="p-2 text-right"><button data-print-sale="${esc(s.refDoc)}" class="text-blue-600 hover:text-blue-800 font-semibold">🖨 Nota</button></td>
+            <td class="p-2 text-right font-mono text-slate-900">$${fmtNum(s.total)}</td>
+            <td class="p-2 text-right"><button data-print-sale="${esc(s.refDoc)}" class="text-slate-500 hover:text-blue-600">Imprimir</button></td>
           </tr>
         `).join('');
       tbody.querySelectorAll('[data-print-sale]').forEach(b => b.addEventListener('click', () => printSale(b.dataset.printSale)));
@@ -182,10 +182,10 @@ const Sales = {
     const body = `
       ${sourceQuote ? `<div class="bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-800">Carrito precargado desde el presupuesto <strong>${esc(sourceQuote.quote_number)}</strong>.${shortages.length ? `<div class="mt-1 text-amber-700">⚠ Sin existencia suficiente, se ajustó: ${esc(shortages.join(', '))}.</div>` : ''}</div>` : ''}
       <div id="pos-root"></div>
-      <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+      <div class="bg-white border border-slate-200 rounded-xl p-4">
         <div class="flex items-center justify-between gap-2 mb-3">
-          <h2 class="text-sm font-bold text-slate-700">Ventas Recientes</h2>
-          <button id="btn-business" class="text-xs font-semibold text-slate-500 hover:text-blue-700">⚙ Datos de la empresa (para la nota)</button>
+          <h2 class="text-sm font-semibold text-slate-900">Ventas recientes</h2>
+          <button id="btn-business" class="text-xs text-slate-500 hover:text-blue-600">Datos de la empresa</button>
         </div>
         <table class="w-full text-left text-xs">
           <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2">Cliente</th><th class="p-2 text-right">Ítems</th><th class="p-2 text-right">Total</th><th class="p-2"></th></tr></thead>
@@ -217,14 +217,14 @@ const Sales = {
       // vista; fecha, concepto y N.º de factura van en un desplegable para
       // que el carrito quepa en la pantalla sin desplazarse.
       footerFieldsHtml: `
-        ${fs.ivaEnabled ? `<div id="f-fiscal" class="grid grid-cols-2 gap-1.5"></div>` : ''}
+        ${fs.ivaEnabled ? `<div id="f-fiscal" class="grid grid-cols-2 gap-0.5 p-0.5 rounded-lg bg-slate-100"></div>` : ''}
         <div>
-          <div id="f-pay-methods" class="grid grid-cols-3 gap-1.5"></div>
+          <div id="f-pay-methods" class="grid grid-cols-3 gap-0.5 p-0.5 rounded-lg bg-slate-100"></div>
           <select id="f-pay-account" class="${inputSm} hidden mt-1.5"></select>
         </div>
         <details id="f-more" class="rounded-lg border border-slate-200 bg-white">
           <summary class="px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer flex items-center justify-between gap-2">
-            <span>📝 Fecha, concepto${fs.ivaEnabled ? ' y N.º de factura' : ''}</span><span id="f-more-sum" class="text-slate-400 truncate"></span>
+            <span>Fecha, concepto${fs.ivaEnabled ? ' y N.º de factura' : ''}</span><span id="f-more-sum" class="text-slate-400 truncate"></span>
           </summary>
           <div class="px-2.5 pb-2.5 space-y-2">
             <div class="grid grid-cols-2 gap-2">
@@ -263,10 +263,10 @@ const Sales = {
       const wrap = document.getElementById('f-fiscal');
       if (!wrap) return;
       const opt = (val, text, hint) => `
-        <button type="button" data-fiscal="${val}" title="${hint}" class="py-1.5 px-2 rounded-xl text-xs font-bold border-2 transition ${
-          saleFiscal === val ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500 hover:border-indigo-300'
+        <button type="button" data-fiscal="${val}" title="${hint}" class="py-1.5 px-2 rounded-md text-xs transition ${
+          saleFiscal === val ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-slate-500 hover:text-slate-900'
         }">${text}</button>`;
-      wrap.innerHTML = opt(true, '🧾 Con factura', 'Fiscal · IVA y Libro de Ventas') + opt(false, '📄 Sin factura', 'Nota de entrega · sin IVA');
+      wrap.innerHTML = opt(true, 'Con factura', 'Fiscal · IVA y Libro de Ventas') + opt(false, 'Sin factura', 'Nota de entrega · sin IVA');
       wrap.querySelectorAll('[data-fiscal]').forEach(b => b.addEventListener('click', () => {
         saleFiscal = b.dataset.fiscal === 'true';
         renderFiscal();
@@ -371,8 +371,8 @@ const Sales = {
       pos.refresh();
       pos.success(`
         <div class="flex items-center justify-between gap-2">
-          <span>✅ ${fiscal ? 'Venta' : 'Venta sin factura'} <strong>${esc(refDoc)}</strong> registrada por <strong>$${fmtNum(total)}</strong>${entidad ? ' a ' + esc(entidad) : ''}${entidad.endsWith('.') ? '' : '.'}</span>
-          <button id="btn-print-last" class="flex-shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg">🖨 Imprimir nota</button>
+          <span>${fiscal ? 'Venta' : 'Venta sin factura'} <strong>${esc(refDoc)}</strong> registrada por <strong>$${fmtNum(total)}</strong>${entidad ? ' a ' + esc(entidad) : ''}${entidad.endsWith('.') ? '' : '.'}</span>
+          <button id="btn-print-last" class="flex-shrink-0 border border-slate-300 hover:bg-white text-slate-700 font-medium px-3 py-1.5 rounded-lg">Imprimir nota</button>
         </div>`);
       document.getElementById('btn-print-last').addEventListener('click', () => printSale(refDoc));
       renderRecentSales();

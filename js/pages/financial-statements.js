@@ -10,8 +10,8 @@ import AccountingShell, { card, input, label } from '../components/accounting-sh
 // Notas, con periodo comparativo, controles de cuadre e impresión con firmas.
 
 const TABS = [
-  ['esf', '🏛️ Situación Financiera'], ['eri', '📊 Resultados'], ['ecp', '🧮 Cambios en el Patrimonio'],
-  ['efe', '💵 Flujos de Efectivo'], ['notas', '📝 Notas']
+  ['esf', 'Situación Financiera'], ['eri', 'Resultados'], ['ecp', 'Cambios en el Patrimonio'],
+  ['efe', 'Flujos de Efectivo'], ['notas', 'Notas']
 ];
 let state = { tab: 'esf', kind: 'anio', year: new Date().getFullYear(), month: new Date().getMonth() + 1, from: '', to: '' };
 try { state = { ...state, ...JSON.parse(localStorage.getItem('cif_fs_state') || '{}') }; } catch { /* sin almacenamiento */ }
@@ -30,7 +30,7 @@ const longDate = (iso) => {
 
 // Filas de tabla: [texto, actual, anterior, opciones]
 function row(text, cur, prev, o = {}) {
-  const cls = o.total ? 'font-bold border-t border-slate-300' : o.grand ? 'font-black border-t-2 border-double border-slate-800' : o.head ? 'font-bold text-slate-800 pt-3' : '';
+  const cls = o.total ? 'font-bold border-t border-slate-300' : o.grand ? 'font-semibold border-t-2 border-double border-slate-800' : o.head ? 'font-bold text-slate-800 pt-3' : '';
   const indent = o.indent ? `padding-left:${o.indent * 16}px` : '';
   if (o.head) return `<tr><td colspan="3" class="py-1 ${cls}" style="${indent}">${esc(text)}</td></tr>`;
   return `<tr class="${o.muted ? 'text-slate-500' : ''}">
@@ -216,7 +216,7 @@ function printStatements(s, which) {
       .co { font-weight: 800; font-size: 15px; } .title { font-weight: 800; font-size: 14px; margin-top: 8px; text-transform: uppercase; } .sub { color: #374151; }
       table { width: 100%; border-collapse: collapse; } th { font-size: 9.5px; text-transform: uppercase; color: #6b7280; padding: 4px 0; }
       td { padding: 2.5px 0; vertical-align: top; } .text-right { text-align: right; } .font-mono { font-family: "Courier New", monospace; }
-      .font-bold, .font-black { font-weight: 700; } .border-t { border-top: 1px solid #9ca3af; } .border-t-2 { border-top: 3px double #111827; }
+      .font-bold, .font-semibold { font-weight: 700; } .border-t { border-top: 1px solid #9ca3af; } .border-t-2 { border-top: 3px double #111827; }
       .text-slate-500, .text-slate-400 { color: #6b7280; } .text-blue-600 { color: #1d4ed8; } .text-amber-700 { color: #92400e; }
       h3 { font-size: 12px; margin: 12px 0 4px; } ul { margin: 0; padding-left: 18px; } p { margin: 4px 0; }
       .foot { margin-top: 14px; font-style: italic; color: #4b5563; }
@@ -265,14 +265,14 @@ const FinancialStatements = {
         check(okEq, 'Patrimonio concilia con el balance', 'El patrimonio no concilia') +
         check(okCf, 'Flujo de efectivo concilia con caja y bancos', `El flujo no concilia por ${money(s.cf.diferencia)}`);
 
-      const kpi = (t, v, sub) => `<div class="bg-white border border-slate-200 rounded-2xl p-3"><div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">${t}</div><div class="text-lg font-black text-slate-900">$${fmtNum(v)}</div><div class="text-[10px] text-slate-400">${sub}</div></div>`;
+      const kpi = (t, v, sub) => `<div class="bg-white border border-slate-200 rounded-2xl p-3"><div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">${t}</div><div class="text-lg font-semibold text-slate-900">$${fmtNum(v)}</div><div class="text-[10px] text-slate-400">${sub}</div></div>`;
       const ac = s.bs.activoCorriente, pc = s.bs.pasivoCorriente;
       document.getElementById('fs-kpis').innerHTML =
         kpi('Ventas', s.is.ventas, esc(p.label)) +
         kpi('Resultado del ejercicio', s.is.resultado, s.is.ventas ? `${fmtNum(s.is.resultado / s.is.ventas * 100)}% de las ventas` : '—') +
         kpi('Activo total', s.bs.activoTotal, `al ${p.to}`) +
         kpi('Patrimonio', s.bs.patrimonio, `al ${p.to}`) +
-        `<div class="bg-white border border-slate-200 rounded-2xl p-3"><div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Liquidez corriente</div><div class="text-lg font-black text-slate-900">${pc > 0 ? fmtNum(ac / pc) : '—'}</div><div class="text-[10px] text-slate-400">activo corriente / pasivo corriente</div></div>`;
+        `<div class="bg-white border border-slate-200 rounded-2xl p-3"><div class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Liquidez corriente</div><div class="text-lg font-semibold text-slate-900">${pc > 0 ? fmtNum(ac / pc) : '—'}</div><div class="text-[10px] text-slate-400">activo corriente / pasivo corriente</div></div>`;
 
       document.getElementById('fs-title').textContent = STATEMENT_TITLES[state.tab];
       document.getElementById('fs-sub').textContent = state.tab === 'esf' ? `Al ${longDate(p.to)}, comparativo al ${longDate(p.pTo)} · USD` : `${p.label}, comparativo ${p.pLabel} · USD`;
@@ -284,12 +284,12 @@ const FinancialStatements = {
     const body = `
       <div class="flex flex-col md:flex-row md:items-end justify-between gap-3">
         <div>
-          <h1 class="text-xl font-black text-slate-900">Estados Financieros</h1>
+          <h1 class="text-xl font-semibold text-slate-900">Estados Financieros</h1>
           <p class="text-xs text-slate-500">Según VEN-NIF PYME, con cifras comparativas. Se generan solos desde el Libro Diario. Los montos entre paréntesis son negativos (se restan).</p>
         </div>
         <div class="flex gap-2">
-          <button id="fs-print" class="px-3 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 hover:border-slate-400">🖨 Imprimir este estado</button>
-          <button id="fs-print-all" class="px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-black text-white">🖨 Imprimir juego completo</button>
+          <button id="fs-print" class="px-3 py-2 rounded-xl text-xs font-bold bg-white border border-slate-200 hover:border-slate-400">Imprimir este estado</button>
+          <button id="fs-print-all" class="px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-black text-white">Imprimir juego completo</button>
         </div>
       </div>
       <div class="${card} grid grid-cols-2 md:grid-cols-5 gap-2 items-end">
@@ -305,7 +305,7 @@ const FinancialStatements = {
       <div class="${card}">
         <div class="text-center mb-4">
           <div class="text-xs font-bold text-slate-500">${esc(Store.getBusinessProfile().name || '')}</div>
-          <h2 id="fs-title" class="text-base font-black uppercase tracking-wide text-slate-900"></h2>
+          <h2 id="fs-title" class="text-base font-semibold uppercase tracking-wide text-slate-900"></h2>
           <div id="fs-sub" class="text-xs text-slate-500"></div>
         </div>
         <div id="fs-body" class="overflow-x-auto"></div>

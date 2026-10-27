@@ -115,7 +115,7 @@ const Receivables = {
 
     const body = `
       <div class="${card}">
-        <h2 class="text-sm font-bold text-slate-700 mb-1">Cuentas por Cobrar</h2>
+        <h2 class="text-sm font-semibold text-slate-900 mb-1">Cuentas por Cobrar</h2>
         <p class="text-xs text-slate-400 mb-3">Saldo pendiente de cada cliente contra Cuentas por Cobrar.</p>
         <table class="w-full text-left text-xs">
           <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">

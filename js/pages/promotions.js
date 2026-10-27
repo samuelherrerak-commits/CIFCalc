@@ -65,7 +65,7 @@ const Promotions = {
           return `
           <div class="flex flex-col sm:flex-row sm:items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-slate-200">
             <div class="w-14 h-14 rounded-2xl bg-rose-50 text-rose-600 flex flex-col items-center justify-center shrink-0">
-              <span class="text-lg font-black leading-none">-${fmtNum(p.discount_pct).replace(/\.00$/, '')}%</span>
+              <span class="text-lg font-semibold leading-none">-${fmtNum(p.discount_pct).replace(/\.00$/, '')}%</span>
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2 flex-wrap">
@@ -118,7 +118,7 @@ const Promotions = {
 
     const body = `
       <div>
-        <h1 class="text-xl font-black text-slate-900">Promociones</h1>
+        <h1 class="text-xl font-semibold text-slate-900">Promociones</h1>
         <p class="text-xs text-slate-500">Descuentos generales con vigencia. En Ventas se aplica sola la mejor promoción vigente, o el descuento especial del cliente si es mayor (no se suman).</p>
       </div>
       <div class="${card} space-y-3">
@@ -138,7 +138,7 @@ const Promotions = {
         </div>
       </div>
       <div class="${card}">
-        <h2 class="text-sm font-bold text-slate-700 mb-3">Promociones</h2>
+        <h2 class="text-sm font-semibold text-slate-900 mb-3">Promociones</h2>
         <div id="promo-list" class="space-y-2"></div>
       </div>`;
     app.innerHTML = AccountingShell.wrap(AccountingTabs.render('promotions'), body);

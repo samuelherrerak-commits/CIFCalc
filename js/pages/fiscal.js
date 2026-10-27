@@ -12,11 +12,11 @@ import AccountingShell, { btnPrimary, btnSecondary, card, input, label } from '.
 // Impuestos (SENIAT): Libro de Ventas, Libro de Compras, resumen de la
 // declaración mensual de IVA (Forma 30 / 99030), tasas BCV y configuración.
 const TABS = [
-  { key: 'ventas', label: '📗 Libro de Ventas' },
-  { key: 'compras', label: '📘 Libro de Compras' },
-  { key: 'declaracion', label: '🧮 Declaración IVA' },
-  { key: 'tasas', label: '💱 Tasas BCV' },
-  { key: 'config', label: '⚙ Configuración' }
+  { key: 'ventas', label: 'Libro de ventas' },
+  { key: 'compras', label: 'Libro de compras' },
+  { key: 'declaracion', label: 'Declaración IVA' },
+  { key: 'tasas', label: 'Tasas BCV' },
+  { key: 'config', label: 'Configuración' }
 ];
 const ACTIVE_KEY = { ventas: 'fiscal-books', compras: 'fiscal-books', declaracion: 'fiscal-decl', tasas: 'fiscal-rates', config: 'fiscal-decl' };
 
@@ -24,6 +24,7 @@ let month = new Date().toISOString().slice(0, 7);
 let currency = 'usd';
 
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const curCls = (c) => `px-3 py-1.5 rounded-md ${currency === c ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-slate-500'}`;
 const fmtDate = (iso) => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
 const money = (n) => currency === 'bs' ? fmtBs(n).replace('Bs ', '') : fmtNum(n);
 const monthLabel = (ym) => new Date(ym + '-15T12:00:00').toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
@@ -204,7 +205,7 @@ function renderBook(el, book, fs) {
             <td class="px-2 py-1.5 text-right font-mono font-semibold whitespace-nowrap">${money(a.total)}</td>
             <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap">${money(a.exempt)}</td>
             <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap">${baseCell(a, d)}</td>
-            <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap text-blue-700">${money(r2(a.tax_general + a.tax_reducida))}</td>
+            <td class="px-2 py-1.5 text-right font-mono whitespace-nowrap">${money(r2(a.tax_general + a.tax_reducida))}</td>
             ${book === 'ventas' ? `<td class="px-2 py-1.5 text-right font-mono whitespace-nowrap">${a.withheld ? money(a.withheld) : '—'}${d.withholding_number ? `<div class="text-[10px] text-slate-400">${esc(d.withholding_number)}</div>` : ''}</td>` : ''}
             ${currency === 'bs' ? `<td class="px-2 py-1.5 text-right font-mono text-slate-400">${Number(d.tasa_bcv) > 0 ? fmtNum(d.tasa_bcv) : '<span class="text-red-600 font-bold">falta</span>'}</td>` : ''}
             <td class="px-2 py-1.5 text-right whitespace-nowrap">
@@ -217,7 +218,7 @@ function renderBook(el, book, fs) {
           <td class="px-2 py-2 text-right font-mono">${money(tot.total)}</td>
           <td class="px-2 py-2 text-right font-mono">${money(tot.exempt)}</td>
           <td class="px-2 py-2 text-right font-mono">${money(r2(tot.base_general + tot.base_reducida))}</td>
-          <td class="px-2 py-2 text-right font-mono text-blue-700">${money(r2(tot.tax_general + tot.tax_reducida))}</td>
+          <td class="px-2 py-2 text-right font-mono">${money(r2(tot.tax_general + tot.tax_reducida))}</td>
           ${book === 'ventas' ? `<td class="px-2 py-2 text-right font-mono">${money(tot.withheld)}</td>` : ''}
           <td colspan="${currency === 'bs' ? 2 : 1}"></td>
         </tr>` : ''}
@@ -236,13 +237,13 @@ function renderBook(el, book, fs) {
     <div class="${card} space-y-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 class="text-sm font-black text-slate-800">${esc(title)}</h2>
+          <h2 class="text-sm font-semibold text-slate-800">${esc(title)}</h2>
           <p class="text-[11px] text-slate-500">${rows.length} documento${rows.length === 1 ? '' : 's'} · orden cronológico · ${currency === 'bs' ? 'en Bs a la tasa BCV de cada documento' : 'en USD'}</p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <button id="bk-add" class="${btnSecondary} !text-xs">＋ Registro manual</button>
-          <button id="bk-csv" class="${btnSecondary} !text-xs">⬇ Excel (CSV)</button>
-          <button id="bk-print" class="${btnPrimary} !text-xs">🖨 Imprimir</button>
+          <button id="bk-add" class="${btnSecondary} !text-xs">Registro manual</button>
+          <button id="bk-csv" class="${btnSecondary} !text-xs">Exportar CSV</button>
+          <button id="bk-print" class="${btnPrimary} !text-xs">Imprimir</button>
         </div>
       </div>
       ${missingRate ? `<div class="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">⚠ ${missingRate} documento(s) sin tasa BCV: en Bs salen en 0. Edítalos para ponerles la tasa del día, o carga las tasas en la pestaña Tasas BCV.</div>` : ''}
@@ -280,7 +281,7 @@ function openDocModal(doc, onSave) {
   wrap.innerHTML = `
     <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-5 space-y-4">
       <div class="flex justify-between items-center">
-        <h3 class="font-black text-slate-900">${isNew ? 'Registro manual' : 'Editar documento'} — Libro de ${doc.book === 'ventas' ? 'Ventas' : 'Compras'}</h3>
+        <h3 class="font-semibold text-slate-900">${isNew ? 'Registro manual' : 'Editar documento'} — Libro de ${doc.book === 'ventas' ? 'Ventas' : 'Compras'}</h3>
         <button data-close class="text-slate-400 text-xl leading-none">✕</button>
       </div>
       ${isNew ? '<p class="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">Solo agrega la línea al libro (p. ej. una nota de crédito o una factura registrada en otro sistema). No genera asiento contable.</p>' : ''}
@@ -364,7 +365,7 @@ function renderDeclaration(el) {
   const cell = (k) => k ? `<span class="text-[9px] text-slate-400 font-sans mr-1">[${k.slice(1)}]</span>${money(D[k])}` : '';
 
   const layout = (forPrint) => DECLARATION_LAYOUT.map(sec => `
-    <tr class="${forPrint ? 'tot' : 'bg-blue-50 text-blue-900'}"><td colspan="3" class="${forPrint ? '' : 'p-2 text-[11px] font-black uppercase tracking-wide'}">${sec.title}</td></tr>
+    <tr class="${forPrint ? 'tot' : 'bg-slate-50 text-slate-500'}"><td colspan="3" class="${forPrint ? '' : 'p-2 text-[11px] font-semibold uppercase tracking-wide'}">${sec.title}</td></tr>
     ${sec.rows.map(([lbl, b, t, strong]) => `
       <tr class="${strong ? (forPrint ? 'tot' : 'font-bold bg-slate-50') : ''} ${forPrint ? '' : 'border-b border-slate-100'}">
         <td class="${forPrint ? '' : 'p-2'}">${esc(lbl)}</td>
@@ -375,15 +376,15 @@ function renderDeclaration(el) {
   el.innerHTML = `
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
       ${[['Débito fiscal', D.c49, 'rose'], ['Crédito fiscal del mes', D.c71, 'sky'], ['Excedente para el mes siguiente', D.c60, 'violet'], ['Total a pagar', D.c90, 'emerald']]
-        .map(([k, v, c]) => `<div class="rounded-2xl border border-${c}-100 bg-${c}-50 p-3"><p class="text-[10px] font-bold uppercase text-${c}-700">${k}</p><p class="text-xl font-black text-slate-900">${currency === 'bs' ? 'Bs ' : '$'}${money(v)}</p></div>`).join('')}
+        .map(([k, v]) => `<div class="rounded-xl border border-slate-200 bg-white p-3"><p class="text-xs text-slate-500">${k}</p><p class="text-xl font-semibold tabular-nums text-slate-900 mt-0.5">${currency === 'bs' ? 'Bs ' : '$'}${money(v)}</p></div>`).join('')}
     </div>
     <div class="${card} space-y-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 class="text-sm font-black text-slate-800">Declaración de IVA — ${esc(monthLabel(month))}</h2>
+          <h2 class="text-sm font-semibold text-slate-800">Declaración de IVA — ${esc(monthLabel(month))}</h2>
           <p class="text-[11px] text-slate-500">Resumen para transcribir en la Forma 30 (99030) del portal fiscal del SENIAT. Entre corchetes, el número de casilla.</p>
         </div>
-        <button id="dc-print" class="${btnPrimary} !text-xs">🖨 Imprimir resumen</button>
+        <button id="dc-print" class="${btnPrimary} !text-xs">Imprimir resumen</button>
       </div>
       ${currency === 'usd' ? '<div class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">La declaración se presenta en <strong>bolívares</strong>. Cambia arriba a <strong>Bs</strong> para ver los montos convertidos con la tasa BCV de cada factura.</div>' : ''}
       <div class="overflow-x-auto"><table class="w-full text-xs">
@@ -393,7 +394,7 @@ function renderDeclaration(el) {
       <p class="text-[11px] text-slate-400">Las casillas sin movimiento (exportaciones, alícuota adicional, prorrata, reintegros, ajustes) quedan en 0. Verifica los números de casilla con la planilla vigente antes de declarar; el plazo lo fija el calendario de declaraciones del SENIAT según el último dígito del RIF.</p>
     </div>
     <div class="${card} space-y-3">
-      <h2 class="text-sm font-bold text-slate-700">Asientos del IVA del mes (en USD)</h2>
+      <h2 class="text-sm font-semibold text-slate-900">Asientos del IVA del mes (en USD)</h2>
       <p class="text-xs text-slate-500">Al cerrar el mes, el débito fiscal se compensa con el crédito fiscal y las retenciones; el saldo queda en <strong>IVA por Pagar (SENIAT)</strong> hasta que se paga.</p>
       <div class="grid md:grid-cols-2 gap-3">
         <div class="rounded-xl border ${liquidated ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200'} p-3 space-y-2">
@@ -452,7 +453,7 @@ function renderRates(el) {
   const today = new Date().toISOString().slice(0, 10);
   const rows = Store.getAll('exchange_rates').filter(r => r.date).sort((a, b) => String(b.date).localeCompare(String(a.date))).slice(0, 60);
   const cur = Store.ratesFor(today);
-  const tile = (k, v, c) => `<div class="rounded-2xl border border-${c}-100 bg-${c}-50 p-3"><p class="text-[10px] font-bold uppercase text-${c}-700">${k}</p><p class="text-xl font-black text-slate-900">${v > 0 ? fmtBs(v) : '—'}</p></div>`;
+  const tile = (k, v) => `<div class="rounded-xl border border-slate-200 bg-white p-3"><p class="text-xs text-slate-500">${k}</p><p class="text-xl font-semibold tabular-nums text-slate-900 mt-0.5">${v > 0 ? fmtBs(v) : '—'}</p></div>`;
   el.innerHTML = `
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
       ${tile('Dólar BCV', cur && cur.usd_bcv, 'emerald')}${tile('Euro BCV', cur && cur.eur_bcv, 'sky')}${tile('USDT (Binance P2P)', cur && cur.usdt, 'amber')}
@@ -460,7 +461,7 @@ function renderRates(el) {
     <div class="${card} space-y-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 class="text-sm font-bold text-slate-700">Tasas de cambio</h2>
+          <h2 class="text-sm font-semibold text-slate-900">Tasas de cambio</h2>
           <p class="text-[11px] text-slate-500">${cur ? `Vigente: ${fmtDate(cur.date)} · ${esc(cur.source || '')}` : 'Aún no hay tasas guardadas.'} Cada venta, gasto y asiento guarda la tasa BCV del dólar de su fecha.</p>
         </div>
         <button id="rt-refresh" class="${btnPrimary} !text-xs">↻ Consultar tasas de hoy</button>
@@ -513,7 +514,7 @@ function renderConfig(el) {
   const fs = Store.getFiscalSettings();
   el.innerHTML = `
     <div class="${card} space-y-4 max-w-2xl">
-      <h2 class="text-sm font-bold text-slate-700">Configuración del IVA</h2>
+      <h2 class="text-sm font-semibold text-slate-900">Configuración del IVA</h2>
       <label class="flex items-center gap-2 text-sm font-semibold text-slate-700"><input id="cf-enabled" type="checkbox" class="w-4 h-4 accent-blue-600" ${fs.ivaEnabled ? 'checked' : ''}> Calcular IVA en ventas y compras</label>
       <div class="grid grid-cols-2 gap-3">
         <div><label class="${label}">Alícuota general (%)</label><input id="cf-general" type="number" step="0.01" value="${fs.rateGeneral}" class="${input}"></div>
@@ -553,19 +554,19 @@ const Fiscal = {
     const body = `
       <div class="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 class="text-xl font-black text-slate-900">Impuestos · SENIAT</h1>
+          <h1 class="text-xl font-semibold text-slate-900">Impuestos</h1>
           <p class="text-xs text-slate-500">IVA ${fs.ivaEnabled ? `activo (${fs.rateGeneral}% general · ${fs.rateReducida}% reducida · precios ${fs.pricesIncludeIva ? 'con' : 'sin'} IVA)` : '<strong class="text-red-600">desactivado</strong>'}</p>
         </div>
         ${usesPeriod ? `
         <div class="flex items-end gap-2">
           <div><label class="${label}">Mes</label><input id="fx-month" type="month" value="${month}" class="${input}"></div>
-          <div class="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-bold">
-            ${['usd', 'bs'].map(c => `<button data-cur="${c}" class="px-3 py-2 ${currency === c ? 'bg-blue-600 text-white' : 'bg-white text-slate-600'}">${c === 'usd' ? 'USD' : 'Bs'}</button>`).join('')}
+          <div class="flex gap-0.5 p-0.5 rounded-lg bg-slate-100 text-xs">
+            ${['usd', 'bs'].map(c => `<button data-cur="${c}" class="${curCls(c)}">${c === 'usd' ? 'USD' : 'Bs'}</button>`).join('')}
           </div>
         </div>` : ''}
       </div>
-      <div class="flex gap-2 overflow-x-auto pb-1">
-        ${TABS.map(t => `<a href="#/contabilidad/fiscal/${t.key}" class="px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${t.key === tab ? 'bg-blue-600 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:border-blue-300'}">${t.label}</a>`).join('')}
+      <div class="flex gap-5 overflow-x-auto no-scrollbar border-b border-slate-200">
+        ${TABS.map(t => `<a href="#/contabilidad/fiscal/${t.key}" class="pb-2 -mb-px text-sm whitespace-nowrap border-b-2 ${t.key === tab ? 'border-blue-600 text-slate-900 font-medium' : 'border-transparent text-slate-500 hover:text-slate-900'}">${t.label}</a>`).join('')}
       </div>
       <div id="fx-body" class="space-y-5"></div>`;
     app.innerHTML = AccountingShell.wrap(AccountingTabs.render(ACTIVE_KEY[tab]), body);
@@ -581,7 +582,7 @@ const Fiscal = {
     if (m) m.addEventListener('change', () => { if (m.value) { month = m.value; draw(); } });
     app.querySelectorAll('[data-cur]').forEach(b => b.addEventListener('click', () => {
       currency = b.dataset.cur;
-      app.querySelectorAll('[data-cur]').forEach(x => x.className = `px-3 py-2 ${currency === x.dataset.cur ? 'bg-blue-600 text-white' : 'bg-white text-slate-600'}`);
+      app.querySelectorAll('[data-cur]').forEach(x => { x.className = curCls(x.dataset.cur); });
       draw();
     }));
     draw();

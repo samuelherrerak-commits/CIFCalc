@@ -52,7 +52,7 @@ const Accounts = {
 
       wrap.innerHTML = [...byTipo.entries()].map(([tipo, accs]) => `
         <div class="${card}">
-          <h3 class="text-sm font-bold text-slate-700 mb-3">${esc(tipo)} <span class="text-slate-400">(${accs.length})</span></h3>
+          <h3 class="text-sm font-semibold text-slate-900 mb-3">${esc(tipo)} <span class="text-slate-400">(${accs.length})</span></h3>
           <table class="w-full text-left text-xs">
             <thead>
               <tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
@@ -220,7 +220,7 @@ const Accounts = {
 
     const body = `
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
-        <h2 class="text-sm font-bold text-slate-700">Plan de Cuentas</h2>
+        <h2 class="text-sm font-semibold text-slate-900">Plan de Cuentas</h2>
         <div class="flex items-center gap-2">
           <button id="btn-seed" class="${btnSecondary}">Cargar / restablecer catálogo sugerido</button>
           <button id="btn-new-account" class="${btnPrimary}">+ Nueva Cuenta</button>
@@ -231,7 +231,7 @@ const Accounts = {
 
       <div class="${card} space-y-3">
         <div>
-          <h2 class="text-sm font-bold text-slate-700">Mapeo Contable — Cierre de Contenedores</h2>
+          <h2 class="text-sm font-semibold text-slate-900">Mapeo Contable — Cierre de Contenedores</h2>
           <p class="text-xs text-slate-400">Ya viene mapeado por defecto: cada concepto de la Calculadora va a su propia cuenta de Costo, el IVA a IVA Acreditable y el total a Contenedores por Pagar. Solo cámbialo si quieres otra cuenta.</p>
         </div>
         <div id="mapping-fields" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>

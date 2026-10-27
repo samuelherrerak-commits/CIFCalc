@@ -73,7 +73,7 @@ const Income = {
 
     const body = `
       <div class="${card} space-y-3">
-        <h2 class="text-sm font-bold text-slate-700">Registrar Ingreso</h2>
+        <h2 class="text-sm font-semibold text-slate-900">Registrar Ingreso</h2>
         <p class="text-xs text-slate-400">Para vender un producto del inventario usa el módulo de Ventas — aquí solo van préstamos recibidos u otros ingresos que no sean venta de mercancía.</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
@@ -111,7 +111,7 @@ const Income = {
       </div>
 
       <div class="${card}">
-        <h2 class="text-sm font-bold text-slate-700 mb-3">Ingresos Registrados</h2>
+        <h2 class="text-sm font-semibold text-slate-900 mb-3">Ingresos Registrados</h2>
         <table class="w-full text-left text-xs">
           <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2 text-right">Monto</th><th class="p-2">Cliente</th></tr></thead>
           <tbody id="income-tbody"></tbody>

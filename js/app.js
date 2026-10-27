@@ -18,12 +18,12 @@ window.addEventListener('cif-data-updated', () => setTimeout(syncBadge, 0));
 if (Store.isSandbox()) {
   const bar = document.createElement('div');
   bar.id = 'sandbox-bar';
-  bar.className = 'bg-amber-400 text-amber-950 text-xs font-bold px-4 py-1.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1';
+  bar.className = 'bg-amber-50 border-b border-amber-200 text-amber-900 text-xs px-4 py-1.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1';
   bar.innerHTML = `
-    <span>🧪 MODO PRUEBA — trabajas con una copia; nada se guarda en la base de datos</span>
-    <span class="flex gap-1.5">
-      <button data-sbx="reset" class="bg-white/70 hover:bg-white px-2 py-0.5 rounded-md">Reiniciar prueba</button>
-      <button data-sbx="exit" class="bg-amber-900 text-white hover:bg-amber-950 px-2 py-0.5 rounded-md">Salir</button>
+    <span><strong class="font-semibold">Modo prueba</strong> · trabajas con una copia; nada se guarda en la base de datos</span>
+    <span class="flex gap-3">
+      <button data-sbx="reset" class="underline underline-offset-2 hover:text-amber-700">Reiniciar</button>
+      <button data-sbx="exit" class="font-semibold underline underline-offset-2 hover:text-amber-700">Salir</button>
     </span>`;
   document.getElementById('topbar').prepend(bar);
 }
