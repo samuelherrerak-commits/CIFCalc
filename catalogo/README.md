@@ -4,6 +4,16 @@ Tienda pública dentro de CIFCalc. Sitio estático (HTML + ES modules, sin build
 
 **Regla de inventario:** solo se muestran productos con `stock > 0`. Los que tienen existencia pero no `sale_price` aparecen con "Consultar precio" y no se pueden agregar al pedido.
 
+## Páginas (rutas con `#`)
+| Ruta | Qué es |
+|---|---|
+| `#/` | Portada: categorías, colecciones, destacados y vistos recientemente. |
+| `#/catalogo` | **Página de catálogo**: filtros laterales (categoría, colección, acabado, precio) con cuentas, orden, chips de filtros activos y paginación de 24. En móvil los filtros se abren en un panel. Estado en la URL: `?cat=&serie=a,b&acab=&min=&max=&orden=&p=&q=`. |
+| `#/p/<id>` | Ficha del producto (en móvil, barra de compra fija) con sugerencias y vistos recientemente. |
+| `#/pedido`, `#/gracias/<n>` | Pedido y confirmación. |
+
+El buscador de la cabecera sugiere productos mientras se escribe y lleva a `#/catalogo?q=…`. La lógica de filtros está en `js/filters.js` y se prueba con `node catalogo/tools/probar-filtros.mjs`.
+
 ## Fuentes de datos (`js/data.js`)
 | `?fuente=` | Qué muestra |
 |---|---|
