@@ -48,7 +48,7 @@ export function mountPOS(root, opts) {
           <div class="relative flex-1">
             <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
             <input id="pos-search" type="text" autocomplete="off" placeholder="Buscar por nombre, categoría o código"
-              class="w-full pl-9 pr-3 py-2 rounded-lg bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm">
+              class="w-full pl-9 pr-3 py-2 rounded-lg bg-white border border-slate-200 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm">
           </div>
           <span id="pos-count" class="hidden sm:block text-[11px] text-slate-400 whitespace-nowrap"></span>
         </div>
@@ -57,7 +57,7 @@ export function mountPOS(root, opts) {
       </div>
 
       <div class="min-h-0">
-        <div id="pos-cart-card" class="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col lg:h-full scroll-mt-16">
+        <div id="pos-cart-card" class="bg-white rounded-xl border border-slate-200/70 shadow-sm overflow-hidden flex flex-col lg:h-full scroll-mt-16">
           <div class="px-3 py-2.5 border-b border-slate-100 flex justify-between items-center shrink-0">
             <div class="flex items-baseline gap-2">
               <h2 class="text-sm font-semibold text-slate-900">${esc(opts.title || 'Venta')}</h2>
@@ -172,7 +172,7 @@ export function mountPOS(root, opts) {
             ? `<span class="flex items-baseline gap-1"><span class="font-semibold text-sm text-slate-900">$${fmtNum(pr.unitPrice)}</span><span class="text-[10px] text-slate-400 line-through">$${fmtNum(pr.listPrice)}</span></span>`
             : `<span class="font-semibold text-sm text-slate-900">$${fmtNum(pr.listPrice)}</span>`;
         return `
-        <button data-add="${esc(p.id)}" class="group relative text-left bg-white rounded-xl border ${line ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-200 hover:border-slate-300'} active:scale-[0.98] transition overflow-hidden flex flex-col ${capToStock && left <= 0 ? 'opacity-50' : ''}">
+        <button data-add="${esc(p.id)}" class="group relative text-left bg-white rounded-xl border shadow-sm hover:shadow ${line ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-200/70 hover:border-slate-300'} active:scale-[0.98] transition overflow-hidden flex flex-col ${capToStock && left <= 0 ? 'opacity-50' : ''}">
           <div class="relative aspect-[4/3] bg-white flex-shrink-0">
             ${p.foto_url
               ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-full h-full object-contain p-2" alt="">`
