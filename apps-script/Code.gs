@@ -83,7 +83,11 @@ const SCHEMAS = {
     'stock', 'avg_cost', 'sale_price',
     'brand', 'collection', 'category', 'color',
     // IVA del producto: 'general' (vacío = general), 'reducida' o 'exento'.
-    'iva_tipo'
+    'iva_tipo',
+    // Prompts para generar las fotos del producto con Nano Banana (Gemini):
+    // _1 = primer plano, _2 = el producto en uso. Se rellenan con
+    // catalogo/tools/prompts-fotos.mjs y se copian a mano; la app no los usa.
+    'prompt_foto_1', 'prompt_foto_2'
   ],
   // Catálogo de cuentas unificado (estilo LegalYa): códigos jerárquicos con punto,
   // tipo inferido del primer dígito (1=Activo..6=Gasto). tipo_especifico es lo que
