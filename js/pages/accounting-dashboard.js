@@ -3,12 +3,14 @@ import { fmtNum, esc } from '../utils.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { card } from '../components/accounting-shell.js';
 import { icon } from '../components/icons.js';
+import { salesLines } from '../analytics.js';
 
 // Prefijo del ref_doc → tipo de actividad (igual patrón que recentActivity de LegalYa).
 const DOC_TYPES = {
   ING: { label: 'Ingreso', color: 'emerald', icon: 'plus' },
   VTA: { label: 'Venta', color: 'emerald', icon: 'cart' },
   NE: { label: 'Venta sin factura', color: 'emerald', icon: 'cart' },
+  ANT: { label: 'Anticipo de cliente', color: 'violet', icon: 'inbox' },
   GST: { label: 'Gasto', color: 'rose', icon: 'wallet' },
   REC: { label: 'Recepción', color: 'sky', icon: 'box' },
   COS: { label: 'Costo', color: 'rose', icon: 'tag' },
@@ -90,17 +92,9 @@ const AccountingDashboard = {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3);
 
-    // Top vendidos: líneas de venta, cantidad agregada por producto (el
-    // concepto se guarda como "<concepto> | <nombre producto>").
+    // Más vendidos: unidades por producto (ventas viejas y órdenes facturadas).
     const productQty = new Map();
-    for (const m of movements) {
-      // precio_venta > 0 aísla la línea de Ingresos por Ventas (credit) de cada
-      // producto — el resto de las líneas de la venta no llevan precio.
-      if (m.source !== 'sale' || !(Number(m.cantidad) > 0) || m.unidad !== 'unidades' || !(Number(m.precio_venta) > 0)) continue;
-      const parts = String(m.concepto || '').split('|');
-      const productName = (parts[1] || parts[0] || 'Producto').trim();
-      productQty.set(productName, (productQty.get(productName) || 0) + Number(m.cantidad));
-    }
+    for (const l of salesLines()) productQty.set(l.productName, (productQty.get(l.productName) || 0) + l.qty);
     const topProducts = [...productQty.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
 
     // Cifras del mes en curso (como los diarios del tablero de Odoo).
@@ -109,7 +103,7 @@ const AccountingDashboard = {
     const tipoOf = new Map(accounts.map(a => [String(a.codigo), a.tipo]));
     const teOf = new Map(accounts.map(a => [String(a.codigo), a.tipo_especifico]));
     const monthSales = movements.filter(m => inMonth(m) && String(m.codigo_cuenta).startsWith('4.1.01')).reduce((t, m) => t + (Number(m.credit) || 0) - (Number(m.debit) || 0), 0);
-    const monthSaleDocs = new Set(movements.filter(m => inMonth(m) && m.source === 'sale').map(m => m.ref_doc)).size;
+    const monthSaleDocs = new Set(movements.filter(m => inMonth(m) && m.source === 'sale' && Number(m.credit) > 0 && String(m.codigo_cuenta).startsWith('4.1.01')).map(m => m.ref_doc)).size;
     const monthSpend = movements.filter(m => inMonth(m) && ['Gasto', 'Costo'].includes(tipoOf.get(String(m.codigo_cuenta)))).reduce((t, m) => t + (Number(m.debit) || 0) - (Number(m.credit) || 0), 0);
     const owe = (prefix) => movements.filter(m => String(m.codigo_cuenta).startsWith(prefix)).reduce((t, m) => t + (Number(m.credit) || 0) - (Number(m.debit) || 0), 0);
     const oweContainers = owe('2.1.01');

@@ -27,6 +27,8 @@ export function buildSalesDocumentHtml(doc, issuer = {}) {
   const numberLabel = doc.title ? `N.º de ${doc.title.toLowerCase()}` : (isQuote ? 'N.º de presupuesto' : 'N.º de venta');
   const items = doc.items || [];
   const subtotal = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+  // Columnas de precio de lista y % de descuento solo si alguna línea tiene descuento.
+  const hasDisc = items.some(it => Number(it.discountPct) > 0);
   const client = doc.client || {};
   const lines = (arr) => arr.filter(Boolean).map(v => `<div>${v}</div>`).join('');
 
@@ -95,13 +97,14 @@ export function buildSalesDocumentHtml(doc, issuer = {}) {
     </div>
 
     <table>
-      <thead><tr><th>Descripción</th><th>Cantidad</th><th>Unidad</th><th>Precio</th><th>Importe</th></tr></thead>
+      <thead><tr><th>Descripción</th><th>Cantidad</th><th>Unidad</th>${hasDisc ? '<th>Precio lista</th><th>Desc.</th><th>Precio neto</th>' : '<th>Precio</th>'}<th>Importe</th></tr></thead>
       <tbody>
         ${items.map(it => `
           <tr>
             <td>${esc(it.name)}${it.sku ? `<div class="sku">${esc(it.sku)}</div>` : ''}</td>
             <td>${fmtNum(it.qty).replace(/\.00$/, '')}</td>
             <td>${esc(it.unit || 'unidad')}</td>
+            ${hasDisc ? `<td>${fmtNum(it.listPrice || it.unitPrice)}</td><td>${Number(it.discountPct) > 0 ? fmtNum(it.discountPct).replace(/\.00$/, '') + '%' : '—'}</td>` : ''}
             <td>${fmtNum(it.unitPrice)}</td>
             <td>${fmtNum((Number(it.qty) || 0) * (Number(it.unitPrice) || 0))}</td>
           </tr>`).join('')}

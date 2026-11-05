@@ -1,9 +1,9 @@
 import Store from '../store.js';
 import { fmtNum, esc } from '../utils.js';
-import { buildIncomeLines, buildTwoLineEntry, withRoundingPlug } from '../accounting.js';
 import { computeTax, ivaTipoOf, taxSummaryRows } from '../fiscal.js';
 import { contactOptions, quickAddContact } from '../components/contact-picker.js';
 import { mountPOS } from '../components/pos.js';
+import { createOrder, itemsFromCart, registerDispatch, invoiceOrder, orderDocument } from '../orders.js';
 import { printSalesDocument } from '../components/sales-document.js';
 import { openBusinessProfileModal } from '../components/business-profile.js';
 import AccountingTabs from '../components/accounting-tabs.js';
@@ -63,7 +63,8 @@ export function saleDocumentFromJournal(refDoc) {
 }
 
 const printSale = (refDoc) => {
-  const doc = saleDocumentFromJournal(refDoc);
+  const order = Store.getAll('sales_orders').find(o => o.invoice_ref === refDoc);
+  const doc = order ? orderDocument(order) : saleDocumentFromJournal(refDoc);
   if (doc) printSalesDocument(doc, Store.getBusinessProfile());
 };
 
@@ -141,6 +142,7 @@ const Sales = {
 
     const recentSales = () => {
       const fiscalByRef = new Map(Store.getAll('fiscal_docs').filter(d => d.book === 'ventas' && d.ref_doc).map(d => [d.ref_doc, d]));
+      const orderByRef = new Map(Store.getAll('sales_orders').filter(o => o.invoice_ref).map(o => [o.invoice_ref, o]));
       const byRef = new Map();
       for (const m of Store.getAll('movements').filter(x => x.source === 'sale')) {
         if (!byRef.has(m.ref_doc)) byRef.set(m.ref_doc, []);
@@ -153,7 +155,14 @@ const Sales = {
           // Total cobrado (con IVA): lo que entró al debe, menos el redondeo.
           const total = lines.filter(l => Number(l.debit) > 0 && String(l.codigo_cuenta) !== '6.9.01.01').reduce((s, l) => s + (Number(l.debit) || 0), 0);
           const fd = fiscalByRef.get(refDoc);
-          return { refDoc, date: first.entry_date, created: first.created_at, entidad: first.entidad, itemCount: items.length, total, fiscal: fd ? (fd.invoice_number || 'sí') : null, nonFiscal: isNonFiscalRef(refDoc) };
+          // Ventas nuevas: el detalle está en la orden (el asiento va consolidado).
+          const order = orderByRef.get(refDoc);
+          return {
+            refDoc, date: first.entry_date, created: first.created_at, entidad: first.entidad,
+            itemCount: order ? JSON.parse(order.items || '[]').length : items.length,
+            total: order ? Number(order.total) || total : total,
+            fiscal: fd ? (fd.invoice_number || 'sí') : null, nonFiscal: isNonFiscalRef(refDoc)
+          };
         })
         .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0) || new Date(b.created || 0) - new Date(a.created || 0))
         .slice(0, 20);
@@ -310,54 +319,19 @@ const Sales = {
       const revAccount = revenueAccount();
       if (!revAccount) { pos.flash('Falta la cuenta "Ingresos por Ventas" en el Plan de Cuentas.'); return; }
 
+      // Venta de contado o a crédito en el acto: se registra como una orden de
+      // venta que se despacha y se factura de una vez (un solo asiento
+      // consolidado: cobro o CxC / Ingresos + IVA).
       const fiscal = isFiscal();
-      const refDoc = `${fiscal ? 'VTA' : 'NE'}-${Date.now().toString().slice(-6)}`;
-      const tax = taxOf(cart);
-      const withheld = retentionOf(tax);
-      const ivaAccount = tax.tax > 0 ? (accounts.find(a => a.codigo === '2.1.04.01') || Store.ensureCatalogAccount('2.1.04.01')) : null;
-      const retAccount = withheld > 0 ? (accounts.find(a => a.codigo === '1.1.03.02') || Store.ensureCatalogAccount('1.1.03.02')) : null;
-      let allLines = [];
-      cart.forEach((l, i) => {
-        // El ingreso es la base imponible (sin IVA); si los precios incluyen
-        // IVA, el precio unitario registrado también es sin IVA.
-        const base = tax.lineBases[i];
-        allLines = allLines.concat(buildIncomeLines({
-          date, total: base, concepto: `${concepto} | ${l.product.name}`, entidad, refDoc,
-          paymentAccount, revenueAccount: revAccount,
-          sale: {
-            qty: l.qty, unidad: 'unidades', unitPrice: fs.pricesIncludeIva ? base / l.qty : l.unitPrice, codigo: l.product.sku_briggs || '',
-            // Costo del producto al momento de vender (margen exacto en Reportes) y precio de lista.
-            unitCost: Number((Store.getById('products', l.product.id) || l.product).avg_cost) || 0,
-            listPrice: l.listPrice || Number(l.product.sale_price) || l.unitPrice
-          }
-        }));
+      const order = createOrder({ date, contact, items: itemsFromCart(cart), fiscal, notes: concepto === 'Venta' ? '' : concepto, quoteId: sourceQuote ? sourceQuote.id : '' });
+      registerDispatch(order, { date, qtyByProduct: Object.fromEntries(cart.map(l => [l.product.id, l.qty])), notes: 'Entrega inmediata (punto de venta)' });
+      const { refDoc } = invoiceOrder(Store.getById('sales_orders', order.id), {
+        date,
+        invoiceNumber: fiscal ? ((document.getElementById('f-invoice') || {}).value || '').trim() : '',
+        controlNumber: fiscal ? ((document.getElementById('f-control') || {}).value || '').trim() : '',
+        payNow: payMethod === 'credito' ? null : { method: payMethod, accountId: paymentAccount.id }
       });
-      // IVA débito fiscal: lo cobra la empresa (Caja/Banco/CxC) salvo la parte
-      // que retiene el cliente, que queda como IVA retenido a descontar.
-      if (tax.tax > 0) {
-        if (tax.tax - withheld > 0) allLines = allLines.concat(buildTwoLineEntry({ date, total: tax.tax - withheld, concepto: `${concepto} | IVA débito fiscal`, entidad, refDoc, debitAccount: paymentAccount, creditAccount: ivaAccount }));
-        if (withheld > 0) allLines = allLines.concat(buildTwoLineEntry({ date, total: withheld, concepto: `${concepto} | IVA retenido por el cliente`, entidad, refDoc, debitAccount: retAccount, creditAccount: ivaAccount }));
-      }
-      Store.postJournalRows(withRoundingPlug(allLines, diffAccount(), date, refDoc), { source: 'sale' });
-
-      for (const l of cart) {
-        const current = Store.getById('products', l.product.id) || l.product;
-        Store.update('products', { id: l.product.id, stock: (Number(current.stock) || 0) - l.qty });
-      }
-      if (sourceQuote) Store.update('quotes', { id: sourceQuote.id, status: 'convertido', converted_ref: refDoc });
-      // Registro para el Libro de Ventas (solo ventas con factura).
-      if (fiscal) {
-        Store.insert('fiscal_docs', Store.newFiscalDoc({
-          book: 'ventas', date, doc_type: 'factura',
-          invoice_number: (document.getElementById('f-invoice') || {}).value?.trim() || '',
-          control_number: (document.getElementById('f-control') || {}).value?.trim() || '',
-          rif: contact ? contact.rif || '' : '', name: entidad || 'Consumidor final',
-          total: tax.total, exempt: tax.exempt, base_general: tax.base_general, tax_general: tax.tax_general,
-          base_reducida: tax.base_reducida, tax_reducida: tax.tax_reducida,
-          withheld, withholding_date: withheld > 0 ? date : '',
-          ref_doc: refDoc, tasa_bcv: Store.usdRateFor(date)
-        }));
-      }
+      if (sourceQuote) Store.update('quotes', { id: sourceQuote.id, status: 'convertido', converted_ref: order.order_number });
 
       const total = pos.total();
       products = Store.getAll('products');

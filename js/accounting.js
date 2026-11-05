@@ -51,6 +51,9 @@ export const CHART_OF_ACCOUNTS = [
   // pasa a 2.1.04.02 hasta que se paga al SENIAT.
   { codigo: '2.1.04.01', nombre: 'IVA Débito Fiscal', tipo_especifico: 'Otros' },
   { codigo: '2.1.04.02', nombre: 'IVA por Pagar (SENIAT)', tipo_especifico: 'Otros' },
+  // Lo que pagan los clientes antes de la factura: es una deuda con el
+  // cliente hasta que se factura y se cruza contra la venta.
+  { codigo: '2.1.05.01', nombre: 'Anticipos de Clientes', tipo_especifico: 'Otros' },
   { codigo: '3.1.01.01', nombre: 'Capital Social', tipo_especifico: 'Otros' },
   { codigo: '4.1.01.01', nombre: 'Ingresos por Ventas', tipo_especifico: 'Otros' },
   { codigo: '4.1.02.01', nombre: 'Otros Ingresos', tipo_especifico: 'Otros' },

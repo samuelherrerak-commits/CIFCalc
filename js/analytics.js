@@ -33,7 +33,7 @@ export function salesLines() {
     payByRef.set(m.ref_doc, PAY_LABEL[acc && acc.tipo_especifico] || (acc ? acc.nombre : m.cuenta_contable) || 'Otro');
   }
 
-  return movements.filter(isSaleItemLine).map(m => {
+  const legacy = movements.filter(isSaleItemLine).map(m => {
     const name = (String(m.concepto || '').split('|')[1] || '').trim();
     const product = (m.codigo_barra && bySku.get(String(m.codigo_barra))) || byName.get(name) || null;
     const qty = Number(m.cantidad);
@@ -60,6 +60,65 @@ export function salesLines() {
       discount: Math.max(0, (listPrice - unitPrice) * qty)
     };
   });
+
+  // Ventas facturadas desde órdenes de venta: el asiento va consolidado, así
+  // que el detalle por producto sale de las líneas de la orden.
+  const byId = new Map(products.map(p => [p.id, p]));
+  const contactById = new Map(contacts.map(c => [c.id, c]));
+  const fromOrders = [];
+  for (const o of Store.getAll('sales_orders')) {
+    if (o.status !== 'facturada') continue;
+    let items = [];
+    try { items = JSON.parse(o.items || '[]'); } catch { items = []; }
+    const pays = Store.getAll('order_payments').filter(p => p.order_id === o.id);
+    const cash = pays.find(p => p.ref_doc === o.invoice_ref);
+    const payment = cash ? (cash.method === 'efectivo' ? 'Efectivo' : 'Banco') : (pays.some(p => p.kind === 'anticipo') ? 'Anticipo + crédito' : 'Crédito');
+    const date = String(o.invoice_date || o.date || '').slice(0, 10);
+    const contact = contactById.get(o.contact_id) || contactByName.get(String(o.contact_name || '').trim()) || null;
+    for (const it of items) {
+      const product = byId.get(it.productId) || null;
+      const qty = Number(it.qty) || 0;
+      if (!(qty > 0)) continue;
+      const revenue = Number(it.base) > 0 ? Number(it.base) : qty * (Number(it.unitPrice) || 0);
+      const savedCost = Number(it.unitCost) || 0;
+      const unitCost = savedCost > 0 ? savedCost : (product ? Number(product.avg_cost) || 0 : 0);
+      const unitPrice = revenue / qty;
+      const listPrice = Number(it.listPrice) > 0 ? Number(it.listPrice) : unitPrice;
+      fromOrders.push({
+        refDoc: o.invoice_ref, orderId: o.id, fromOrder: true, date, month: date.slice(0, 7),
+        entidad: o.contact_name || 'Sin cliente', contactId: contact ? contact.id : '',
+        productId: product ? product.id : (it.productId || ''), productName: product ? product.name : (it.name || 'Producto'),
+        sku: product ? product.sku_briggs : (it.sku || ''),
+        category: (product && product.category) || 'Sin categoría',
+        collection: (product && product.collection) || 'Sin colección',
+        brand: (product && product.brand) || '—',
+        foto: product ? product.foto_url : '',
+        payment,
+        qty, unitPrice, listPrice, revenue,
+        unitCost, cost: qty * unitCost, margin: revenue - qty * unitCost,
+        costEstimated: !(savedCost > 0),
+        discount: Math.max(0, (listPrice - unitPrice) * qty)
+      });
+    }
+  }
+  return [...legacy, ...fromOrders];
+}
+
+// Salidas de inventario por producto hasta una fecha: ventas viejas (una
+// línea de diario por producto) + despachos de órdenes de venta.
+export function stockOuts(date) {
+  const outs = new Map();
+  for (const l of salesLines()) {
+    if (l.fromOrder || !l.productId || (date && l.date > date)) continue;
+    outs.set(l.productId, (outs.get(l.productId) || 0) + l.qty);
+  }
+  for (const d of Store.getAll('dispatches')) {
+    if (date && String(d.date) > date) continue;
+    let items = [];
+    try { items = JSON.parse(d.items || '[]'); } catch { items = []; }
+    for (const it of items) if (it.productId) outs.set(it.productId, (outs.get(it.productId) || 0) + (Number(it.qty) || 0));
+  }
+  return outs;
 }
 
 // Gastos y costos: cada línea al debe de una cuenta tipo Gasto o Costo.

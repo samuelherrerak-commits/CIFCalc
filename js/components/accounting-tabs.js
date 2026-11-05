@@ -16,6 +16,7 @@ export const ACCOUNTING_SECTIONS = [
   { title: 'Ventas', items: [
     { key: 'sales', path: '#/contabilidad/ventas', label: 'Punto de venta', short: 'Ventas', icon: 'cart' },
     { key: 'quotes', path: '#/contabilidad/presupuestos', label: 'Presupuestos', icon: 'file' },
+    { key: 'orders', path: '#/contabilidad/ordenes', label: 'Órdenes de venta', icon: 'clipboard' },
     { key: 'contacts', path: '#/contabilidad/contactos', label: 'Clientes', icon: 'users' },
     { key: 'receivables', path: '#/contabilidad/por-cobrar', label: 'Cuentas por cobrar', icon: 'inbox' },
     { key: 'promotions', path: '#/contabilidad/promociones', label: 'Promociones', icon: 'gift' }
