@@ -185,13 +185,13 @@ const AccountingDashboard = {
         </div>
         <div class="flex gap-2">
           <a href="#/contabilidad/gastos" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-white border border-slate-200 hover:border-slate-300 text-slate-700 shadow-sm">${icon('wallet', 'w-4 h-4')}Registrar gasto</a>
-          <a href="#/contabilidad/ventas" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm">${icon('cart', 'w-4 h-4')}Nueva venta</a>
+          <a href="#/contabilidad/presupuestos/nuevo" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm">${icon('file', 'w-4 h-4')}Nuevo presupuesto</a>
         </div>
       </div>
 
       <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         ${journalCard({ title: 'Ventas', ic: 'cart', color: 'emerald', value: monthSales, sub: `${monthSaleDocs} venta${monthSaleDocs === 1 ? '' : 's'} en ${monthName}`,
-          actions: [['#/contabilidad/ventas', 'Nueva venta', true], ['#/contabilidad/presupuestos/nuevo', 'Presupuesto'], ['#/contabilidad/reportes/ventas', 'Reporte']] })}
+          actions: [['#/contabilidad/presupuestos/nuevo', 'Nuevo presupuesto', true], ['#/contabilidad/ordenes', 'Órdenes'], ['#/contabilidad/reportes/ventas', 'Reporte']] })}
         ${journalCard({ title: 'Compras y gastos', ic: 'wallet', color: 'rose', value: monthSpend, sub: `Costos y gastos de ${monthName}`,
           actions: [['#/contabilidad/gastos', 'Registrar gasto', true], ['#/contabilidad/reportes/gastos', 'Reporte']] })}
         ${journalCard({ title: 'Banco', ic: 'landmark', color: 'sky', value: stats.banco, sub: 'Saldo disponible',

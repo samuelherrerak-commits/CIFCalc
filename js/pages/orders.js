@@ -6,6 +6,7 @@ import {
   dispatchStatus, registerPayment, registerDispatch, invoiceOrder, attachProof, orderDocument
 } from '../orders.js';
 import { printSalesDocument } from '../components/sales-document.js';
+import { printPage } from '../components/print-page.js';
 import { icon } from '../components/icons.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { btnPrimary, btnSecondary, card, input, label } from '../components/accounting-shell.js';
@@ -53,6 +54,74 @@ function modal(title, bodyHtml, { saveLabel = 'Guardar', wide = false } = {}) {
 function printOrder(order) {
   printSalesDocument(orderDocument(order), Store.getBusinessProfile());
 }
+
+const clientOf = (order) => {
+  const c = order.contact_id ? Store.getById('contacts', order.contact_id) : null;
+  return c ? { name: c.name, rif: c.rif, address: c.address, phone: c.phone } : { name: order.contact_name };
+};
+
+// Estado por producto: pedido, despachado y pendiente.
+function dispatchRows(order) {
+  return orderItems(order).map(it => {
+    const qty = Number(it.qty) || 0, done = Number(it.dispatched) || 0;
+    return { ...it, qty, done, pending: Math.max(0, qty - done) };
+  });
+}
+
+// Orden de despacho: lo que sale en este despacho y lo que queda pendiente
+// (sin precios), con firmas de quien despacha y quien recibe.
+function printDispatchOrder(order, dispatch) {
+  const items = dispatchItems(dispatch);
+  const rows = dispatchRows(order);
+  const bodyHtml = `
+    <h3>Productos despachados</h3>
+    <table><thead><tr><th>Código</th><th>Descripción</th><th class="n">Cantidad despachada</th></tr></thead><tbody>
+      ${items.map(x => { const it = rows.find(r => r.productId === x.productId) || {}; return `<tr><td>${esc(it.sku || '')}</td><td>${esc(x.name)}</td><td class="n">${fmtInt(x.qty)}</td></tr>`; }).join('')}
+      <tr class="tot"><td colspan="2">Total de unidades en este despacho</td><td class="n">${fmtInt(items.reduce((t, x) => t + Number(x.qty), 0))}</td></tr>
+    </tbody></table>
+    <h3>Estado de la orden ${esc(order.order_number)} después de este despacho</h3>
+    <table><thead><tr><th>Código</th><th>Descripción</th><th class="n">Pedido</th><th class="n">Despachado</th><th class="n">Pendiente</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td>${esc(r.sku)}</td><td>${esc(r.name)}</td><td class="n">${fmtInt(r.qty)}</td><td class="n">${fmtInt(r.done)}</td><td class="n">${fmtInt(r.pending)}</td></tr>`).join('')}
+      <tr class="tot"><td colspan="2">Totales</td><td class="n">${fmtInt(rows.reduce((t, r) => t + r.qty, 0))}</td><td class="n">${fmtInt(rows.reduce((t, r) => t + r.done, 0))}</td><td class="n">${fmtInt(rows.reduce((t, r) => t + r.pending, 0))}</td></tr>
+    </tbody></table>
+    ${dispatch.notes ? `<h3>Notas</h3><p>${esc(dispatch.notes)}</p>` : ''}`;
+  printPage({
+    title: 'Orden de despacho', number: dispatch.dispatch_number, date: dispatch.date, client: clientOf(order),
+    meta: [['Orden de venta', order.order_number]], bodyHtml, signatures: ['Despachado por', 'Transportista', 'Recibido conforme']
+  }, Store.getBusinessProfile());
+}
+
+// Estado de la orden: total, anticipos y lo que falta por cobrar; productos
+// pedidos, despachados y pendientes por despachar.
+function printOrderStatus(order) {
+  const m = orderMoney(order);
+  const rows = dispatchRows(order);
+  const pays = orderPayments(order.id);
+  const bodyHtml = `
+    <h3>Cobro</h3>
+    <table class="sum"><tbody>
+      <tr><td>Total de la orden</td><td class="n">$${fmtNum(m.total)}</td></tr>
+      <tr><td>Menos: anticipos recibidos</td><td class="n">-$${fmtNum(m.advances)}</td></tr>
+      ${m.collections > 0 ? `<tr><td>Menos: cobros</td><td class="n">-$${fmtNum(m.collections)}</td></tr>` : ''}
+      ${m.withheld > 0 ? `<tr><td>Menos: retención de IVA (${m.retPct}%)</td><td class="n">-$${fmtNum(m.withheld)}</td></tr>` : ''}
+      <tr class="grand"><td>${m.balance < -0.005 ? 'Saldo a favor del cliente' : 'Falta por cobrar'}</td><td class="n">$${fmtNum(Math.abs(m.balance))}</td></tr>
+    </tbody></table>
+    ${pays.length ? `<h3>Pagos recibidos</h3><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Forma</th><th>Referencia</th><th class="n">Monto</th></tr></thead><tbody>
+      ${pays.map(p => `<tr><td>${fmtDate(p.date)}</td><td>${p.kind === 'anticipo' ? 'Anticipo' : 'Cobro'}</td><td>${esc((PAY_METHODS.find(x => x.key === p.method) || {}).label || p.method)}</td><td>${esc(p.reference || p.ref_doc)}</td><td class="n">$${fmtNum(p.amount)}</td></tr>`).join('')}
+    </tbody></table>` : ''}
+    <h3>Despacho</h3>
+    <table><thead><tr><th>Código</th><th>Descripción</th><th class="n">Pedido</th><th class="n">Despachado</th><th class="n">Pendiente</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td>${esc(r.sku)}</td><td>${esc(r.name)}</td><td class="n">${fmtInt(r.qty)}</td><td class="n">${fmtInt(r.done)}</td><td class="n">${fmtInt(r.pending)}</td></tr>`).join('')}
+      <tr class="tot"><td colspan="2">Pendiente por despachar</td><td class="n">${fmtInt(rows.reduce((t, r) => t + r.qty, 0))}</td><td class="n">${fmtInt(rows.reduce((t, r) => t + r.done, 0))}</td><td class="n">${fmtInt(rows.reduce((t, r) => t + r.pending, 0))}</td></tr>
+    </tbody></table>`;
+  printPage({
+    title: 'Estado de la orden', number: order.order_number, date: new Date().toISOString().slice(0, 10), client: clientOf(order),
+    meta: [['Fecha de la orden', fmtDate(order.date)], ...(order.invoice_ref ? [['Factura', order.invoice_number || order.invoice_ref]] : [])], bodyHtml
+  }, Store.getBusinessProfile());
+}
+
+// Aviso después de registrar un anticipo o un despacho (con su documento).
+let lastEvent = null;
 
 // ---------- Modales de acción ----------
 function paymentModal(order, onDone) {
@@ -113,7 +182,7 @@ function paymentModal(order, onDone) {
       }
     }
     md.close();
-    onDone();
+    onDone({ kind: 'pago', id: pay.id });
   });
 }
 
@@ -148,9 +217,9 @@ function dispatchModal(order, onDone) {
     });
     if (!any) return md.msg('Indica al menos una cantidad a despachar.');
     if (over && !confirm('Algunas cantidades superan la existencia registrada; el inventario quedará en negativo. ¿Despachar de todas formas?')) return;
-    registerDispatch(order, { date, qtyByProduct, notes: md.$('d-notes').value.trim() });
+    const d = registerDispatch(order, { date, qtyByProduct, notes: md.$('d-notes').value.trim() });
     md.close();
-    onDone();
+    onDone(d ? { kind: 'despacho', id: d.id } : null);
   });
 }
 
@@ -253,7 +322,9 @@ function renderDetail(app, id) {
     app.innerHTML = AccountingShell.wrap(AccountingTabs.render('orders'), `<div class="${card}"><p class="text-sm text-slate-500">No se encontró la orden. <a class="text-blue-600" href="#/contabilidad/ordenes">Volver a órdenes</a></p></div>`);
     return;
   }
-  const refresh = () => renderDetail(app, id);
+  const refresh = (ev) => { lastEvent = ev ? { ...ev, orderId: id } : null; renderDetail(app, id); };
+  const event = lastEvent && lastEvent.orderId === id ? lastEvent : null;
+  lastEvent = null;
   const m = orderMoney(order);
   const ds = dispatchStatus(order);
   const items = orderItems(order);
@@ -262,6 +333,7 @@ function renderDetail(app, id) {
   const fiscal = isFiscal(order);
   const open = order.status === 'abierta';
   const fs = Store.getFiscalSettings();
+  const dRows = dispatchRows(order);
   const row = (k, v, cls = '') => `<div class="flex justify-between ${cls}"><span class="text-slate-500">${k}</span><span class="tabular-nums">${v}</span></div>`;
 
   const body = `
@@ -281,11 +353,61 @@ function renderDetail(app, id) {
       </div>
     </div>
 
+    ${event ? `
+    <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+      <span>${event.kind === 'despacho' ? `Despacho <strong>${esc((Store.getById('dispatches', event.id) || {}).dispatch_number || '')}</strong> registrado.` : 'Pago registrado.'} El estado de la orden ya está actualizado.</span>
+      <button id="ev-print" class="${btnSecondary} !py-1.5">${event.kind === 'despacho' ? 'Imprimir orden de despacho' : 'Imprimir estado de la orden'}</button>
+    </div>` : ''}
+
+    <!-- Estado de la orden: cobro (total − anticipos = falta por cobrar) y
+         despacho (pedido − despachado = pendiente) por producto. -->
+    <div class="${card} !p-0 overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-900">Estado de la orden</h2>
+        <button id="a-status" class="text-xs text-slate-500 hover:text-blue-600">Imprimir estado</button>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-slate-100">
+        <div class="lg:col-span-2 p-4 text-sm space-y-1.5">
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Cobro</p>
+          ${taxSummaryRows(m, { ...fs, ivaEnabled: fiscal }).map(([k, v]) => row(k, '$' + fmtNum(v), 'text-xs')).join('')}
+          ${row('Total de la orden', '$' + fmtNum(m.total), 'font-semibold text-slate-900')}
+          ${row('Menos: anticipos', '−$' + fmtNum(m.advances))}
+          ${m.collections > 0 ? row('Menos: cobros', '−$' + fmtNum(m.collections)) : ''}
+          ${m.withheld > 0 ? row(`Menos: retención IVA ${m.retPct}%`, '−$' + fmtNum(m.withheld)) : ''}
+          ${row(m.balance < -0.005 ? 'Saldo a favor del cliente' : 'Falta por cobrar', '$' + fmtNum(Math.abs(m.balance)), 'text-base font-semibold border-t border-slate-200 pt-1.5 ' + (m.balance > 0.005 ? 'text-slate-900' : 'text-emerald-600'))}
+          <div class="pt-1.5">
+            <div class="w-full h-2 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-emerald-500" style="width:${m.total > 0 ? Math.min(100, Math.round(m.paid / m.total * 100)) : 0}%"></div></div>
+            <p class="text-[11px] text-slate-400 mt-1">${m.total > 0 ? Math.min(100, Math.round(m.paid / m.total * 100)) : 0}% cobrado</p>
+          </div>
+        </div>
+        <div class="lg:col-span-3 p-4">
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Despacho</p>
+          <table class="w-full text-sm">
+            <thead><tr class="text-[10px] uppercase tracking-wide text-slate-400"><th class="text-left py-1">Producto</th><th class="text-right py-1">Pedido</th><th class="text-right py-1">Despachado</th><th class="text-right py-1">Pendiente</th></tr></thead>
+            <tbody>${dRows.map(r => `
+              <tr class="border-t border-slate-100">
+                <td class="py-1.5 pr-2"><div class="text-slate-800 truncate max-w-[16rem]" title="${esc(r.name)}">${esc(r.name)}</div><div class="text-[10px] font-mono text-slate-400">${esc(r.sku)}</div></td>
+                <td class="py-1.5 text-right tabular-nums">${fmtInt(r.qty)}</td>
+                <td class="py-1.5 text-right tabular-nums text-slate-500">${r.done ? '−' + fmtInt(r.done) : '0'}</td>
+                <td class="py-1.5 text-right tabular-nums font-medium ${r.pending ? 'text-slate-900' : 'text-emerald-600'}">${r.pending ? fmtInt(r.pending) : '✓'}</td>
+              </tr>`).join('')}
+              <tr class="border-t-2 border-slate-200 font-semibold">
+                <td class="py-1.5">Pendiente por despachar</td>
+                <td class="py-1.5 text-right tabular-nums">${fmtInt(ds.total)}</td>
+                <td class="py-1.5 text-right tabular-nums text-slate-500">${ds.dispatched ? '−' + fmtInt(ds.dispatched) : '0'}</td>
+                <td class="py-1.5 text-right tabular-nums ${ds.pending ? 'text-slate-900' : 'text-emerald-600'}">${fmtInt(ds.pending)} unid.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
-      <div class="xl:col-span-2 space-y-4">
+      <div class="${order.notes ? 'xl:col-span-2' : 'xl:col-span-3'} space-y-4">
         <div class="${card} !p-0 overflow-hidden">
           <div class="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-            <h2 class="text-sm font-semibold text-slate-900">Productos</h2>
+            <h2 class="text-sm font-semibold text-slate-900">Productos y precios</h2>
             ${open ? `<label class="flex items-center gap-2 text-xs text-slate-600"><input id="a-fiscal" type="checkbox" class="w-4 h-4 accent-blue-600" ${fiscal ? 'checked' : ''}> Con factura (IVA)</label>` : `<span class="text-xs text-slate-500">${fiscal ? 'Con factura' : 'Sin factura'}</span>`}
           </div>
           <div class="overflow-x-auto">
@@ -330,27 +452,13 @@ function renderDetail(app, id) {
           ${disp.length === 0 ? '<p class="text-sm text-slate-400">Aún no se ha despachado nada.</p>' : `
           <div class="divide-y divide-slate-100">${disp.map(d => `
             <div class="py-2.5">
-              <div class="flex justify-between text-sm"><span class="text-slate-800">${esc(d.dispatch_number)}</span><span class="text-slate-400 text-xs">${fmtDate(d.date)}</span></div>
+              <div class="flex justify-between items-center text-sm"><span class="text-slate-800">${esc(d.dispatch_number)} <span class="text-slate-400 text-xs ml-1">${fmtDate(d.date)}</span></span><button data-dprint="${esc(d.id)}" class="text-xs text-slate-500 hover:text-blue-600">Orden de despacho</button></div>
               <p class="text-xs text-slate-500">${dispatchItems(d).map(x => `${fmtInt(x.qty)} × ${esc(x.name)}`).join(' · ')}${d.notes ? ' — ' + esc(d.notes) : ''}</p>
             </div>`).join('')}</div>`}
         </div>
       </div>
 
-      <div class="space-y-4">
-        <div class="${card} text-sm space-y-1.5">
-          <h2 class="text-sm font-semibold text-slate-900 mb-1">Resumen</h2>
-          ${taxSummaryRows(m, { ...fs, ivaEnabled: fiscal }).map(([k, v]) => row(k, '$' + fmtNum(v))).join('') || row('Subtotal', '$' + fmtNum(m.subtotal))}
-          ${row('Total', '$' + fmtNum(m.total), 'font-semibold text-slate-900 border-t border-slate-100 pt-1.5')}
-          ${m.withheld > 0 ? row(`Retención IVA ${m.retPct}%`, '−$' + fmtNum(m.withheld)) : ''}
-          ${row('Anticipos', '−$' + fmtNum(m.advances))}
-          ${m.collections > 0 ? row('Cobros', '−$' + fmtNum(m.collections)) : ''}
-          ${row(m.balance < -0.005 ? 'Saldo a favor del cliente' : (open ? 'Falta por pagar' : 'Por cobrar'), '$' + fmtNum(Math.abs(m.balance)), 'font-semibold border-t border-slate-100 pt-1.5 ' + (m.balance > 0.005 ? 'text-slate-900' : 'text-emerald-600'))}
-        </div>
-        <div class="${card} text-sm">
-          <h2 class="text-sm font-semibold text-slate-900 mb-2">Despacho</h2>
-          <div class="w-full h-2 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-blue-500" style="width:${ds.total ? Math.round(ds.dispatched / ds.total * 100) : 0}%"></div></div>
-          <p class="text-xs text-slate-500 mt-1.5">${fmtInt(ds.dispatched)} de ${fmtInt(ds.total)} unidades despachadas${ds.complete ? ' · completo' : ''}.</p>
-        </div>
+      <div class="space-y-4 ${order.notes ? '' : 'hidden'}">
         ${order.notes ? `<div class="${card} text-sm"><h2 class="text-sm font-semibold text-slate-900 mb-1">Notas</h2><p class="text-slate-600">${esc(order.notes)}</p></div>` : ''}
       </div>
     </div>`;
@@ -358,6 +466,13 @@ function renderDetail(app, id) {
 
   const on = (idEl, fn) => { const el = document.getElementById(idEl); if (el) el.addEventListener('click', fn); };
   on('a-print', () => printOrder(Store.getById('sales_orders', id)));
+  on('a-status', () => printOrderStatus(Store.getById('sales_orders', id)));
+  on('ev-print', () => {
+    const o = Store.getById('sales_orders', id);
+    if (event.kind === 'despacho') printDispatchOrder(o, Store.getById('dispatches', event.id));
+    else printOrderStatus(o);
+  });
+  app.querySelectorAll('[data-dprint]').forEach(b => b.addEventListener('click', () => printDispatchOrder(Store.getById('sales_orders', id), Store.getById('dispatches', b.dataset.dprint))));
   on('a-pay', () => paymentModal(Store.getById('sales_orders', id), refresh));
   on('a-dispatch', () => dispatchModal(Store.getById('sales_orders', id), refresh));
   on('a-invoice', () => invoiceModal(Store.getById('sales_orders', id), refresh));

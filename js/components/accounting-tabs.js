@@ -1,6 +1,7 @@
 import Store from '../store.js';
 import { ensureTodayRates } from '../rates.js';
 import { icon } from './icons.js';
+import { POS_ENABLED } from '../features.js';
 
 // Navegación del módulo de Contabilidad, organizada por flujo de trabajo
 // como los ERP modernos (Odoo, Fina): Ventas (todo lo del cliente, hasta lo
@@ -14,9 +15,9 @@ export const ACCOUNTING_SECTIONS = [
     { key: 'dashboard', path: '#/contabilidad/resumen', label: 'Resumen', icon: 'home' }
   ] },
   { title: 'Ventas', items: [
-    { key: 'sales', path: '#/contabilidad/ventas', label: 'Punto de venta', short: 'Ventas', icon: 'cart' },
-    { key: 'quotes', path: '#/contabilidad/presupuestos', label: 'Presupuestos', icon: 'file' },
-    { key: 'orders', path: '#/contabilidad/ordenes', label: 'Órdenes de venta', icon: 'clipboard' },
+    { key: 'sales', path: '#/contabilidad/ventas', label: 'Punto de venta', short: 'Ventas', icon: 'cart', off: !POS_ENABLED },
+    { key: 'quotes', path: '#/contabilidad/presupuestos', label: 'Presupuestos', short: 'Presupuestos', icon: 'file' },
+    { key: 'orders', path: '#/contabilidad/ordenes', label: 'Órdenes de venta', short: 'Órdenes', icon: 'clipboard' },
     { key: 'contacts', path: '#/contabilidad/contactos', label: 'Clientes', icon: 'users' },
     { key: 'receivables', path: '#/contabilidad/por-cobrar', label: 'Cuentas por cobrar', icon: 'inbox' },
     { key: 'promotions', path: '#/contabilidad/promociones', label: 'Promociones', icon: 'gift' }
@@ -51,8 +52,10 @@ const sectionTitle = (s, extra = '') => s.title
   ? `<p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 ${extra}">${s.title}</p>`
   : '';
 
+// Los módulos apagados (features.js) no aparecen en el menú.
+for (const s of ACCOUNTING_SECTIONS) s.items = s.items.filter(it => !it.off);
 const ALL_ITEMS = ACCOUNTING_SECTIONS.flatMap(s => s.items);
-const MOBILE_KEYS = ['dashboard', 'sales', 'inventory', 'expenses'];
+const MOBILE_KEYS = ['dashboard', POS_ENABLED ? 'sales' : 'quotes', 'orders', 'expenses'];
 
 // Tasas del día en el menú: dólar y euro BCV y USDT (Bs por unidad).
 const fmtRate = (v) => Number(v) > 0 ? Number(v).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
