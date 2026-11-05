@@ -42,13 +42,16 @@ const STORE_KEYS = {
   crm_activities: 'cif_crm_activities',
   promotions: 'cif_promotions',
   fiscal_docs: 'cif_fiscal_docs',
-  exchange_rates: 'cif_exchange_rates'
+  exchange_rates: 'cif_exchange_rates',
+  sales_orders: 'cif_sales_orders',
+  order_payments: 'cif_order_payments',
+  dispatches: 'cif_dispatches'
 };
 
 // Tablas que el Web App de Sheets respalda (schemas definidos en Code.gs).
 // Las demás entidades (contabilidad, ventas, gastos) viven en Supabase.
-const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'contacts', 'quotes', 'crm_activities', 'promotions', 'fiscal_docs', 'exchange_rates'];
-const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes', 'accounting_settings', 'crm_activities', 'promotions', 'fiscal_docs', 'exchange_rates'];
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'contacts', 'quotes', 'crm_activities', 'promotions', 'fiscal_docs', 'exchange_rates', 'sales_orders', 'order_payments', 'dispatches'];
+const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes', 'accounting_settings', 'crm_activities', 'promotions', 'fiscal_docs', 'exchange_rates', 'sales_orders', 'order_payments', 'dispatches'];
 
 function readAll(key) {
   try {
@@ -743,6 +746,9 @@ function seed() {
   if (!localStorage.getItem(storageKey(STORE_KEYS.promotions))) writeAll(STORE_KEYS.promotions, []);
   if (!localStorage.getItem(storageKey(STORE_KEYS.fiscal_docs))) writeAll(STORE_KEYS.fiscal_docs, []);
   if (!localStorage.getItem(storageKey(STORE_KEYS.exchange_rates))) writeAll(STORE_KEYS.exchange_rates, []);
+  for (const k of ['sales_orders', 'order_payments', 'dispatches']) {
+    if (!localStorage.getItem(storageKey(STORE_KEYS[k]))) writeAll(STORE_KEYS[k], []);
+  }
 
   purgeDroppedColumns();
   localStorage.setItem(RETRY_KEY, JSON.stringify(getRetryQueue()));
@@ -753,6 +759,7 @@ function seed() {
   if (!seedDone && SANDBOX) {
     seedDone = true;
     firstSyncDone = true; // en modo prueba no hay nube que esperar
+    ensureEntryNumbers();
   }
   if (!seedDone) {
     seedDone = true;
@@ -761,6 +768,8 @@ function seed() {
     // Al terminar, se avisa con un evento para que la vista activa se refresque sola.
     syncWithCloud().then(() => {
       firstSyncDone = true;
+      // Con todo lo de la nube ya mezclado, se numeran los asientos viejos.
+      try { ensureEntryNumbers(); } catch (e) { console.error(e); }
       setTimeout(() => {
         mirrorAllToSheets();
         processRetryQueue();
@@ -769,6 +778,71 @@ function seed() {
     }).catch(() => { /* los errores ya quedan registrados dentro de syncWithCloud */ });
   }
   return Promise.resolve();
+}
+
+// ============================================
+// Asientos: número consecutivo por año y líneas consolidadas
+// ============================================
+const entryYear = (date) => String(date || new Date().toISOString()).slice(0, 4);
+const entrySeq = (n) => Number(String(n || '').split('-')[1]) || 0;
+
+// Siguiente número del año: 2026-0001, 2026-0002… (reinicia cada año).
+function nextEntryNumber(year, movements) {
+  let max = 0;
+  for (const m of movements) if (String(m.entry_number || '').startsWith(year + '-')) max = Math.max(max, entrySeq(m.entry_number));
+  return `${year}-${String(max + 1).padStart(4, '0')}`;
+}
+
+// Numera los asientos que aún no tienen número, en el orden en que se
+// registraron (fecha y hora de creación), continuando la serie de su año.
+function ensureEntryNumbers() {
+  const all = readAll(STORE_KEYS.movements);
+  const missing = all.filter(m => !m.entry_number);
+  if (!missing.length) return 0;
+  const groups = new Map();
+  for (const m of missing) {
+    const k = m.ref_doc || m.id;
+    const g = groups.get(k) || { rows: [], date: m.entry_date, created: m.created_at };
+    g.rows.push(m);
+    if (String(m.entry_date) < String(g.date)) g.date = m.entry_date;
+    if (String(m.created_at) < String(g.created)) g.created = m.created_at;
+    groups.set(k, g);
+  }
+  const sorted = [...groups.values()].sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.created).localeCompare(String(b.created)));
+  const numbered = all.filter(m => m.entry_number);
+  const changed = [];
+  for (const g of sorted) {
+    const n = nextEntryNumber(entryYear(g.date), numbered);
+    for (const m of g.rows) { m.entry_number = n; numbered.push(m); changed.push({ id: m.id, entry_number: n }); }
+  }
+  const byId = new Map(changed.map(c => [c.id, c.entry_number]));
+  writeAll(STORE_KEYS.movements, all.map(m => byId.has(m.id) ? { ...m, entry_number: byId.get(m.id) } : m));
+  cloudUpsert('movements', changed);
+  log(`Se numeraron ${groups.size} asiento(s) sin número.`);
+  return groups.size;
+}
+
+// Junta en una sola línea las del mismo asiento que van a la misma cuenta y
+// del mismo lado (p. ej. 5 productos → 1 línea de Ingresos por Ventas).
+export function consolidateLines(lines) {
+  const out = [];
+  const byKey = new Map();
+  for (const l of lines) {
+    const debit = Number(l.debit) || 0, credit = Number(l.credit) || 0;
+    if (!(debit > 0) && !(credit > 0)) continue;
+    const key = `${l.ref_doc}|${l.codigo_cuenta}|${debit > 0 ? 'D' : 'H'}`;
+    const prev = byKey.get(key);
+    if (prev) {
+      prev.debit = Math.round((prev.debit + debit) * 100) / 100;
+      prev.credit = Math.round((prev.credit + credit) * 100) / 100;
+    } else {
+      const row = { ...l, debit, credit, concepto: String(l.concepto || '').split('|')[0].trim() || l.concepto };
+      byKey.set(key, row);
+      out.push(row);
+    }
+  }
+  // Debe primero, luego Haber (orden contable habitual).
+  return [...out.filter(l => l.debit > 0), ...out.filter(l => l.credit > 0)];
 }
 
 function notifyDataUpdated() {
@@ -1108,8 +1182,21 @@ const Store = {
   // opts = { source, sourceRef } — para marcar asientos autogenerados (p. ej. cierre de contenedor).
   postJournalRows(lines, opts = {}) {
     const ts = now();
-    const rows = lines.map(l => ({
+    const existing = readAll(STORE_KEYS.movements);
+    // Un número por asiento (ref_doc), consecutivo dentro del año de su fecha.
+    const numbers = new Map();
+    const pool = [...existing];
+    for (const l of lines) {
+      const k = l.ref_doc || '';
+      if (numbers.has(k)) continue;
+      const n = nextEntryNumber(entryYear(l.entry_date), pool);
+      numbers.set(k, n);
+      pool.push({ entry_number: n });
+    }
+    const source = opts.keepLines ? lines : consolidateLines(lines);
+    const rows = source.map(l => ({
       id: uid(),
+      entry_number: numbers.get(l.ref_doc || ''),
       entry_date: l.entry_date,
       codigo_cuenta: l.codigo_cuenta || '',
       cuenta_contable: l.cuenta_contable || '',
@@ -1130,7 +1217,6 @@ const Store = {
       created_at: ts,
       updated_at: ts
     }));
-    const existing = readAll(STORE_KEYS.movements);
     writeAll(STORE_KEYS.movements, [...existing, ...rows]);
     cloudUpsert('movements', rows);
     return { ok: true, lines: rows };
@@ -1211,6 +1297,12 @@ const Store = {
         p = same.find(x => inQty.has(x.id)) || same[0];
       }
       if (p) outQty.set(p.id, (outQty.get(p.id) || 0) + Number(m.cantidad));
+    }
+    // Despachos de órdenes de venta.
+    for (const d of readAll(STORE_KEYS.dispatches)) {
+      let items = [];
+      try { items = JSON.parse(d.items || '[]'); } catch { items = []; }
+      for (const it of items) if (it.productId) outQty.set(it.productId, (outQty.get(it.productId) || 0) + (Number(it.qty) || 0));
     }
     const r2 = (n) => Math.round(n * 100) / 100;
     return products.map(p => {

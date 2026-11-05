@@ -110,7 +110,9 @@ const SCHEMAS = {
     // y precio de lista antes de promociones o descuento del cliente.
     'costo_unitario', 'precio_lista',
     // Tasa BCV (Bs por USD) del día del asiento, para llevar los libros en Bs.
-    'tasa_bcv'
+    'tasa_bcv',
+    // Número consecutivo del asiento (reinicia cada año): 2026-0001.
+    'entry_number'
   ],
   // Directorio único de clientes/proveedores (CRM) — lo usan los selectores de
   // Ventas, Gastos, Costos, Inventario (Recepción) y las nuevas Cuentas por
@@ -176,6 +178,27 @@ const SCHEMAS = {
   exchange_rates: [
     'id', 'date', 'usd_bcv', 'eur_bcv', 'usdt', 'source', 'fetched_at',
     'created_at', 'updated_at'
+  ],
+  // Órdenes de venta (presupuesto aprobado → orden → anticipos → despachos →
+  // factura). items es un JSON con las líneas: producto, cantidad, precio de
+  // lista, % de descuento, precio neto y cantidad ya despachada.
+  sales_orders: [
+    'id', 'order_number', 'date', 'quote_id', 'contact_id', 'contact_name',
+    'items', 'subtotal', 'tax', 'total', 'fiscal', 'status', 'notes',
+    'invoice_ref', 'invoice_number', 'control_number', 'invoice_date',
+    'created_at', 'updated_at'
+  ],
+  // Anticipos (antes de facturar) y cobros (después) de una orden, con la
+  // foto del comprobante en Drive (foto_url / foto_file_id).
+  order_payments: [
+    'id', 'order_id', 'contact_id', 'kind', 'date', 'amount', 'method',
+    'account_codigo', 'ref_doc', 'reference', 'notes', 'foto_url', 'foto_file_id',
+    'created_at', 'updated_at'
+  ],
+  // Despachos de una orden (pueden ser parciales); bajan el inventario.
+  dispatches: [
+    'id', 'order_id', 'dispatch_number', 'date', 'items', 'notes',
+    'created_at', 'updated_at'
   ]
 };
 
@@ -191,6 +214,7 @@ const FOTO_ID_COL = 'foto_file_id';
  */
 const FOTOS_FOLDER_ID = '';
 const FOTOS_FOLDER_NAME = 'fotos_productos';
+const COMPROBANTES_FOLDER_NAME = 'comprobantes_pagos';
 
 /** Tamaño máximo de imagen aceptado, ya decodificada (8 MB). */
 const MAX_FOTO_BYTES = 8 * 1024 * 1024;
@@ -622,7 +646,7 @@ function handleFotoUpload_(body) {
 
   // 1) Subida a Drive: fuera del candado, porque es la parte lenta.
   const blob = Utilities.newBlob(bytes, mimeType, filename);
-  const file = carpetaFotos_().createFile(blob);
+  const file = carpetaFotos_(table).createFile(blob);
   try {
     file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   } catch (err) {
@@ -678,8 +702,13 @@ function handleFotoUpload_(body) {
   return out;
 }
 
-/** Carpeta de destino: la fijada por ID, o una por nombre (se crea si falta). */
-function carpetaFotos_() {
+/** Carpeta de destino: la fijada por ID, o una por nombre (se crea si falta).
+ *  Los comprobantes de pago (tabla order_payments) van a su propia carpeta. */
+function carpetaFotos_(table) {
+  if (table === 'order_payments') {
+    const c = DriveApp.getFoldersByName(COMPROBANTES_FOLDER_NAME);
+    return c.hasNext() ? c.next() : DriveApp.createFolder(COMPROBANTES_FOLDER_NAME);
+  }
   if (FOTOS_FOLDER_ID) return DriveApp.getFolderById(FOTOS_FOLDER_ID);
   const it = DriveApp.getFoldersByName(FOTOS_FOLDER_NAME);
   return it.hasNext() ? it.next() : DriveApp.createFolder(FOTOS_FOLDER_NAME);

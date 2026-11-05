@@ -136,6 +136,12 @@ const Inventory = {
         const parts = String(m.concepto || '').split('|');
         entries.push({ date: m.entry_date, type: 'salida', ref: m.ref_doc, name: (parts[1] || parts[0] || '').trim(), qty: Number(m.cantidad) });
       }
+      // Despachos de órdenes de venta (el inventario baja al despachar).
+      for (const d of Store.getAll('dispatches')) {
+        let items = [];
+        try { items = JSON.parse(d.items || '[]'); } catch { items = []; }
+        for (const it of items) entries.push({ date: d.date, type: 'salida', ref: d.dispatch_number, name: it.name, qty: Number(it.qty) });
+      }
       return entries.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 100);
     };
 

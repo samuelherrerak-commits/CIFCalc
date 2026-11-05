@@ -1,7 +1,7 @@
 import Store from './store.js';
 import { computeContainer } from './utils.js';
 import { inferirTipo } from './accounting.js';
-import { salesLines } from './analytics.js';
+import { stockOuts } from './analytics.js';
 
 // Estados financieros (VEN-NIF PYME, basada en la NIIF para las PYMES):
 // Situación Financiera, Resultado Integral, Cambios en el Patrimonio y Flujos
@@ -78,11 +78,7 @@ export function inventoryAt(date) {
       ins.set(pid, e);
     }
   }
-  const outs = new Map();
-  for (const l of salesLines()) {
-    if (!l.productId || l.date > date) continue;
-    outs.set(l.productId, (outs.get(l.productId) || 0) + l.qty);
-  }
+  const outs = stockOuts(date);
   let value = 0, units = 0;
   const detail = [];
   const products = new Map(Store.getAll('products').map(p => [p.id, p]));
@@ -251,7 +247,7 @@ function cashFlow(movements, info, from, to) {
     let k = 'otrosOperacion';
     if (other) {
       const code = other.codigo_cuenta, tipo = info.tipoOf(code), te = info.teOf(code);
-      if ((tipo === 'Ingreso' && code.startsWith('4.1.01')) || te === 'Clientes') k = 'cobrosClientes';
+      if ((tipo === 'Ingreso' && code.startsWith('4.1.01')) || te === 'Clientes' || code.startsWith('2.1.05')) k = 'cobrosClientes';
       else if (tipo === 'Ingreso') k = 'otrosCobros';
       else if (tipo === 'Costo' || te === 'Proveedores' || code.startsWith('2.1.01') || code.startsWith('2.1.02')) k = 'pagosProveedores';
       else if (tipo === 'Gasto') k = 'pagosGastos';

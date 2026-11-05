@@ -4,7 +4,7 @@ import { withRoundingPlug, totalsFor } from '../accounting.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { btnPrimary, btnSecondary, card, input, label } from '../components/accounting-shell.js';
 
-const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', container_payment: 'Pago Contenedor', income: 'Ingreso', expense: 'Gasto', cost: 'Costo', sale: 'Venta', inventory_reception: 'Recepción', receivable_collection: 'Cobro CxC', payable_settlement: 'Pago CxP' };
+const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', container_payment: 'Pago Contenedor', income: 'Ingreso', expense: 'Gasto', cost: 'Costo', sale: 'Venta', inventory_reception: 'Recepción', receivable_collection: 'Cobro', payable_settlement: 'Pago CxP', order_advance: 'Anticipo', iva_liquidation: 'Liquidación IVA', iva_payment: 'Pago IVA' };
 const MAX_ROWS = 200;
 
 const Journal = {
@@ -31,35 +31,64 @@ const Journal = {
         .filter(m => {
           if (accFilterObj && m.codigo_cuenta !== accFilterObj.codigo) return false;
           if (!q) return true;
-          return [m.concepto, m.ref_doc].some(v => String(v || '').toLowerCase().includes(q));
+          return [m.concepto, m.ref_doc, m.entry_number, m.entidad].some(v => String(v || '').toLowerCase().includes(q));
         })
         .sort((a, b) => new Date(b.entry_date || 0) - new Date(a.entry_date || 0));
     };
 
+    // Asientos agrupados: N.º (consecutivo por año), fecha, referencia y
+    // concepto en la cabecera; debajo, sus líneas de Debe y Haber.
+    const entryKey = (m) => m.entry_number || m.ref_doc || m.id;
+    const seqOf = (n) => { const [y, q] = String(n || '').split('-'); return [Number(y) || 0, Number(q) || 0]; };
     const renderList = () => {
       const rows = filteredRows();
       const totals = totalsFor(rows);
       document.getElementById('journal-total-debit').textContent = `$${fmtNum(totals.debit)}`;
       document.getElementById('journal-total-credit').textContent = `$${fmtNum(totals.credit)}`;
-      document.getElementById('journal-count').textContent = `${rows.length} asiento${rows.length === 1 ? '' : 's'}`;
 
-      const shown = rows.slice(0, MAX_ROWS);
+      const groups = new Map();
+      for (const m of rows) {
+        const k = entryKey(m);
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(m);
+      }
+      const entries = [...groups.values()].sort((a, b) => {
+        const [ya, qa] = seqOf(a[0].entry_number), [yb, qb] = seqOf(b[0].entry_number);
+        return (yb - ya) || (qb - qa) || String(b[0].entry_date).localeCompare(String(a[0].entry_date));
+      });
+      document.getElementById('journal-count').textContent = `${entries.length} asiento${entries.length === 1 ? '' : 's'}`;
+
+      const shown = entries.slice(0, MAX_ROWS);
       const tbody = document.getElementById('journal-tbody');
       tbody.innerHTML = shown.length === 0
-        ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin asientos.</td></tr>`
-        : shown.map(m => `
-          <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-2">${esc(m.entry_date)}</td>
-            <td class="p-2 text-slate-700">${esc(m.concepto)}</td>
-            <td class="p-2" title="${esc(m.cuenta_contable)}"><span class="font-mono text-slate-600">${esc(m.codigo_cuenta)}</span></td>
-            <td class="p-2 text-right font-mono text-blue-600">${m.debit > 0 ? '$' + fmtNum(m.debit) : ''}</td>
-            <td class="p-2 text-right font-mono text-emerald-600">${m.credit > 0 ? '$' + fmtNum(m.credit) : ''}</td>
-            <td class="p-2 text-slate-400">${esc(m.ref_doc)}</td>
+        ? `<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin asientos.</td></tr>`
+        : shown.map(lines => {
+          const h = lines[0];
+          const sorted = [...lines.filter(l => l.debit > 0), ...lines.filter(l => !(l.debit > 0))];
+          const concepto = String(h.concepto || '').split('|')[0].trim();
+          return `
+          <tr class="bg-slate-50 border-t-2 border-slate-200">
+            <td class="px-2 py-1.5 font-mono text-xs font-semibold text-slate-900 whitespace-nowrap">${esc(h.entry_number || '—')}</td>
+            <td class="px-2 py-1.5 text-xs text-slate-500 whitespace-nowrap">${esc(h.entry_date)}</td>
+            <td class="px-2 py-1.5 text-xs" colspan="3">
+              <span class="font-mono text-slate-700">${esc(h.ref_doc)}</span>
+              <span class="text-slate-400 mx-1">·</span><span class="text-slate-700">${esc(concepto)}</span>
+              ${h.entidad ? `<span class="text-slate-400 mx-1">·</span><span class="text-slate-500">${esc(h.entidad)}</span>` : ''}
+              <span class="ml-2 text-[10px] text-slate-400">${esc(SOURCE_LABEL[h.source] || h.source || '')}</span>
+            </td>
           </tr>
-        `).join('');
+          ${sorted.map(m => `
+          <tr class="border-b border-slate-100 hover:bg-slate-50">
+            <td class="px-2 py-1"></td>
+            <td class="px-2 py-1 font-mono text-xs text-slate-500 whitespace-nowrap">${esc(m.codigo_cuenta)}</td>
+            <td class="px-2 py-1 text-xs ${m.credit > 0 ? 'pl-8 text-slate-600' : 'text-slate-800'}">${esc(m.cuenta_contable)}</td>
+            <td class="px-2 py-1 text-right font-mono text-xs text-slate-800">${m.debit > 0 ? '$' + fmtNum(m.debit) : ''}</td>
+            <td class="px-2 py-1 text-right font-mono text-xs text-slate-800">${m.credit > 0 ? '$' + fmtNum(m.credit) : ''}</td>
+          </tr>`).join('')}`;
+        }).join('');
 
       document.getElementById('journal-footer-note').textContent =
-        rows.length > MAX_ROWS ? `Mostrando ${MAX_ROWS} de ${rows.length} asientos.` : '';
+        entries.length > MAX_ROWS ? `Mostrando ${MAX_ROWS} de ${entries.length} asientos.` : '';
     };
 
     const accountOptionsForFilter = () => {
@@ -136,7 +165,7 @@ const Journal = {
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 mb-3">
           <h2 class="text-sm font-semibold text-slate-900">Diario Contable <span class="text-slate-400" id="journal-count"></span></h2>
           <div class="flex items-center gap-2 flex-wrap">
-            <input id="journal-search" type="text" placeholder="Buscar concepto o referencia…" class="${input}" style="width:220px">
+            <input id="journal-search" type="text" placeholder="Buscar N.º, referencia, concepto o cliente…" class="${input}" style="width:220px">
             <select id="journal-account-filter" class="${input}" style="width:220px"></select>
             <button id="btn-new-entry" class="${btnPrimary}">+ Nuevo Asiento</button>
           </div>
@@ -147,8 +176,8 @@ const Journal = {
         </div>
         <table class="w-full text-left text-xs">
           <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
-            <th class="p-2">Fecha</th><th class="p-2">Concepto</th><th class="p-2">Cuenta</th>
-            <th class="p-2 text-right">Debe</th><th class="p-2 text-right">Haber</th><th class="p-2">Ref.</th>
+            <th class="p-2">N.º asiento</th><th class="p-2">Fecha / Código</th><th class="p-2">Referencia · Concepto / Cuenta</th>
+            <th class="p-2 text-right">Debe</th><th class="p-2 text-right">Haber</th>
           </tr></thead>
           <tbody id="journal-tbody"></tbody>
         </table>

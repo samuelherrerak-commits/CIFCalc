@@ -31,7 +31,16 @@ export function mountPOS(root, opts) {
   const priceFor = opts.priceFor || ((p) => ({ listPrice: Number(p.sale_price) || 0, unitPrice: Number(p.sale_price) || 0, discountPct: 0, label: '' }));
   const suggested = opts.suggestedIds || new Set();
   const SUGGESTED = '__sugeridos__';
-  let cart = (opts.cart || []).map(l => ({ listPrice: Number(l.product.sale_price) || l.unitPrice, label: '', manual: true, ...l }));
+  // Cada línea guarda el precio de lista y el % de descuento negociado; el
+  // precio neto (unitPrice) se calcula: lista × (1 − descuento).
+  const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const netOf = (list, pct) => r2(list * (1 - (Number(pct) || 0) / 100));
+  let cart = (opts.cart || []).map(l => {
+    const listPrice = Number(l.listPrice) || Number(l.product.sale_price) || Number(l.unitPrice) || 0;
+    const discountPct = l.discountPct != null ? Number(l.discountPct) || 0
+      : (listPrice > 0 && Number(l.unitPrice) > 0 && Number(l.unitPrice) < listPrice ? r2((1 - Number(l.unitPrice) / listPrice) * 100) : 0);
+    return { label: '', manual: true, ...l, listPrice, discountPct, unitPrice: Number(l.unitPrice) || netOf(listPrice, discountPct) };
+  });
   let query = '';
   let category = '';
   let flashTimer = null;
@@ -199,7 +208,7 @@ export function mountPOS(root, opts) {
     if (line) line.qty += 1;
     else {
       const pr = priceFor(p);
-      cart.push({ product: p, qty: 1, unitPrice: pr.unitPrice, listPrice: pr.listPrice, label: pr.label, manual: false });
+      cart.push({ product: p, qty: 1, unitPrice: pr.unitPrice, listPrice: pr.listPrice, discountPct: Number(pr.discountPct) || 0, label: pr.label, manual: false });
     }
     success('');
     changed();
@@ -233,7 +242,10 @@ export function mountPOS(root, opts) {
           <div class="flex-1 min-w-0">
             <div class="flex justify-between gap-2">
               <p class="text-xs text-slate-800 truncate" title="${esc(l.product.name)}">${esc(l.product.name)}</p>
-              <button data-del="${i}" title="Quitar" class="text-slate-300 hover:text-red-500 text-sm leading-none">✕</button>
+              <span class="flex items-center gap-2 shrink-0">
+                <span class="text-sm font-semibold text-slate-900 whitespace-nowrap tabular-nums">$${fmtNum(l.qty * l.unitPrice)}</span>
+                <button data-del="${i}" title="Quitar" class="text-slate-300 hover:text-red-500 text-sm leading-none">✕</button>
+              </span>
             </div>
             <div class="flex items-center gap-1.5 mt-1">
               <div class="flex items-center">
@@ -241,12 +253,14 @@ export function mountPOS(root, opts) {
                 <input data-qty="${i}" type="number" min="0" ${capToStock ? `max="${stockOf(l.product)}"` : ''} step="1" value="${l.qty}" class="w-10 text-center text-sm bg-transparent outline-none">
                 <button data-plus="${i}" class="w-6 h-6 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-500 text-sm leading-none">+</button>
               </div>
-              <div class="flex items-center gap-0.5 text-[11px] text-slate-400">
-                × $<input data-price="${i}" type="number" min="0" step="0.01" value="${l.unitPrice || ''}" placeholder="0.00" class="w-16 px-1 py-0.5 border ${l.unitPrice > 0 ? 'border-slate-200 bg-white' : 'border-amber-400 bg-amber-50'} rounded text-right text-xs">
+              <div class="flex items-center gap-0.5 text-[11px] text-slate-400 whitespace-nowrap" title="Precio de lista">
+                × $<input data-list="${i}" type="number" min="0" step="0.01" value="${l.listPrice || ''}" placeholder="0.00" class="w-16 px-1 py-0.5 border ${l.listPrice > 0 ? 'border-slate-200 bg-white' : 'border-amber-400 bg-amber-50'} rounded text-right text-xs">
               </div>
-              <span class="ml-auto text-sm font-semibold text-slate-900 whitespace-nowrap">$${fmtNum(l.qty * l.unitPrice)}</span>
+              <div class="flex items-center gap-0.5 text-[11px] text-slate-400 whitespace-nowrap" title="Descuento negociado">
+                −<input data-disc="${i}" type="number" min="0" max="100" step="0.5" value="${l.discountPct || ''}" placeholder="0" class="w-11 px-1 py-0.5 border border-slate-200 bg-white rounded text-right text-xs">%
+              </div>
             </div>
-            ${over || (l.label && l.unitPrice < l.listPrice) ? `<p class="text-[10px] font-semibold mt-0.5 ${over ? 'text-amber-600' : 'text-rose-600'}">${over ? `Supera la existencia (${fmtInt(stockOf(l.product))})` : `${esc(l.label)} · antes $${fmtNum(l.listPrice)}`}</p>` : ''}
+            ${over || l.discountPct > 0 ? `<p class="text-[10px] mt-0.5 ${over ? 'text-amber-600 font-semibold' : 'text-slate-500'}">${over ? `Supera la existencia (${fmtInt(stockOf(l.product))}) · se entrega después` : `Neto $${fmtNum(l.unitPrice)} c/u${l.label ? ' · ' + esc(l.label) : ''}`}</p>` : ''}
           </div>
         </div>`;
       }).join('');
@@ -272,11 +286,19 @@ export function mountPOS(root, opts) {
     }));
     list.querySelectorAll('[data-qty]').forEach(el => el.addEventListener('change', (e) => setQty(Number(e.target.dataset.qty), e.target.value)));
     list.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => { cart.splice(Number(b.dataset.del), 1); changed(); }));
-    list.querySelectorAll('[data-price]').forEach(el => el.addEventListener('change', (e) => {
-      const l = cart[Number(e.target.dataset.price)];
-      l.unitPrice = Math.max(0, Math.round((parseFloat(e.target.value) || 0) * 100) / 100);
+    list.querySelectorAll('[data-list]').forEach(el => el.addEventListener('change', (e) => {
+      const l = cart[Number(e.target.dataset.list)];
+      l.listPrice = Math.max(0, r2(parseFloat(e.target.value)));
+      l.unitPrice = netOf(l.listPrice, l.discountPct);
       l.manual = true;
-      l.label = l.unitPrice < l.listPrice ? `Precio especial -${fmtNum((1 - l.unitPrice / l.listPrice) * 100).replace(/\.00$/, '')}%` : '';
+      changed();
+    }));
+    list.querySelectorAll('[data-disc]').forEach(el => el.addEventListener('change', (e) => {
+      const l = cart[Number(e.target.dataset.disc)];
+      l.discountPct = Math.min(100, Math.max(0, r2(parseFloat(e.target.value))));
+      l.unitPrice = netOf(l.listPrice, l.discountPct);
+      l.label = '';
+      l.manual = true;
       changed();
     }));
   };
@@ -316,7 +338,7 @@ export function mountPOS(root, opts) {
       for (const l of cart) {
         if (l.manual) continue;
         const pr = priceFor(l.product);
-        Object.assign(l, { unitPrice: pr.unitPrice, listPrice: pr.listPrice, label: pr.label });
+        Object.assign(l, { unitPrice: pr.unitPrice, listPrice: pr.listPrice, discountPct: Number(pr.discountPct) || 0, label: pr.label });
       }
       changed();
     },
@@ -325,8 +347,9 @@ export function mountPOS(root, opts) {
       for (const l of cart) {
         const base = l.listPrice || Number(l.product.sale_price) || l.unitPrice;
         l.listPrice = base;
-        l.unitPrice = Math.round(base * (1 - pct / 100) * 100) / 100;
-        l.label = pct > 0 ? `Oferta -${pct}%` : '';
+        l.discountPct = pct;
+        l.unitPrice = netOf(base, pct);
+        l.label = '';
         l.manual = true;
       }
       changed();

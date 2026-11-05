@@ -22,6 +22,8 @@ const NUMERIC_FIELDS = {
     'units_per_box', 'box_volume', 'weight_kg', 'fob_unit', 'tariff_rate', 'stock', 'avg_cost', 'sale_price'
   ],
   movements: ['debit', 'credit', 'costo_unitario', 'precio_lista', 'tasa_bcv'],
+  sales_orders: ['subtotal', 'tax', 'total'],
+  order_payments: ['amount'],
   contacts: ['discount_pct', 'iva_retention_pct'],
   fiscal_docs: ['total', 'exempt', 'base_general', 'tax_general', 'base_reducida', 'tax_reducida', 'withheld', 'tasa_bcv'],
   exchange_rates: ['usd_bcv', 'eur_bcv', 'usdt'],
@@ -34,6 +36,7 @@ const BOOL_FIELDS = {
   accounts: ['is_active'],
   crm_activities: ['done'],
   promotions: ['active'],
+  sales_orders: ['fiscal'],
   accounting_settings: ['iva_enabled', 'prices_include_iva']
 };
 // Valor cuando la celda viene vacía (p. ej. una columna recién agregada a la
@@ -115,9 +118,9 @@ export async function removeWhere(table, column, value) {
 // (acción 'uploadFoto'). La fila del producto debe existir ya en la hoja "products" —
 // el script la busca por id y escribe ahí mismo foto_url/foto_file_id/updated_at.
 // Devuelve { id, updated_at, foto_url, foto_file_id }.
-export async function uploadFoto(id, filename, mimeType, dataBase64) {
+export async function uploadFoto(id, filename, mimeType, dataBase64, table = 'products') {
   const json = await request('POST', null, {
-    action: 'uploadFoto', table: 'products', id, filename, mimeType, data: dataBase64, pt: SHEETS_TOKEN
+    action: 'uploadFoto', table, id, filename, mimeType, data: dataBase64, pt: SHEETS_TOKEN
   });
   return { id: json.id, updated_at: json.updated_at, foto_url: json.foto_url, foto_file_id: json.foto_file_id };
 }

@@ -6,6 +6,7 @@ import { printSalesDocument } from '../components/sales-document.js';
 import { openBusinessProfileModal } from '../components/business-profile.js';
 import { salesLines } from '../analytics.js';
 import { computeTax, ivaTipoOf, taxSummaryRows } from '../fiscal.js';
+import { createOrder } from '../orders.js';
 
 // IVA de un presupuesto con la configuración fiscal actual (informativo: el
 // impuesto se registra al convertirlo en venta).
@@ -28,7 +29,7 @@ const labelSm = 'block text-[10px] font-semibold text-slate-500 mb-0.5';
 const STATUS = {
   pendiente: { label: 'Pendiente', color: 'amber', icon: '⏳' },
   aprobado: { label: 'Aprobado', color: 'blue', icon: '👍' },
-  convertido: { label: 'Convertido en venta', color: 'emerald', icon: '✅' },
+  convertido: { label: 'Convertido en orden', color: 'emerald', icon: '✅' },
   rechazado: { label: 'Rechazado', color: 'slate', icon: '✕' }
 };
 const FILTERS = [['pendiente', 'Pendientes'], ['aprobado', 'Aprobados'], ['convertido', 'Convertidos'], ['rechazado', 'Rechazados'], ['todos', 'Todos']];
@@ -47,7 +48,7 @@ export function quoteDocument(q) {
     client: contact
       ? { name: contact.name, rif: contact.rif, address: contact.address, phone: contact.phone, email: contact.email }
       : { name: q.contact_name },
-    items: Store.getQuoteItems(q).map(it => ({ name: it.name, sku: it.sku_briggs, qty: it.qty, unit: 'unidad', unitPrice: it.unitPrice })),
+    items: Store.getQuoteItems(q).map(it => ({ name: it.name, sku: it.sku_briggs, qty: it.qty, unit: 'unidad', unitPrice: it.unitPrice, listPrice: it.listPrice, discountPct: it.discountPct })),
     notes: q.concepto,
     terms: Store.getBusinessProfile().terms,
     fiscal: (() => {
@@ -176,7 +177,7 @@ function renderHome(app) {
             <a target="_blank" rel="noopener" href="${esc(whatsappQuoteLink(x, x.contact_id ? Store.getById('contacts', x.contact_id) : null))}" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500 text-white hover:bg-emerald-600">WhatsApp</a>
             ${x.status === 'pendiente' ? btn('data-edit', 'Editar', 'bg-slate-100 text-slate-700 hover:bg-slate-200') : ''}
             ${x.status === 'pendiente' ? btn('data-approve', 'Aprobar', 'bg-blue-600 text-white hover:bg-blue-700') : ''}
-            ${x.status === 'aprobado' ? btn('data-convert', 'Convertir en venta', 'bg-emerald-600 text-white hover:bg-emerald-700') : ''}
+            ${x.status === 'aprobado' ? btn('data-convert', 'Convertir en orden de venta', 'bg-emerald-600 text-white hover:bg-emerald-700') : ''}
             ${x.status === 'aprobado' ? btn('data-unapprove', 'Volver a pendiente', 'bg-slate-100 text-slate-700 hover:bg-slate-200') : ''}
             ${x.status === 'pendiente' || x.status === 'aprobado' ? btn('data-reject', 'Rechazar', 'text-red-600 hover:bg-red-50') : ''}
           </div>
@@ -188,7 +189,26 @@ function renderHome(app) {
     on('data-edit', id => { location.hash = `#/contabilidad/presupuestos/${id}`; });
     on('data-approve', id => { Store.update('quotes', { id, status: 'aprobado' }); homeFilter = 'aprobado'; lastEmittedId = id; renderAll(); });
     on('data-unapprove', id => { Store.update('quotes', { id, status: 'pendiente' }); renderAll(); });
-    on('data-convert', id => { location.hash = `#/contabilidad/ventas/${id}`; });
+    // Presupuesto aprobado → orden de venta (sin tocar inventario ni diario:
+    // eso pasa con los anticipos, despachos y la factura de la orden).
+    on('data-convert', id => {
+      const q = Store.getById('quotes', id);
+      if (!q) return;
+      const products = Store.getAll('products');
+      const items = Store.getQuoteItems(q).map(it => {
+        const p = products.find(x => x.id === it.productId);
+        const listPrice = Number(it.listPrice) || Number(it.unitPrice) || 0;
+        return {
+          productId: it.productId, name: it.name, sku: it.sku_briggs || '', qty: Number(it.qty),
+          listPrice, discountPct: Number(it.discountPct) || 0, unitPrice: Number(it.unitPrice),
+          ivaTipo: ivaTipoOf(p), dispatched: 0
+        };
+      });
+      const contact = q.contact_id ? Store.getById('contacts', q.contact_id) : null;
+      const order = createOrder({ date: new Date().toISOString().slice(0, 10), contact: contact || (q.contact_name ? { id: '', name: q.contact_name } : null), items, fiscal: true, notes: q.concepto || '', quoteId: q.id });
+      Store.update('quotes', { id, status: 'convertido', converted_ref: order.order_number });
+      location.hash = `#/contabilidad/ordenes/${order.id}`;
+    });
     on('data-reject', id => {
       if (!confirm('¿Marcar este presupuesto como rechazado?')) return;
       Store.update('quotes', { id, status: 'rechazado' });
@@ -269,7 +289,7 @@ function renderBuilder(app, editId, opts = {}) {
     for (const l of salesLines()) if (l.productId && (l.contactId === c.id || l.entidad.trim() === String(c.name).trim())) suggested.add(l.productId);
   };
   const initialCart = source
-    .map(it => ({ product: products.find(p => p.id === it.productId), qty: it.qty, unitPrice: it.unitPrice }))
+    .map(it => ({ product: products.find(p => p.id === it.productId), qty: it.qty, unitPrice: it.unitPrice, listPrice: it.listPrice, discountPct: it.discountPct }))
     .filter(l => l.product && l.qty > 0);
 
   const body = `
@@ -280,7 +300,7 @@ function renderBuilder(app, editId, opts = {}) {
           <h2 class="text-lg font-bold text-slate-800">${editing ? `Editar ${isOffer ? 'oferta' : 'presupuesto'} ${esc(editing.quote_number)}` : (isOffer ? 'Nueva oferta' : 'Nuevo presupuesto')}</h2>
           <p class="text-xs text-slate-400">${isOffer
             ? 'Los productos que este cliente ya compra aparecen primero (⭐). Aplica un descuento a toda la oferta o cambia el precio de cada línea; luego imprímela o mándala por WhatsApp.'
-            : 'Igual que una venta, con los productos disponibles. Al emitirlo queda pendiente; no toca la contabilidad ni el inventario.'}</p>
+            : 'Elige cualquier producto del catálogo, haya o no existencia, y negocia el descuento en % por línea. Al emitirlo queda pendiente; no toca la contabilidad ni el inventario.'}</p>
         </div>
       </div>
     </div>
@@ -291,7 +311,7 @@ function renderBuilder(app, editId, opts = {}) {
   const pos = mountPOS(document.getElementById('pos-root'), {
     products: () => products,
     cart: initialCart,
-    capToStock: true,
+    capToStock: false, // importadora: se presupuesta todo el catálogo, se entrega después
     title: isOffer ? 'Oferta' : 'Presupuesto',
     actionLabel: editing ? 'Guardar cambios' : (isOffer ? 'Emitir oferta' : 'Emitir presupuesto'),
     suggestedIds: suggested,
@@ -334,7 +354,7 @@ function renderBuilder(app, editId, opts = {}) {
         </div>
       </details>`,
     onCartChange: (cart) => {
-      if (!editing && !opts.cliente) draftCart = cart.map(l => ({ productId: l.product.id, qty: l.qty, unitPrice: l.unitPrice }));
+      if (!editing && !opts.cliente) draftCart = cart.map(l => ({ productId: l.product.id, qty: l.qty, unitPrice: l.unitPrice, listPrice: l.listPrice, discountPct: l.discountPct }));
     }
   });
 
@@ -354,7 +374,8 @@ function renderBuilder(app, editId, opts = {}) {
     const contact = contacts.find(c => c.id === contactId);
     const items = cart.map(l => ({
       productId: l.product.id, name: l.product.name, sku_briggs: l.product.sku_briggs,
-      foto_url: l.product.foto_url || '', qty: l.qty, unitPrice: l.unitPrice
+      foto_url: l.product.foto_url || '', qty: l.qty, unitPrice: l.unitPrice,
+      listPrice: l.listPrice, discountPct: l.discountPct || 0
     }));
     const fields = {
       date, valid_until: validUntil, contact_id: contactId || '', contact_name: contact ? contact.name : '',
