@@ -23,6 +23,7 @@ import Reports from './pages/reports.js';
 import FinancialStatements from './pages/financial-statements.js';
 import Fiscal from './pages/fiscal.js';
 import Orders from './pages/orders.js';
+import { POS_ENABLED } from './features.js';
 
 const routes = [
   { pattern: /^#\/?$/, handler: 'dashboard', key: 'dashboard' },
@@ -63,7 +64,8 @@ const pages = {
   accountingDashboard: AccountingDashboard,
   income: Income,
   costs: Costs,
-  sales: Sales,
+  // Punto de venta apagado: su ruta lleva a Presupuestos.
+  sales: POS_ENABLED ? Sales : { render() { location.replace('#/contabilidad/presupuestos'); } },
   expenses: Expenses,
   payments: ContainerPayments,
   inventory: Inventory,
