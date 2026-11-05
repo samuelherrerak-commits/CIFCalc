@@ -1,6 +1,7 @@
 import Store from '../store.js';
 import { fmtNum, fmtInt, esc, num, ensureXlsx, ensureJSZip } from '../utils.js';
 import { uploadFoto, upsert as sheetsUpsert } from '../sheets.js';
+import { codeTables, findByName, parseCode, buildCode, collectionSegment, nextCorrelative, VIAS } from '../product-codes.js';
 
 const Products = {
   async render(app) {
@@ -133,17 +134,106 @@ const Products = {
       `;
     };
 
+    // ---- Generador del código (SKU BRIGGS) ----
+    let tables = codeTables(products);
+    let nnManual = false;
+    const $f = (id) => document.getElementById(id);
+    const NEW = '__new__';
+    const fillSelect = (sel, list, value, { blank = '', allowNew = true } = {}) => {
+      sel.innerHTML = (blank ? `<option value="">${blank}</option>` : '')
+        + list.map(x => `<option value="${esc(x.name)}" ${String(x.name).toLowerCase() === String(value || '').toLowerCase() ? 'selected' : ''}>${esc(x.name)}</option>`).join('')
+        + (allowNew ? `<option value="${NEW}">+ Nueva…</option>` : '');
+    };
+    const codeEnabled = () => !editingId || $f('code-change').checked;
+    const codeParts = () => {
+      const cat = findByName(tables.cats, $f('f-category').value);
+      const col = findByName(tables.cols, $f('f-collection').value);
+      const color = findByName(tables.colors, $f('f-color').value);
+      const brand = ($f('f-brand').value.trim() || 'BRG').toUpperCase();
+      return { cat, col, color, brand, via: $f('f-via').value };
+    };
+    const renderCode = () => {
+      const { cat, col, color, brand, via } = codeParts();
+      const status = $f('code-status');
+      const hint = $f('code-hint');
+      $f('f-collection').classList.toggle('opacity-60', !!cat && !cat.usesCollection);
+      if (!codeEnabled()) {
+        $f('code-preview').textContent = $f('f-briggs').value;
+        status.textContent = '';
+        hint.textContent = 'El código de un producto existente no cambia salvo que marques "Cambiar el código".';
+        [ 'f-nn', 'f-via' ].forEach(i => { $f(i).disabled = true; });
+        return;
+      }
+      [ 'f-nn', 'f-via' ].forEach(i => { $f(i).disabled = false; });
+      if (!cat || !color) {
+        $f('code-preview').textContent = '—';
+        $f('f-briggs').value = '';
+        status.textContent = '';
+        hint.textContent = 'Elige la categoría y el color para generar el código.';
+        return;
+      }
+      const colCode = collectionSegment(cat, col);
+      if (!colCode) {
+        $f('code-preview').textContent = '—';
+        $f('f-briggs').value = '';
+        status.innerHTML = '<span class="text-amber-600">Elige la colección</span>';
+        hint.textContent = 'En Baño / Lavamanos la colección forma parte del código.';
+        return;
+      }
+      if (!nnManual) $f('f-nn').value = nextCorrelative(products.filter(x => x.id !== editingId), { brand, catCode: cat.code, colCode, via, colorCode: color.code, usesCollection: !!cat.usesCollection });
+      const nn = Math.max(1, Math.floor(Number($f('f-nn').value) || 1));
+      const code = buildCode({ brand, catCode: cat.code, colCode, via, nn, colorCode: color.code });
+      $f('code-preview').textContent = code;
+      $f('f-briggs').value = code;
+      const free = Store.isSkuBriggsUnique(code, editingId);
+      status.innerHTML = free ? '<span class="text-emerald-600">✓ disponible</span>' : '<span class="text-red-600">ya existe</span>';
+      hint.textContent = cat.usesCollection
+        ? (via ? 'Correlativo por colección, vías y color.' : 'Correlativo por colección (Baño / Lavamanos).')
+        : `Colección genérica (EM) en el código. Correlativo por categoría${via ? ', vías' : ''} y color.`;
+    };
+    // "+ Nueva…": nombre y código de una categoría, colección o color nuevos.
+    const addNew = (kind) => {
+      const label = { cats: 'categoría', cols: 'colección', colors: 'color' }[kind];
+      const name = (prompt(`Nombre de la nueva ${label}:`) || '').trim();
+      if (!name) return null;
+      const def = name.normalize('NFD').replace(/[^A-Za-z]/g, '').slice(0, kind === 'cats' ? 2 : kind === 'cols' ? 3 : 2).toUpperCase();
+      const code = (prompt(`Código para "${name}" (como en el Maestro de Códigos):`, def) || '').trim().toUpperCase();
+      if (!code) return null;
+      const item = { name, code, ...(kind === 'cats' ? { usesCollection: confirm('¿Esta categoría lleva la colección en el código (como Baño / Lavamanos)?') } : {}) };
+      tables[kind].push(item);
+      return item;
+    };
+    const fillCodeSelects = (p) => {
+      fillSelect($f('f-category'), tables.cats, p.category, { blank: '— Categoría —' });
+      fillSelect($f('f-collection'), tables.cols, p.collection, { blank: '— Colección —' });
+      fillSelect($f('f-color'), tables.colors, p.color, { blank: '— Color —' });
+      const k = parseCode(p.sku_briggs);
+      $f('f-via').innerHTML = VIAS.map(v => `<option value="${v.code}" ${(k ? k.via : '') === v.code ? 'selected' : ''}>${v.label}</option>`).join('');
+      $f('f-nn').value = k ? k.nn : '';
+    };
+    const onCodeSelect = (id, kind) => $f(id).addEventListener('change', () => {
+      if ($f(id).value === NEW) {
+        const item = addNew(kind);
+        fillSelect($f(id), tables[kind], item ? item.name : '', { blank: { cats: '— Categoría —', cols: '— Colección —', colors: '— Color —' }[kind] });
+      }
+      nnManual = false;
+      renderCode();
+    });
+
     const openForm = (id = null) => {
       editingId = id;
       const p = id ? Store.getById('products', id) : Store.newProduct();
+      tables = codeTables(products);
+      nnManual = false;
+      fillCodeSelects(p);
+      $f('code-change').checked = false;
+      $f('code-change-wrap').classList.toggle('hidden', !id);
+      $f('code-change-wrap').classList.toggle('flex', !!id);
       document.getElementById('f-briggs').value = p.sku_briggs || '';
       document.getElementById('f-sku').value = p.sku || '';
       document.getElementById('f-name').value = p.name || '';
       document.getElementById('f-country').value = p.origin_country || '';
-      document.getElementById('f-brand').value = p.brand || '';
-      document.getElementById('f-category').value = p.category || '';
-      document.getElementById('f-collection').value = p.collection || '';
-      document.getElementById('f-color').value = p.color || '';
+      document.getElementById('f-brand').value = p.brand || (id ? '' : 'BRG');
       document.getElementById('f-photo').value = p.foto_url || '';
       document.getElementById('f-upb').value = p.units_per_box != null ? p.units_per_box : 1;
       document.getElementById('f-vol').value = p.box_volume != null ? p.box_volume : 0;
@@ -155,7 +245,8 @@ const Products = {
       renderSupplierSelect();
       document.getElementById('product-modal-title').textContent = id ? 'Editar Producto' : 'Nuevo Producto';
       document.getElementById('product-modal').classList.remove('hidden');
-      document.getElementById('f-briggs').focus();
+      renderCode();
+      (id ? document.getElementById('f-name') : document.getElementById('f-category')).focus();
     };
 
     const closeForm = () => {
@@ -166,17 +257,17 @@ const Products = {
     const saveProduct = () => {
       const skuBriggs = document.getElementById('f-briggs').value.trim();
       if (!skuBriggs) {
-        alert('El SKU BRIGGS es obligatorio.');
-        document.getElementById('f-briggs').focus();
+        alert('Elige la categoría, la colección (si aplica) y el color para generar el código del producto.');
+        document.getElementById('f-category').focus();
         return;
       }
       if (!Store.isSkuBriggsUnique(skuBriggs, editingId)) {
-        alert('Ya existe un producto con ese SKU BRIGGS.');
-        document.getElementById('f-briggs').focus();
+        alert(`Ya existe un producto con el código ${skuBriggs}. Cambia el correlativo.`);
+        document.getElementById('f-nn').focus();
         return;
       }
       if (!document.getElementById('f-sku').value.trim()) {
-        alert('El SKU es obligatorio.');
+        alert('El código del proveedor (SKU) es obligatorio.');
         document.getElementById('f-sku').focus();
         return;
       }
@@ -216,7 +307,7 @@ const Products = {
         name: document.getElementById('f-name').value.trim(),
         supplier_id: selectedSupplierId,
         origin_country: document.getElementById('f-country').value.trim(),
-        brand: document.getElementById('f-brand').value.trim(),
+        brand: document.getElementById('f-brand').value.trim().toUpperCase(),
         category: document.getElementById('f-category').value.trim(),
         collection: document.getElementById('f-collection').value.trim(),
         color: document.getElementById('f-color').value.trim(),
@@ -852,20 +943,60 @@ const Products = {
 
       <!-- Modal Producto -->
       <div id="product-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-5 space-y-4 max-h-[90vh] overflow-y-auto">
           <div class="flex justify-between items-center">
             <h3 id="product-modal-title" class="text-lg font-bold text-slate-800">Nuevo Producto</h3>
             <button id="prod-close" class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">SKU BRIGGS *</label>
-              <input id="f-briggs" type="text" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Denominación interna (única)">
+          <!-- Código del producto: como en el Maestro de Códigos. Se elige la
+               categoría, la colección, si es de vías y el color; el sistema
+               calcula el correlativo y arma el SKU BRIGGS. -->
+          <div class="rounded-xl border border-blue-100 bg-blue-50/40 p-3 space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <p class="text-xs font-semibold text-slate-700">Código del producto (SKU BRIGGS)</p>
+              <label id="code-change-wrap" class="hidden items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer"><input id="code-change" type="checkbox" class="accent-blue-600"> Cambiar el código</label>
             </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">SKU *</label>
-              <input id="f-sku" type="text" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+            <div class="grid grid-cols-2 sm:grid-cols-6 gap-2">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Marca</label>
+                <input id="f-brand" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="BRG">
+              </div>
+              <div class="col-span-2">
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Categoría *</label>
+                <select id="f-category" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Colección</label>
+                <select id="f-collection" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Vías</label>
+                <select id="f-via" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Color *</label>
+                <select id="f-color" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
+              </div>
             </div>
+            <div class="flex flex-wrap items-end gap-3">
+              <div class="w-24">
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Correlativo</label>
+                <input id="f-nn" type="number" min="1" step="1" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none text-center" title="Lo calcula el sistema; cámbialo solo si necesitas otro número">
+              </div>
+              <div class="flex-1 min-w-[12rem]">
+                <p class="text-[11px] font-semibold text-slate-500 mb-1">Código generado</p>
+                <div class="flex items-center gap-2">
+                  <span id="code-preview" class="font-mono text-lg font-semibold text-slate-900 tracking-wide"></span>
+                  <span id="code-status" class="text-[11px]"></span>
+                </div>
+                <p id="code-hint" class="text-[11px] text-slate-400"></p>
+              </div>
+            </div>
+            <input id="f-briggs" type="hidden">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Código del proveedor (SKU) *</label>
+            <input id="f-sku" type="text" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none" placeholder="p. ej. FH9866-D130">
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -880,24 +1011,6 @@ const Products = {
           <div>
             <label class="block text-xs font-semibold text-slate-600 mb-1">País Origen *</label>
             <input id="f-country" type="text" required class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-          </div>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Marca</label>
-              <input id="f-brand" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Categoría</label>
-              <input id="f-category" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Colección</label>
-              <input id="f-collection" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-            </div>
-            <div>
-              <label class="block text-xs font-semibold text-slate-600 mb-1">Color</label>
-              <input id="f-color" type="text" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
-            </div>
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-600 mb-1">Foto (enlace de Google Drive)</label>
@@ -1072,6 +1185,13 @@ const Products = {
 
     // Botón nuevo producto
     document.getElementById('btn-new-product').addEventListener('click', () => openForm());
+    onCodeSelect('f-category', 'cats');
+    onCodeSelect('f-collection', 'cols');
+    onCodeSelect('f-color', 'colors');
+    $f('f-via').addEventListener('change', () => { nnManual = false; renderCode(); });
+    $f('f-brand').addEventListener('input', () => { nnManual = false; renderCode(); });
+    $f('f-nn').addEventListener('input', () => { nnManual = true; renderCode(); });
+    $f('code-change').addEventListener('change', () => { nnManual = false; renderCode(); });
 
     // Botón importar
     document.getElementById('btn-import').addEventListener('click', openImport);
