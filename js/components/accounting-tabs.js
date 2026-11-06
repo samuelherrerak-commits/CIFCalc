@@ -100,12 +100,21 @@ const AUTO_CLASSES = [
   ['xl:hidden', 'hidden']
 ];
 const pinBtn = (pinned) => `
-  <button data-nav-pin title="${pinned ? 'Esconder el menú automáticamente' : 'Dejar el menú fijo'}" class="w-full flex items-center justify-center xl:justify-start gap-2 px-2.5 py-1.5 rounded-lg text-[12px] text-slate-400 hover:text-white hover:bg-white/5 transition">
+  <button data-nav-mode="${pinned ? 'auto' : 'fijo'}" title="${pinned ? 'Esconder el menú automáticamente' : 'Dejar el menú fijo'}" class="xl:hidden w-full flex items-center justify-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] text-slate-400 hover:text-white hover:bg-white/5 transition">
     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${pinned
       ? '<path d="M15 6l-6 6 6 6"/><path d="M20 4v16"/>'
       : '<path d="M12 17v5"/><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3z"/>'}</svg>
     <span class="hidden xl:inline">${pinned ? 'Esconder menú' : 'Fijar menú'}</span>
   </button>`;
+
+const modeSwitch = (pinned) => {
+  const opt = (val, label, on) => `<button data-nav-mode="${val}" class="flex-1 py-1 rounded-md text-[11px] transition ${on ? 'bg-white/15 text-white font-medium' : 'text-slate-400 hover:text-white'}">${label}</button>`;
+  return `
+  <div class="hidden xl:block px-4 pb-3 shrink-0">
+    <p class="text-[10px] text-slate-500 mb-1">Menú</p>
+    <div class="flex gap-0.5 p-0.5 rounded-lg bg-white/5">${opt('fijo', 'Fijo', pinned)}${opt('auto', 'Entra y sale', !pinned)}</div>
+  </div>`;
+};
 
 const AccountingTabs = {
   render(active) {
@@ -132,6 +141,7 @@ const AccountingTabs = {
             <p class="text-[11px] text-slate-400 truncate">${biz ? biz.replace(/[<>&"]/g, '') : 'Maestro de Costo'}</p>
           </div>
         </div>
+        ${modeSwitch(pinned)}
         <nav class="flex-1 min-h-0 overflow-y-auto dark-scroll px-2 xl:px-3 pt-3 xl:pt-1 pb-2 space-y-4 xl:space-y-2">
           ${ACCOUNTING_SECTIONS.map((s, i) => { const open = isOpen(s, active); return `
             <div>
@@ -213,9 +223,11 @@ document.addEventListener('click', (e) => {
   if (more && (e.target.closest('[data-acc-more-close]') === e.target || e.target.closest('button[data-acc-more-close]') || e.target.closest('#acc-more a'))) {
     more.classList.add('hidden');
   }
-  const pin = e.target.closest('[data-nav-pin]');
-  if (pin) {
-    try { localStorage.setItem(PIN_KEY, isPinned() ? '0' : '1'); } catch { /* sin almacenamiento */ }
+  const mode = e.target.closest('[data-nav-mode]');
+  if (mode) {
+    const pin = mode.dataset.navMode === 'fijo';
+    if (pin === isPinned()) return;
+    try { localStorage.setItem(PIN_KEY, pin ? '1' : '0'); } catch { /* sin almacenamiento */ }
     closedUntilLeave = !isPinned();
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     return;
