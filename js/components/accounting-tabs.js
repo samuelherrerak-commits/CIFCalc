@@ -14,15 +14,16 @@ export const ACCOUNTING_SECTIONS = [
   { title: '', items: [
     { key: 'dashboard', path: '#/contabilidad/resumen', label: 'Resumen', icon: 'home' }
   ] },
-  { title: 'Ventas', items: [
+  { title: 'Ingresos', items: [
     { key: 'sales', path: '#/contabilidad/ventas', label: 'Punto de venta', short: 'Ventas', icon: 'cart', off: !POS_ENABLED },
     { key: 'quotes', path: '#/contabilidad/presupuestos', label: 'Presupuestos', short: 'Presupuestos', icon: 'file' },
     { key: 'orders', path: '#/contabilidad/ordenes', label: 'Órdenes de venta', short: 'Órdenes', icon: 'clipboard' },
     { key: 'contacts', path: '#/contabilidad/contactos', label: 'Clientes', icon: 'users' },
     { key: 'receivables', path: '#/contabilidad/por-cobrar', label: 'Cuentas por cobrar', icon: 'inbox' },
+    { key: 'income', path: '#/contabilidad/ingresos', label: 'Otros ingresos', icon: 'plus' },
     { key: 'promotions', path: '#/contabilidad/promociones', label: 'Promociones', icon: 'gift', off: !PROMOTIONS_ENABLED }
   ] },
-  { title: 'Compras', items: [
+  { title: 'Gastos y compras', items: [
     { key: 'expenses', path: '#/contabilidad/gastos', label: 'Gastos', icon: 'wallet' },
     { key: 'costs', path: '#/contabilidad/costos', label: 'Costos', icon: 'tag' },
     { key: 'cost-analysis', path: '#/contabilidad/analisis-costos', label: 'Análisis de costos', icon: 'chart' },
@@ -30,22 +31,18 @@ export const ACCOUNTING_SECTIONS = [
     { key: 'payables', path: '#/contabilidad/por-pagar', label: 'Proveedores por pagar', icon: 'receipt' }
   ] },
   { title: 'Inventario', items: [
-    { key: 'inventory', path: '#/contabilidad/inventario', label: 'Existencias', short: 'Inventario', icon: 'box' }
-  ] },
-  { title: 'Contabilidad', items: [
-    { key: 'income', path: '#/contabilidad/ingresos', label: 'Otros ingresos', icon: 'plus' },
-    { key: 'journal', path: '#/contabilidad/diario', label: 'Libro diario', icon: 'journal' },
-    { key: 'ledger', path: '#/contabilidad/mayor', label: 'Libro mayor', icon: 'table' },
-    { key: 'accounts', path: '#/contabilidad/cuentas', label: 'Plan de cuentas', icon: 'list' }
+    { key: 'catalog', path: '#/contabilidad/catalogo', label: 'Catálogo', icon: 'tag' },
+    { key: 'inventory', path: '#/contabilidad/inventario', label: 'Existencias', short: 'Existencias', icon: 'box' }
   ] },
   { title: 'Impuestos', items: [
-    { key: 'fiscal-books', path: '#/contabilidad/fiscal/ventas', label: 'Libros de IVA', icon: 'book' },
-    { key: 'fiscal-decl', path: '#/contabilidad/fiscal/declaracion', label: 'Declaración IVA', icon: 'calculator' },
-    { key: 'fiscal-rates', path: '#/contabilidad/fiscal/tasas', label: 'Tasas BCV', icon: 'exchange' }
+    { key: 'iva', path: '#/contabilidad/fiscal/ventas', label: 'IVA', icon: 'book' }
   ] },
-  { title: 'Informes', items: [
-    { key: 'reports', path: '#/contabilidad/reportes', label: 'Reportes', icon: 'chart' },
-    { key: 'financials', path: '#/contabilidad/estados', label: 'Estados financieros', icon: 'landmark' }
+  { title: 'Contabilidad', items: [
+    { key: 'accounts', path: '#/contabilidad/cuentas', label: 'Plan de cuentas', icon: 'list' },
+    { key: 'journal', path: '#/contabilidad/diario', label: 'Libro diario', icon: 'journal' },
+    { key: 'ledger', path: '#/contabilidad/mayor', label: 'Libro mayor', icon: 'table' },
+    { key: 'financials', path: '#/contabilidad/estados', label: 'Estados financieros', icon: 'landmark' },
+    { key: 'reports', path: '#/contabilidad/reportes', label: 'Reportes', icon: 'chart' }
   ] }
 ];
 
@@ -83,7 +80,7 @@ const navState = () => { try { return JSON.parse(localStorage.getItem(NAV_KEY) |
 const isOpen = (s, active) => {
   if (!s.title || s.items.some(it => it.key === active)) return true;
   const st = navState();
-  return st[s.title] != null ? !!st[s.title] : s.title === 'Ventas';
+  return st[s.title] != null ? !!st[s.title] : s.title === 'Ingresos';
 };
 
 // Menú que se esconde solo (por defecto): en escritorio no ocupa ancho; al

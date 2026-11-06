@@ -113,7 +113,7 @@ const AccountingDashboard = {
       toDispatch && { href: '#/contabilidad/ordenes', icon: 'ship', title: `${toDispatch} orden(es) con mercancía por despachar`, value: 'Ver órdenes' },
       pendingQuotes.length && { href: '#/contabilidad/presupuestos', icon: 'file', title: `${pendingQuotes.length} presupuesto(s) pendiente(s)`, value: '$' + fmtNum(pendingQuotes.reduce((s2, q) => s2 + (Number(q.total) || 0), 0)) },
       approvedQuotes.length && { href: '#/contabilidad/presupuestos', icon: 'check', title: `${approvedQuotes.length} presupuesto(s) aprobado(s) por vender`, value: 'Convertir' },
-      noPrice && { href: '#/contabilidad/inventario', icon: 'tag', title: `${noPrice} producto(s) con existencia sin precio`, value: 'Poner precio' }
+      noPrice && { href: '#/contabilidad/catalogo', icon: 'tag', title: `${noPrice} producto(s) con existencia sin precio`, value: 'Poner precio' }
     ].filter(Boolean);
     const pendingRow = (pd) => `
       <a href="${pd.href}" class="flex items-center gap-3 py-2.5 px-1 hover:bg-slate-50 rounded-lg transition">

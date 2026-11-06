@@ -18,7 +18,7 @@ const TABS = [
   { key: 'tasas', label: 'Tasas BCV' },
   { key: 'config', label: 'Configuración' }
 ];
-const ACTIVE_KEY = { ventas: 'fiscal-books', compras: 'fiscal-books', declaracion: 'fiscal-decl', tasas: 'fiscal-rates', config: 'fiscal-decl' };
+const ACTIVE_KEY = { ventas: 'iva', compras: 'iva', declaracion: 'iva', tasas: 'iva', config: 'iva' };
 
 let month = new Date().toISOString().slice(0, 7);
 let currency = 'usd';
