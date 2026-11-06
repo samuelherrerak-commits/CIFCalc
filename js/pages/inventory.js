@@ -163,7 +163,7 @@ const Inventory = {
               <div class="flex gap-2"><select id="m-container" class="${input}"><option value="">— Sin contenedor —</option>${containers.map(c => `<option value="${esc(c.id)}">${esc(c.bl_number || 'Sin BL')}${c.operation_date ? ' · ' + esc(String(c.operation_date).slice(0, 10)) : ''}</option>`).join('')}</select>
               <button id="m-load" type="button" class="${btnSecondary} whitespace-nowrap">Cargar productos</button></div>
             </div>` : `
-            <div class="sm:col-span-2"><label class="${label}">${kind === 'ajuste' ? 'Motivo' : 'Motivo o destino'}</label><input id="m-reason" type="text" placeholder="${kind === 'ajuste' ? 'Conteo físico, avería…' : 'Muestra, garantía, avería…'}" class="${input}"></div>`}
+            <div class="sm:col-span-2"><label class="${label}">${kind === 'ajuste' ? 'Motivo' : 'Motivo o destino'}</label><input id="m-reason" type="text" placeholder="${kind === 'ajuste' ? 'Conteo físico, avería, muestra…' : 'Muestra, garantía, avería…'}" class="${input}"></div>`}
             <div class="sm:col-span-3"><label class="${label}">Referencia</label><input id="m-ref" type="text" placeholder="Guía, nota de entrega…" class="${input}"></div>
           </div>
           <div>
@@ -235,16 +235,49 @@ const Inventory = {
       drawLines();
     };
 
+    // Las salidas son los despachos: se elige la orden de venta y se abre su
+    // formulario de despacho (que genera la orden de despacho imprimible).
+    const openDispatchPicker = () => {
+      const orders = Store.getAll('sales_orders').filter(o => o.status !== 'anulada').map(o => {
+        const pending = orderItems(o).reduce((s, it) => s + Math.max(0, (Number(it.qty) || 0) - (Number(it.dispatched) || 0)), 0);
+        return { o, pending };
+      }).filter(x => x.pending > 0).sort((a, b) => String(a.o.date || '').localeCompare(String(b.o.date || '')));
+      const wrap = document.createElement('div');
+      wrap.className = 'fixed inset-0 z-50 bg-black/30 flex items-start sm:items-center justify-center p-3';
+      wrap.innerHTML = `
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <h2 class="text-sm font-semibold text-slate-900">¿De qué orden de venta es el despacho?</h2>
+            <button data-close class="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
+          </div>
+          ${orders.length ? `<div class="divide-y divide-slate-100 max-h-80 overflow-y-auto">${orders.map(({ o, pending }) => `
+            <button data-order="${esc(o.id)}" class="w-full flex items-center justify-between gap-3 py-2.5 px-1 text-left hover:bg-slate-50 rounded-lg">
+              <span><span class="block text-sm text-slate-800">${esc(o.order_number)} · ${esc(o.contact_name || 'Sin cliente')}</span><span class="block text-[11px] text-slate-400">${esc(o.date || '')}</span></span>
+              <span class="text-xs text-slate-500 whitespace-nowrap">${fmtInt(pending)} unid. por despachar →</span>
+            </button>`).join('')}</div>`
+          : '<p class="text-sm text-slate-500 py-2">No hay órdenes de venta con mercancía por despachar.</p>'}
+        </div>`;
+      document.body.appendChild(wrap);
+      wrap.addEventListener('click', (e) => {
+        if (e.target === wrap || e.target.closest('[data-close]')) { wrap.remove(); return; }
+        const b = e.target.closest('[data-order]');
+        if (!b) return;
+        sessionStorage.setItem('cif_open_dispatch', b.dataset.order);
+        wrap.remove();
+        location.hash = `#/contabilidad/ordenes/${b.dataset.order}`;
+      });
+    };
+
     const draw = () => {
       const body = `
         <div class="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 class="text-xl font-semibold text-slate-900">Existencias</h1>
-            <p class="text-xs text-slate-400">Entra con las recepciones y sale con los despachos. Solo inventario, no mueve la contabilidad.</p>
+            <p class="text-xs text-slate-400">Entra con las recepciones y sale con los despachos de las órdenes de venta. Solo inventario, no mueve la contabilidad.</p>
           </div>
           <div class="flex gap-2">
             <button data-new="ajuste" class="${btnSecondary}">Ajuste</button>
-            <button data-new="salida" class="${btnSecondary}">Salida</button>
+            <button id="btn-dispatch" class="${btnSecondary}">Despacho</button>
             <button data-new="recepcion" class="${btnPrimary}">Registrar recepción</button>
           </div>
         </div>
@@ -279,6 +312,7 @@ const Inventory = {
       renderHistory();
       app.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; draw(); }));
       app.querySelectorAll('[data-new]').forEach(b => b.addEventListener('click', () => openForm(b.dataset.new)));
+      document.getElementById('btn-dispatch').addEventListener('click', openDispatchPicker);
       document.getElementById('stock-search').addEventListener('input', (e) => { query = e.target.value; renderStock(); });
       document.getElementById('stock-only').addEventListener('change', (e) => { onlyActive = e.target.checked; renderStock(); });
       document.getElementById('history-tbody').addEventListener('click', (e) => {

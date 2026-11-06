@@ -475,6 +475,11 @@ function renderDetail(app, id) {
   app.querySelectorAll('[data-dprint]').forEach(b => b.addEventListener('click', () => printDispatchOrder(Store.getById('sales_orders', id), Store.getById('dispatches', b.dataset.dprint))));
   on('a-pay', () => paymentModal(Store.getById('sales_orders', id), refresh));
   on('a-dispatch', () => dispatchModal(Store.getById('sales_orders', id), refresh));
+  // Desde Existencias → "Despacho": se abre directo el formulario de despacho.
+  if (sessionStorage.getItem('cif_open_dispatch') === id) {
+    sessionStorage.removeItem('cif_open_dispatch');
+    if (document.getElementById('a-dispatch')) dispatchModal(Store.getById('sales_orders', id), refresh);
+  }
   on('a-invoice', () => invoiceModal(Store.getById('sales_orders', id), refresh));
   const fiscalBox = document.getElementById('a-fiscal');
   if (fiscalBox) fiscalBox.addEventListener('change', () => { Store.update('sales_orders', { id, fiscal: fiscalBox.checked }); refresh(); });
