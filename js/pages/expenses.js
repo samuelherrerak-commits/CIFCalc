@@ -82,7 +82,7 @@ const Expenses = {
       if (total <= 0) { msgEl.textContent = 'El monto debe ser mayor a 0.'; return; }
       if (!concepto) { msgEl.textContent = 'El concepto es obligatorio.'; return; }
 
-      const refDoc = `GST-${Date.now().toString().slice(-6)}`;
+      const refDoc = Store.uniqueRef('GST');
       const paymentAccount = accounts.find(a => a.id === paymentId);
       const data = {
         date, total, concepto, entidad, refDoc,

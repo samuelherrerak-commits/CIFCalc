@@ -1,11 +1,11 @@
 import Store from '../store.js';
 import { fmtNum, esc } from '../utils.js';
-import { buildTwoLineEntry } from '../accounting.js';
 import {
   DOC_TYPES, DECLARATION_LAYOUT, bookRows, bookTotals, declaration, docAmounts,
-  importDocsFromJournal, monthBounds
+  monthBounds
 } from '../fiscal.js';
 import { ensureTodayRates, fmtBs } from '../rates.js';
+import { ivaDocs, ivaStatus, liquidateIva, payIva } from '../iva.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { btnPrimary, btnSecondary, card, input, label } from '../components/accounting-shell.js';
 
@@ -31,11 +31,7 @@ const monthLabel = (ym) => new Date(ym + '-15T12:00:00').toLocaleDateString('es-
 
 // Todos los documentos fiscales: los guardados + el IVA de importación de los
 // contenedores completados que todavía no tienen registro propio.
-function allDocs() {
-  const saved = Store.getAll('fiscal_docs');
-  const virtual = importDocsFromJournal(Store.getAll('movements'), Store.getAll('containers'), saved, (d) => Store.usdRateFor(d));
-  return [...saved, ...virtual];
-}
+const allDocs = () => ivaDocs();
 
 const txType = (d) => d.status === 'anulada' ? '03-anul' : d.affected_invoice ? '02-compl' : '01-reg';
 
@@ -356,12 +352,7 @@ function renderDeclaration(el) {
   const docs = allDocs();
   const D = declaration(docs, month, currency);
   const usd = currency === 'usd' ? D : declaration(docs, month, 'usd');
-  const liqRef = `IVA-${month}`;
-  const payRef = `IVAP-${month}`;
-  const movements = Store.getAll('movements');
-  const liquidated = movements.some(m => m.ref_doc === liqRef);
-  const paid = movements.some(m => m.ref_doc === payRef);
-  const { to } = monthBounds(month);
+  const { liquidated, paid } = ivaStatus(month);
   const cell = (k) => k ? `<span class="text-[9px] text-slate-400 font-sans mr-1">[${k.slice(1)}]</span>${money(D[k])}` : '';
 
   const layout = (forPrint) => DECLARATION_LAYOUT.map(sec => `
@@ -425,25 +416,15 @@ function renderDeclaration(el) {
   const liqBtn = el.querySelector('#dc-liq');
   if (liqBtn) liqBtn.addEventListener('click', () => {
     if (!confirm(`¿Registrar la liquidación del IVA de ${monthLabel(month)}?`)) return;
-    const acc = (c) => Store.getAll('accounts').find(a => a.codigo === c) || Store.ensureCatalogAccount(c);
-    const deb = acc('2.1.04.01');
-    const line = (a, d, c) => ({ entry_date: to, codigo_cuenta: a.codigo, cuenta_contable: a.nombre, concepto: `Liquidación IVA ${month}`, debit: r2(d), credit: r2(c), ref_doc: liqRef, entidad: 'SENIAT' });
-    const lines = [line(deb, usd.c49, 0)];
-    if (usd.creditApplied > 0) lines.push(line(acc('1.1.03.01'), 0, usd.creditApplied));
-    if (usd.c55 > 0) lines.push(line(acc('1.1.03.02'), 0, usd.c55));
-    if (usd.c90 > 0) lines.push(line(acc('2.1.04.02'), 0, usd.c90));
-    Store.postJournalRows(lines, { source: 'iva_liquidation' });
+    liquidateIva(month);
     renderDeclaration(el);
   });
   const payBtn = el.querySelector('#dc-pay');
   if (payBtn) payBtn.addEventListener('click', () => {
     const date = el.querySelector('#dc-paydate').value;
-    const accounts = Store.getAll('accounts');
-    const bank = accounts.filter(a => a.tipo_especifico === 'Banco').sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)))[0] || Store.ensureCatalogAccount('1.1.01.02');
-    const payable = accounts.find(a => a.codigo === '2.1.04.02') || Store.ensureCatalogAccount('2.1.04.02');
     if (!date) { el.querySelector('#dc-msg').textContent = 'Indica la fecha de pago.'; return; }
-    if (!confirm(`¿Registrar el pago de $${fmtNum(usd.c90)} al SENIAT desde ${bank.nombre}?`)) return;
-    Store.postJournalRows(buildTwoLineEntry({ date, total: usd.c90, concepto: `Pago IVA ${month}`, entidad: 'SENIAT', refDoc: payRef, debitAccount: payable, creditAccount: bank }), { source: 'iva_payment' });
+    if (!confirm(`¿Registrar el pago de $${fmtNum(usd.c90)} al SENIAT?`)) return;
+    payIva(month, date);
     renderDeclaration(el);
   });
 }

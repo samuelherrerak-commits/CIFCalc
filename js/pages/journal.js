@@ -132,7 +132,7 @@ const Journal = {
     const openForm = () => {
       lines = [{ account_id: '', debit: 0, credit: 0, concepto: '' }, { account_id: '', debit: 0, credit: 0, concepto: '' }];
       document.getElementById('f-date').value = new Date().toISOString().slice(0, 10);
-      document.getElementById('f-refdoc').value = `MAN-${Date.now().toString().slice(-6)}`;
+      document.getElementById('f-refdoc').value = Store.uniqueRef('MAN');
       document.getElementById('journal-modal').classList.remove('hidden');
       renderLines();
       renderTotals();

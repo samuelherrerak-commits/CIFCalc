@@ -164,7 +164,7 @@ export function registerPayment(order, { date, amount, method, accountId, refere
   const kind = order.status === 'facturada' ? 'cobro' : 'anticipo';
   const pay = paymentAccount(method, accountId);
   const counter = kind === 'anticipo' ? account('2.1.05.01') : account('1.1.02.01');
-  const refDoc = `${kind === 'anticipo' ? 'ANT' : 'COB'}-${Date.now().toString().slice(-6)}`;
+  const refDoc = Store.uniqueRef(kind === 'anticipo' ? 'ANT' : 'COB');
   const concepto = `${kind === 'anticipo' ? 'Anticipo' : 'Cobro'} ${order.order_number}${reference ? ' · ' + reference : ''}`;
   Store.postJournalRows([
     line(date, pay, amount, 0, concepto, refDoc, order.contact_name),
