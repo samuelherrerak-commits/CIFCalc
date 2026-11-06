@@ -14,37 +14,35 @@ export const ACCOUNTING_SECTIONS = [
   { title: '', items: [
     { key: 'dashboard', path: '#/contabilidad/resumen', label: 'Resumen', icon: 'home' }
   ] },
-  { title: 'Ventas', items: [
+  { title: 'Ingresos', items: [
     { key: 'sales', path: '#/contabilidad/ventas', label: 'Punto de venta', short: 'Ventas', icon: 'cart', off: !POS_ENABLED },
     { key: 'quotes', path: '#/contabilidad/presupuestos', label: 'Presupuestos', short: 'Presupuestos', icon: 'file' },
     { key: 'orders', path: '#/contabilidad/ordenes', label: 'Órdenes de venta', short: 'Órdenes', icon: 'clipboard' },
     { key: 'contacts', path: '#/contabilidad/contactos', label: 'Clientes', icon: 'users' },
     { key: 'receivables', path: '#/contabilidad/por-cobrar', label: 'Cuentas por cobrar', icon: 'inbox' },
+    { key: 'income', path: '#/contabilidad/ingresos', label: 'Otros ingresos', icon: 'plus' },
     { key: 'promotions', path: '#/contabilidad/promociones', label: 'Promociones', icon: 'gift', off: !PROMOTIONS_ENABLED }
   ] },
-  { title: 'Compras', items: [
+  { title: 'Gastos y compras', items: [
     { key: 'expenses', path: '#/contabilidad/gastos', label: 'Gastos', icon: 'wallet' },
     { key: 'costs', path: '#/contabilidad/costos', label: 'Costos', icon: 'tag' },
+    { key: 'cost-analysis', path: '#/contabilidad/analisis-costos', label: 'Análisis de costos', icon: 'chart' },
     { key: 'payments', path: '#/contabilidad/pagos', label: 'Contenedores por pagar', icon: 'ship', off: !CONTAINER_PAYMENTS_ENABLED },
     { key: 'payables', path: '#/contabilidad/por-pagar', label: 'Proveedores por pagar', icon: 'receipt' }
   ] },
   { title: 'Inventario', items: [
-    { key: 'inventory', path: '#/contabilidad/inventario', label: 'Existencias', short: 'Inventario', icon: 'box' }
-  ] },
-  { title: 'Contabilidad', items: [
-    { key: 'income', path: '#/contabilidad/ingresos', label: 'Otros ingresos', icon: 'plus' },
-    { key: 'journal', path: '#/contabilidad/diario', label: 'Libro diario', icon: 'journal' },
-    { key: 'ledger', path: '#/contabilidad/mayor', label: 'Libro mayor', icon: 'table' },
-    { key: 'accounts', path: '#/contabilidad/cuentas', label: 'Plan de cuentas', icon: 'list' }
+    { key: 'catalog', path: '#/contabilidad/catalogo', label: 'Catálogo', icon: 'tag' },
+    { key: 'inventory', path: '#/contabilidad/inventario', label: 'Existencias', short: 'Existencias', icon: 'box' }
   ] },
   { title: 'Impuestos', items: [
-    { key: 'fiscal-books', path: '#/contabilidad/fiscal/ventas', label: 'Libros de IVA', icon: 'book' },
-    { key: 'fiscal-decl', path: '#/contabilidad/fiscal/declaracion', label: 'Declaración IVA', icon: 'calculator' },
-    { key: 'fiscal-rates', path: '#/contabilidad/fiscal/tasas', label: 'Tasas BCV', icon: 'exchange' }
+    { key: 'iva', path: '#/contabilidad/fiscal/ventas', label: 'IVA', icon: 'book' }
   ] },
-  { title: 'Informes', items: [
-    { key: 'reports', path: '#/contabilidad/reportes', label: 'Reportes', icon: 'chart' },
-    { key: 'financials', path: '#/contabilidad/estados', label: 'Estados financieros', icon: 'landmark' }
+  { title: 'Contabilidad', items: [
+    { key: 'accounts', path: '#/contabilidad/cuentas', label: 'Plan de cuentas', icon: 'list' },
+    { key: 'journal', path: '#/contabilidad/diario', label: 'Libro diario', icon: 'journal' },
+    { key: 'ledger', path: '#/contabilidad/mayor', label: 'Libro mayor', icon: 'table' },
+    { key: 'financials', path: '#/contabilidad/estados', label: 'Estados financieros', icon: 'landmark' },
+    { key: 'reports', path: '#/contabilidad/reportes', label: 'Reportes', icon: 'chart' }
   ] }
 ];
 
@@ -82,7 +80,7 @@ const navState = () => { try { return JSON.parse(localStorage.getItem(NAV_KEY) |
 const isOpen = (s, active) => {
   if (!s.title || s.items.some(it => it.key === active)) return true;
   const st = navState();
-  return st[s.title] != null ? !!st[s.title] : s.title === 'Ventas';
+  return st[s.title] != null ? !!st[s.title] : s.title === 'Ingresos';
 };
 
 // Menú que se esconde solo (por defecto): en escritorio no ocupa ancho; al
@@ -100,12 +98,21 @@ const AUTO_CLASSES = [
   ['xl:hidden', 'hidden']
 ];
 const pinBtn = (pinned) => `
-  <button data-nav-pin title="${pinned ? 'Esconder el menú automáticamente' : 'Dejar el menú fijo'}" class="w-full flex items-center justify-center xl:justify-start gap-2 px-2.5 py-1.5 rounded-lg text-[12px] text-slate-400 hover:text-white hover:bg-white/5 transition">
+  <button data-nav-mode="${pinned ? 'auto' : 'fijo'}" title="${pinned ? 'Esconder el menú automáticamente' : 'Dejar el menú fijo'}" class="xl:hidden w-full flex items-center justify-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] text-slate-400 hover:text-white hover:bg-white/5 transition">
     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${pinned
       ? '<path d="M15 6l-6 6 6 6"/><path d="M20 4v16"/>'
       : '<path d="M12 17v5"/><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3z"/>'}</svg>
     <span class="hidden xl:inline">${pinned ? 'Esconder menú' : 'Fijar menú'}</span>
   </button>`;
+
+const modeSwitch = (pinned) => {
+  const opt = (val, label, on) => `<button data-nav-mode="${val}" class="flex-1 py-1 rounded-md text-[11px] transition ${on ? 'bg-white/15 text-white font-medium' : 'text-slate-400 hover:text-white'}">${label}</button>`;
+  return `
+  <div class="hidden xl:block px-4 pb-3 shrink-0">
+    <p class="text-[10px] text-slate-500 mb-1">Menú</p>
+    <div class="flex gap-0.5 p-0.5 rounded-lg bg-white/5">${opt('fijo', 'Fijo', pinned)}${opt('auto', 'Entra y sale', !pinned)}</div>
+  </div>`;
+};
 
 const AccountingTabs = {
   render(active) {
@@ -132,6 +139,7 @@ const AccountingTabs = {
             <p class="text-[11px] text-slate-400 truncate">${biz ? biz.replace(/[<>&"]/g, '') : 'Maestro de Costo'}</p>
           </div>
         </div>
+        ${modeSwitch(pinned)}
         <nav class="flex-1 min-h-0 overflow-y-auto dark-scroll px-2 xl:px-3 pt-3 xl:pt-1 pb-2 space-y-4 xl:space-y-2">
           ${ACCOUNTING_SECTIONS.map((s, i) => { const open = isOpen(s, active); return `
             <div>
@@ -213,9 +221,11 @@ document.addEventListener('click', (e) => {
   if (more && (e.target.closest('[data-acc-more-close]') === e.target || e.target.closest('button[data-acc-more-close]') || e.target.closest('#acc-more a'))) {
     more.classList.add('hidden');
   }
-  const pin = e.target.closest('[data-nav-pin]');
-  if (pin) {
-    try { localStorage.setItem(PIN_KEY, isPinned() ? '0' : '1'); } catch { /* sin almacenamiento */ }
+  const mode = e.target.closest('[data-nav-mode]');
+  if (mode) {
+    const pin = mode.dataset.navMode === 'fijo';
+    if (pin === isPinned()) return;
+    try { localStorage.setItem(PIN_KEY, pin ? '1' : '0'); } catch { /* sin almacenamiento */ }
     closedUntilLeave = !isPinned();
     window.dispatchEvent(new HashChangeEvent('hashchange'));
     return;

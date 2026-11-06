@@ -1,344 +1,296 @@
 import Store from '../store.js';
-import { fmtNum, fmtInt, esc, computeContainer } from '../utils.js';
+import { fmtInt, esc, computeContainer } from '../utils.js';
+import { orderItems } from '../orders.js';
 import AccountingTabs from '../components/accounting-tabs.js';
-import AccountingShell, { card, input } from '../components/accounting-shell.js';
+import AccountingShell, { card, input, label, btnPrimary, btnSecondary } from '../components/accounting-shell.js';
 
-// Inventario de referencia (no es una cuenta contable): solo se alimenta de
-// los contenedores completos (Store.postInventoryForContainer) y se rebaja con
-// las ventas (js/pages/sales.js). No hay entradas manuales.
+// Existencias: solo inventario, nada contable. Entra con las recepciones de
+// mercancía y sale con los despachos de las órdenes de venta (y salidas o
+// ajustes manuales). El costo y el precio están en Catálogo.
+const KIND = {
+  recepcion: { label: 'Recepción', sign: '+', tone: 'text-emerald-700' },
+  salida: { label: 'Salida', sign: '−', tone: 'text-slate-700' },
+  ajuste: { label: 'Ajuste', sign: '±', tone: 'text-slate-700' },
+  despacho: { label: 'Despacho', sign: '−', tone: 'text-slate-700' },
+  venta: { label: 'Venta', sign: '−', tone: 'text-slate-700' }
+};
+const parse = (j) => { try { const v = JSON.parse(j || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
+const today = () => new Date().toISOString().slice(0, 10);
+
 const Inventory = {
   async render(app) {
     const destroy = new AbortController();
     const { signal } = destroy;
-
-    // Productos sin precio de venta todavía (contenedores completados antes de
-    // que existiera el campo): se toma el precio sugerido por la calculadora en
-    // el contenedor completo más reciente donde el ítem tenga margen.
-    const backfillSalePrices = () => {
-      const missing = new Set(Store.getAll('products').filter(p => !(Number(p.sale_price) > 0)).map(p => p.id));
-      if (missing.size === 0) return;
-      const closed = Store.getAll('containers')
-        .filter(c => c.status === 'closed')
-        .sort((a, b) => new Date(b.operation_date || b.updated_at || 0) - new Date(a.operation_date || a.updated_at || 0));
-      for (const c of closed) {
-        if (missing.size === 0) break;
-        const items = Store.getItemsByContainer(c.id);
-        if (!items.some(it => missing.has(it.product_id))) continue;
-        for (const calc of computeContainer(c, items).calculated) {
-          const pid = calc.item.product_id;
-          if (!missing.has(pid) || !(Number(calc.item.gain_margin) > 0) || !(calc.salePriceOnCost > 0)) continue;
-          Store.update('products', { id: pid, sale_price: Math.round(calc.salePriceOnCost * 100) / 100 });
-          missing.delete(pid);
-        }
-      }
-    };
-    backfillSalePrices();
-
-    const products = Store.getAll('products');
-    let subTab = 'stock';
+    let tab = 'stock';
     let query = '';
-    let onlyInStock = true;
+    let onlyActive = true;
 
-    const marginPct = (p) => {
-      const price = Number(p.sale_price) || 0;
-      const cost = Number(p.avg_cost) || 0;
-      return price > 0 && cost > 0 ? ((price - cost) / price) * 100 : null;
-    };
-
-    const renderSummary = () => {
-      const withStock = products.filter(p => Number(p.stock) > 0);
-      const units = withStock.reduce((s, p) => s + Number(p.stock), 0);
-      const atCost = withStock.reduce((s, p) => s + Number(p.stock) * (Number(p.avg_cost) || 0), 0);
-      const atPrice = withStock.reduce((s, p) => s + Number(p.stock) * (Number(p.sale_price) || 0), 0);
-      const tile = (label, value) => `
-        <div class="rounded-lg border border-slate-200 bg-white px-3 py-2">
-          <div class="text-[11px] text-slate-500">${label}</div>
-          <div class="text-base font-semibold text-slate-800 tabular-nums">${value}</div>
-        </div>`;
-      document.getElementById('stock-summary').innerHTML =
-        tile('Productos con existencia', fmtInt(withStock.length)) +
-        tile('Unidades', fmtInt(units)) +
-        tile('Valor a costo', '$' + fmtNum(atCost)) +
-        tile('Valor a precio de venta', '$' + fmtNum(atPrice));
-    };
-
-    const renderStock = () => {
-      const tbody = document.getElementById('stock-tbody');
-      const q = query.trim().toLowerCase();
-      const list = products
-        .filter(p => !onlyInStock || Number(p.stock) > 0)
-        .filter(p => !q || [p.sku_briggs, p.sku, p.name].some(v => String(v || '').toLowerCase().includes(q)))
-        .sort((a, b) => (Number(b.stock) > 0) - (Number(a.stock) > 0) || String(a.name).localeCompare(String(b.name)));
-      tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin productos.</td></tr>`
-        : list.map(p => {
-          const m = marginPct(p);
-          return `
-          <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-2">${p.foto_url
-              ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-14 h-14 object-cover rounded-lg border border-slate-200 bg-white" alt="">`
-              : '<div class="w-14 h-14 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-300 text-lg">📦</div>'}</td>
-            <td class="p-2">
-              <div class="text-sm font-semibold text-slate-800">${esc(p.name) || '<span class="text-slate-400">Sin nombre</span>'}</div>
-              <div class="text-[11px] font-mono text-slate-400">${esc(p.sku_briggs)}${p.sku ? ' · ' + esc(p.sku) : ''}</div>
-            </td>
-            <td class="p-2 text-right">
-              <span class="inline-block min-w-[3rem] px-2 py-1 rounded-full text-xs font-bold font-mono ${Number(p.stock) > 0 ? 'text-emerald-700 bg-emerald-100' : 'text-red-600 bg-red-50'}">${fmtInt(p.stock)}</span>
-            </td>
-            <td class="p-2 text-right font-mono text-slate-600">$${fmtNum(p.avg_cost)}</td>
-            <td class="p-2 text-right">
-              <div class="inline-flex items-center gap-1">
-                <span class="text-slate-400">$</span>
-                <input data-price="${esc(p.id)}" type="number" min="0" step="0.01" value="${Number(p.sale_price) || ''}" placeholder="0.00"
-                  class="w-24 p-1.5 border border-slate-200 rounded-lg text-right font-mono font-semibold text-blue-700 bg-white focus:border-blue-400 focus:outline-none">
-              </div>
-              <div class="mt-1">
-                <select data-iva="${esc(p.id)}" title="IVA del producto" class="text-[10px] font-semibold text-slate-500 bg-transparent border-0 p-0 text-right cursor-pointer">
-                  ${[['general', 'IVA general'], ['reducida', 'IVA reducido'], ['exento', 'Exento de IVA']].map(([v, t]) => `<option value="${v}" ${(p.iva_tipo || 'general') === v ? 'selected' : ''}>${t}</option>`).join('')}
-                </select>
-              </div>
-            </td>
-            <td class="p-2 text-right font-mono text-[11px] ${m === null ? 'text-slate-300' : m < 0 ? 'text-red-600' : 'text-emerald-600'}">${m === null ? '—' : fmtNum(m) + '%'}</td>
-          </tr>`;
-        }).join('');
-
-      tbody.querySelectorAll('[data-iva]').forEach(el => el.addEventListener('change', (e) => {
-        const p = products.find(x => x.id === e.target.dataset.iva);
-        if (!p) return;
-        p.iva_tipo = e.target.value;
-        Store.update('products', { id: p.id, iva_tipo: e.target.value });
-      }, { signal }));
-      tbody.querySelectorAll('[data-price]').forEach(el => el.addEventListener('change', (e) => {
-        const p = products.find(x => x.id === e.target.dataset.price);
-        if (!p) return;
-        const val = Math.max(0, Math.round((parseFloat(e.target.value) || 0) * 100) / 100);
-        p.sale_price = val;
-        Store.update('products', { id: p.id, sale_price: val });
-        renderSummary();
-        renderStock();
-      }, { signal }));
-    };
-
-    // Entradas: ítems vinculados a productos de cada contenedor completo cuyo
-    // inventario ya se registró. Salidas: líneas de Ingresos por Ventas (las
-    // únicas de la venta con precio_venta) — el nombre va tras "|" en el concepto.
-    const movementsHistory = () => {
-      const entries = [];
-      const containers = Store.getAll('containers').filter(c => c.status === 'closed' && c.inventory_posted);
-      for (const c of containers) {
-        for (const it of Store.getItemsByContainer(c.id)) {
-          if (!it.product_id || !(Number(it.qty) > 0)) continue;
-          entries.push({ date: c.operation_date, type: 'entrada', ref: c.bl_number || 'Contenedor', name: it.name, qty: Number(it.qty) });
+    const products = () => Store.getAll('products');
+    // Unidades pedidas en órdenes de venta que faltan por despachar.
+    const pendingByProduct = () => {
+      const m = new Map();
+      for (const o of Store.getAll('sales_orders')) {
+        if (o.status === 'anulada') continue;
+        for (const it of orderItems(o)) {
+          const left = Math.max(0, (Number(it.qty) || 0) - (Number(it.dispatched) || 0));
+          if (it.productId && left) m.set(it.productId, (m.get(it.productId) || 0) + left);
         }
       }
-      for (const m of Store.getAll('movements')) {
-        if (m.source !== 'sale' || !(Number(m.cantidad) > 0) || !(Number(m.precio_venta) > 0)) continue;
-        const parts = String(m.concepto || '').split('|');
-        entries.push({ date: m.entry_date, type: 'salida', ref: m.ref_doc, name: (parts[1] || parts[0] || '').trim(), qty: Number(m.cantidad) });
-      }
-      // Despachos de órdenes de venta (el inventario baja al despachar).
-      for (const d of Store.getAll('dispatches')) {
-        let items = [];
-        try { items = JSON.parse(d.items || '[]'); } catch { items = []; }
-        for (const it of items) entries.push({ date: d.date, type: 'salida', ref: d.dispatch_number, name: it.name, qty: Number(it.qty) });
-      }
-      return entries.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)).slice(0, 100);
+      return m;
     };
 
-    const renderHistory = () => {
-      const tbody = document.getElementById('history-tbody');
-      const list = movementsHistory();
-      tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin movimientos todavía. El stock entra al completar un contenedor y sale con cada venta.</td></tr>`
-        : list.map(e => `
-          <tr class="border-b border-slate-100 hover:bg-slate-50">
-            <td class="p-2">${esc(e.date)}</td>
-            <td class="p-2">${e.type === 'entrada'
-              ? '<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold text-emerald-700 bg-emerald-100">Entrada · Contenedor</span>'
-              : '<span class="inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold text-blue-700 bg-blue-100">Salida · Venta</span>'}</td>
-            <td class="p-2 text-slate-500">${esc(e.ref)}</td>
-            <td class="p-2 text-slate-800">${esc(e.name)}</td>
-            <td class="p-2 text-right font-mono font-semibold ${e.type === 'entrada' ? 'text-emerald-600' : 'text-blue-600'}">${e.type === 'entrada' ? '+' : '−'}${fmtNum(e.qty)}</td>
-          </tr>
-        `).join('');
-    };
-
-    const renderSubTabs = () => {
-      const wrap = document.getElementById('inventory-subtabs');
-      wrap.innerHTML = [['stock', 'Stock'], ['movimientos', 'Movimientos']].map(([t, lbl]) => `
-        <button data-subtab="${t}" class="px-3 py-1.5 text-xs font-semibold rounded-full transition-all ${
-          subTab === t ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-        }">${lbl}</button>
-      `).join('');
-      wrap.querySelectorAll('[data-subtab]').forEach(btn => btn.addEventListener('click', () => {
-        subTab = btn.dataset.subtab;
-        renderSubTabs();
-        document.getElementById('panel-stock').classList.toggle('hidden', subTab !== 'stock');
-        document.getElementById('panel-movimientos').classList.toggle('hidden', subTab !== 'movimientos');
-      }));
-    };
-
-    const body = `
-      <div id="inventory-subtabs" class="flex gap-2"></div>
-
-      <div id="panel-stock" class="${card}">
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-3">
-          <div>
-            <h2 class="text-sm font-semibold text-slate-900">Existencias</h2>
-            <p class="text-xs text-slate-400">Entra al completar un contenedor, sale con cada venta. Es de referencia, no una cuenta contable.</p>
-          </div>
-          <div class="flex items-center gap-3">
-            <label class="flex items-center gap-1.5 text-xs text-slate-500 whitespace-nowrap"><input id="stock-only" type="checkbox" checked> Solo con existencia</label>
-            <input id="stock-search" type="text" placeholder="Buscar producto…" class="${input}" style="width:220px">
-          </div>
-        </div>
-        <div id="stock-audit"></div>
-        <div id="stock-summary" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4"></div>
-        <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs">
-          <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Foto</th><th class="p-2">Producto</th><th class="p-2 text-right">Existencias</th><th class="p-2 text-right">Costo</th><th class="p-2 text-right">Precio de venta</th><th class="p-2 text-right">Margen</th></tr></thead>
-          <tbody id="stock-tbody"></tbody>
-        </table>
-        </div>
-        <p class="text-[11px] text-slate-400 mt-2">Costo = promedio ponderado sin IVA de los contenedores completos. El precio de venta se toma del margen de la calculadora al completar el contenedor; puedes cambiarlo aquí y se usará al vender.</p>
-      </div>
-
-      <div id="panel-movimientos" class="${card} hidden">
-        <h2 class="text-sm font-semibold text-slate-900 mb-3">Movimientos de Inventario</h2>
-        <table class="w-full text-left text-xs">
-          <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Tipo</th><th class="p-2">Referencia</th><th class="p-2">Producto</th><th class="p-2 text-right">Cantidad</th></tr></thead>
-          <tbody id="history-tbody"></tbody>
-        </table>
-      </div>
-
-      <div class="bg-white border border-red-200 rounded-xl shadow-sm p-4 space-y-3">
-        <div>
-          <h2 class="text-sm font-bold text-red-700">Eliminar contenedores completados (de prueba)</h2>
-          <p class="text-xs text-slate-500 mt-1">Marca los contenedores <strong>completados</strong> que quieres borrar. Se elimina el contenedor con sus productos, su asiento de cierre, sus pagos y la mercancía que sumó al inventario. <strong>Los contenedores en Borrador o En proceso no aparecen aquí y no se tocan.</strong></p>
-          <p id="del-protected" class="text-xs text-emerald-700 mt-1"></p>
-        </div>
-        <div id="del-list" class="border border-slate-100 rounded-lg divide-y divide-slate-100 max-h-72 overflow-y-auto"></div>
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div class="flex flex-col gap-1">
-            <label class="flex items-center gap-2 text-xs text-slate-600"><input id="del-all" type="checkbox"> Seleccionar todos</label>
-            <label class="flex items-center gap-2 text-xs text-slate-600"><input id="del-sales" type="checkbox"> También borrar las ventas registradas (<span id="del-sales-count">0</span>) y devolver su mercancía</label>
-          </div>
-          <button id="btn-delete-containers" class="flex-shrink-0 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm" disabled>Eliminar seleccionados</button>
-        </div>
-      </div>
-    `;
-
-    app.innerHTML = AccountingShell.wrap(AccountingTabs.render('inventory'), body);
-
-    document.getElementById('stock-search').addEventListener('input', (e) => { query = e.target.value; renderStock(); }, { signal });
-    document.getElementById('stock-only').addEventListener('change', (e) => { onlyInStock = e.target.checked; renderStock(); }, { signal });
-
-    renderSubTabs();
-    // Existencia que no viene de contenedores completados ni de ventas (p. ej.
-    // de la antigua Recepción manual o de contenedores ya eliminados).
     const renderAudit = () => {
-      const rows = Store.inventoryAudit();
+      const rows = Store.inventoryAudit().filter(r => r.current !== r.expected);
       const el = document.getElementById('stock-audit');
-      if (rows.length === 0) { el.innerHTML = ''; return; }
+      if (!rows.length) { el.innerHTML = ''; return; }
       const ready = Store.hasSyncedOnce() || !Store.isSheetsReachable();
       el.innerHTML = `
-        <details class="mb-3 group rounded-lg border border-slate-200 bg-white">
+        <details class="group rounded-lg border border-slate-200 bg-white">
           <summary class="flex items-center gap-2 cursor-pointer list-none px-3 py-2 text-sm text-slate-600">
             <span class="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0"></span>
-            <span class="flex-1">${rows.length} producto(s) con existencia que no cuadra con los contenedores</span>
+            <span class="flex-1">${rows.length} producto(s) con existencia que no cuadra con las recepciones y despachos</span>
             <span class="text-xs font-medium text-blue-600 group-open:hidden">Revisar</span>
             <span class="text-xs font-medium text-slate-400 hidden group-open:inline">Ocultar</span>
           </summary>
           <div class="border-t border-slate-100 p-3 space-y-3">
             <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <p class="text-xs text-slate-500">El inventario solo se alimenta de contenedores completados y se rebaja con los despachos. Esto suele ser stock de la antigua recepción manual o de contenedores ya eliminados.</p>
-              <button id="btn-rebuild" ${ready ? '' : 'disabled'} class="flex-shrink-0 border border-slate-300 hover:bg-slate-50 disabled:opacity-50 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg">${ready ? 'Corregir inventario' : 'Sincronizando con Sheets…'}</button>
+              <p class="text-xs text-slate-500">"Corregir" deja la existencia en lo que dicen los movimientos. Si la existencia actual es la correcta (p. ej. un conteo físico), registra un Ajuste.</p>
+              <button id="btn-rebuild" ${ready ? '' : 'disabled'} class="flex-shrink-0 border border-slate-300 hover:bg-slate-50 disabled:opacity-50 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg">${ready ? 'Corregir' : 'Sincronizando…'}</button>
             </div>
-            <div class="max-h-56 overflow-y-auto rounded-lg border border-slate-200">
-              <table class="w-full text-left text-xs">
-                <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Producto</th><th class="p-2 text-right">Tiene</th><th class="p-2 text-right">Debería tener</th><th class="p-2">Origen</th></tr></thead>
-                <tbody>${rows.map(r => `
-                  <tr class="border-t border-slate-100">
-                    <td class="p-2"><div class="font-medium text-slate-700">${esc(r.product.name)}</div><div class="text-[10px] font-mono text-slate-400">${esc(r.product.sku_briggs)}</div></td>
-                    <td class="p-2 text-right font-mono text-slate-600">${fmtInt(r.current)} <span class="text-slate-400">· $${fmtNum(r.currentCost)}</span></td>
-                    <td class="p-2 text-right font-mono text-slate-800">${fmtInt(r.expected)} <span class="text-slate-400">· $${fmtNum(r.expectedCost)}</span></td>
-                    <td class="p-2 text-slate-500">${fmtInt(r.inQty)} de contenedores − ${fmtInt(r.outQty)} despachadas</td>
-                  </tr>`).join('')}</tbody>
-              </table>
-            </div>
+            <table class="w-full text-left text-xs">
+              <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-1.5">Producto</th><th class="p-1.5 text-right">Tiene</th><th class="p-1.5 text-right">Según movimientos</th></tr></thead>
+              <tbody>${rows.map(r => `<tr class="border-t border-slate-100"><td class="p-1.5">${esc(r.product.name)} <span class="font-mono text-slate-400">${esc(r.product.sku_briggs)}</span></td><td class="p-1.5 text-right tabular-nums">${fmtInt(r.current)}</td><td class="p-1.5 text-right tabular-nums">${fmtInt(r.expected)} <span class="text-slate-400">(${fmtInt(r.inQty)} entradas − ${fmtInt(r.outQty)} salidas)</span></td></tr>`).join('')}</tbody>
+            </table>
           </div>
         </details>`;
       const btn = document.getElementById('btn-rebuild');
       if (btn) btn.addEventListener('click', () => {
-        if (!confirm(`Se ajustará la existencia y el costo de ${rows.length} producto(s) a lo que dicen los contenedores completados y las ventas.\n\nTambién se guarda en Google Sheets. ¿Continuar?`)) return;
-        const n = Store.rebuildInventory();
-        alert(`Listo: ${n} producto(s) corregidos.`);
+        if (!confirm(`Se ajustará la existencia de ${rows.length} producto(s) a lo que dicen las recepciones, salidas y despachos. ¿Continuar?`)) return;
+        Store.rebuildInventory();
+        draw();
       });
     };
-    renderAudit();
-    renderSummary();
-    renderStock();
-    renderHistory();
 
-    // --- Eliminar contenedores completados de prueba ---
-    const STATUS_TXT = { draft: 'borrador', in_transit: 'proceso' };
-    const renderDeletePanel = () => {
-      const all = Store.getAll('containers');
-      const closed = all.filter(c => c.status === 'closed')
-        .sort((a, b) => String(b.operation_date || '').localeCompare(String(a.operation_date || '')));
-      const protectedOnes = all.filter(c => c.status !== 'closed');
-      const byStatus = protectedOnes.reduce((m, c) => { const k = STATUS_TXT[c.status] || 'borrador'; m[k] = (m[k] || 0) + 1; return m; }, {});
-      document.getElementById('del-protected').textContent = protectedOnes.length
-        ? '🔒 Protegidos: ' + Object.entries(byStatus).map(([k, n]) => `${n} en ${k}`).join(', ') + '.'
-        : '';
-      const movs = Store.getAll('movements');
-      document.getElementById('del-sales-count').textContent = new Set(movs.filter(m => m.source === 'sale').map(m => m.ref_doc)).size;
-      const list = document.getElementById('del-list');
-      list.innerHTML = closed.length === 0
-        ? '<div class="p-4 text-center text-xs text-slate-400">No hay contenedores completados.</div>'
-        : closed.map(c => {
-          const items = Store.getItemsByContainer(c.id);
-          const units = items.reduce((s2, it) => s2 + (Number(it.qty) || 0), 0);
-          const close = movs.filter(m => m.source === 'container_close' && m.source_ref === c.id).reduce((s2, m) => s2 + (Number(m.debit) || 0), 0);
-          const paid = movs.some(m => m.source === 'container_payment' && m.source_ref === c.id);
+    const renderStock = () => {
+      const pend = pendingByProduct();
+      const all = products();
+      const withStock = all.filter(p => Number(p.stock) > 0);
+      const tile = (l, v) => `<div class="rounded-lg border border-slate-200 bg-white px-3 py-2"><div class="text-[11px] text-slate-500">${l}</div><div class="text-base font-semibold text-slate-800 tabular-nums">${v}</div></div>`;
+      document.getElementById('stock-summary').innerHTML =
+        tile('Productos con existencia', fmtInt(withStock.length)) +
+        tile('Unidades en almacén', fmtInt(withStock.reduce((s, p) => s + Number(p.stock), 0))) +
+        tile('Por despachar (órdenes)', fmtInt([...pend.values()].reduce((s, n) => s + n, 0)));
+      const q = query.trim().toLowerCase();
+      const list = all
+        .filter(p => !onlyActive || Number(p.stock) > 0 || pend.get(p.id))
+        .filter(p => !q || [p.sku_briggs, p.sku, p.name].some(v => String(v || '').toLowerCase().includes(q)))
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      document.getElementById('stock-tbody').innerHTML = list.length === 0
+        ? `<tr><td colspan="4" class="p-6 text-center text-slate-400">${onlyActive ? 'No hay productos con existencia ni pedidos por despachar. Registra una recepción cuando llegue la mercancía.' : 'Sin productos.'}</td></tr>`
+        : list.map(p => {
+          const st = Number(p.stock) || 0, pd = pend.get(p.id) || 0, av = st - pd;
           return `
-          <label class="flex items-center gap-3 p-3 hover:bg-slate-50 cursor-pointer">
-            <input type="checkbox" data-del-id="${esc(c.id)}">
-            <div class="flex-1 min-w-0">
-              <div class="text-sm font-semibold text-slate-800">${esc(c.bl_number) || 'Sin BL'} <span class="text-[10px] font-normal text-slate-400">${esc(c.operation_date || '')}</span></div>
-              <div class="text-[11px] text-slate-500">${items.length} producto(s) · ${fmtNum(units).replace(/\.00$/, '')} unid.${close ? ` · asiento $${fmtNum(close)}` : ' · sin asiento'}${paid ? ' · con pagos' : ''}</div>
-            </div>
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-600 bg-slate-200">Completo</span>
-          </label>`;
+          <tr class="border-t border-slate-100">
+            <td class="p-2"><div class="text-sm text-slate-800">${esc(p.name)}</div><div class="text-[11px] font-mono text-slate-400">${esc(p.sku_briggs)}</div></td>
+            <td class="p-2 text-right tabular-nums text-slate-900">${fmtInt(st)}</td>
+            <td class="p-2 text-right tabular-nums ${pd ? 'text-slate-700' : 'text-slate-300'}">${pd ? fmtInt(pd) : '—'}</td>
+            <td class="p-2 text-right tabular-nums ${av < 0 ? 'text-red-600' : 'text-slate-700'}">${fmtInt(av)}</td>
+          </tr>`;
         }).join('');
-      const sync = () => {
-        const n = list.querySelectorAll('[data-del-id]:checked').length;
-        const btn = document.getElementById('btn-delete-containers');
-        btn.disabled = n === 0;
-        btn.textContent = n ? `Eliminar ${n} seleccionado(s)` : 'Eliminar seleccionados';
-      };
-      list.querySelectorAll('[data-del-id]').forEach(cb => cb.addEventListener('change', sync));
-      document.getElementById('del-all').checked = false;
-      sync();
     };
-    renderDeletePanel();
-    document.getElementById('del-all').addEventListener('change', (e) => {
-      document.querySelectorAll('#del-list [data-del-id]').forEach(cb => { cb.checked = e.target.checked; cb.dispatchEvent(new Event('change')); });
-    }, { signal });
-    document.getElementById('btn-delete-containers').addEventListener('click', () => {
-      const ids = [...document.querySelectorAll('#del-list [data-del-id]:checked')].map(cb => cb.dataset.delId);
-      if (!ids.length) return;
-      const names = ids.map(id => (Store.getById('containers', id) || {}).bl_number || 'Sin BL');
-      const deleteSales = document.getElementById('del-sales').checked;
-      const msg = `Se van a ELIMINAR ${ids.length} contenedor(es) completado(s):\n\n${names.map(n => '• ' + n).join('\n')}\n\n` +
-        'Con sus productos, asiento de cierre, pagos y la mercancía que sumaron al inventario' +
-        (deleteSales ? ', y TODAS las ventas registradas' : '') +
-        '.\n\nLos contenedores en Borrador o En proceso no se tocan.\nTambién se borra en Google Sheets y no se puede deshacer. ¿Continuar?';
-      if (!confirm(msg)) return;
-      const res = Store.deleteCompletedContainers(ids, { deleteSales });
-      alert(`Listo: ${res.containers} contenedor(es) eliminado(s), ${res.movements} línea(s) de diario borradas, ${res.products} producto(s) con existencia ajustada.`);
-    }, { signal });
 
+    // Historial: un renglón por documento.
+    const history = () => {
+      const docs = [];
+      for (const mv of Store.getAll('stock_moves')) {
+        const items = parse(mv.items);
+        const ct = mv.container_id ? Store.getById('containers', mv.container_id) : null;
+        docs.push({ id: mv.id, editable: true, date: mv.date, kind: mv.kind, number: mv.move_number, ref: [ct && (ct.bl_number || 'Contenedor'), mv.reference].filter(Boolean).join(' · '), items, created: mv.created_at });
+      }
+      for (const d of Store.getAll('dispatches')) {
+        const o = Store.getById('sales_orders', d.order_id);
+        docs.push({ date: d.date, kind: 'despacho', number: d.dispatch_number, ref: o ? o.order_number : '', items: parse(d.items), created: d.created_at });
+      }
+      return docs.sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.created || '').localeCompare(String(a.created || '')));
+    };
+
+    const renderHistory = () => {
+      const list = history();
+      document.getElementById('history-tbody').innerHTML = list.length === 0
+        ? '<tr><td colspan="5" class="p-6 text-center text-slate-400">Sin movimientos todavía.</td></tr>'
+        : list.map(d => {
+          const k = KIND[d.kind] || KIND.ajuste;
+          const units = d.items.reduce((s, it) => s + Math.abs(Number(it.qty) || 0), 0);
+          return `
+          <tr class="border-t border-slate-100 align-top">
+            <td class="p-2 whitespace-nowrap text-slate-500">${esc(d.date)}</td>
+            <td class="p-2"><div class="text-slate-800">${k.label}</div><div class="text-[11px] font-mono text-slate-400">${esc(d.number || '')}</div></td>
+            <td class="p-2 text-slate-500">${esc(d.ref || '')}</td>
+            <td class="p-2">
+              <details><summary class="cursor-pointer text-slate-700">${d.items.length} producto(s) · ${fmtInt(units)} unid.</summary>
+                <div class="mt-1 space-y-0.5">${d.items.map(it => {
+                  const q = Number(it.qty) || 0;
+                  const sign = d.kind === 'ajuste' ? (q > 0 ? '+' : '−') : k.sign;
+                  return `<div class="flex justify-between gap-3 text-[11px]"><span class="text-slate-600 truncate">${esc(it.name)}</span><span class="tabular-nums ${k.tone}">${sign}${fmtInt(Math.abs(q))}</span></div>`;
+                }).join('')}</div>
+              </details>
+            </td>
+            <td class="p-2 text-right">${d.editable ? `<button data-undo="${esc(d.id)}" class="text-[11px] text-slate-400 hover:text-red-600">Anular</button>` : ''}</td>
+          </tr>`;
+        }).join('');
+    };
+
+    // Formulario de recepción / salida / ajuste.
+    const openForm = (kind) => {
+      const k = KIND[kind];
+      const all = products().slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      const seen = new Set();
+      const containers = Store.getAll('containers').filter(c => !seen.has(c.id) && seen.add(c.id) && c.status !== 'draft')
+        .sort((a, b) => String(b.operation_date || '').localeCompare(String(a.operation_date || '')));
+      let lines = [];
+      const wrap = document.createElement('div');
+      wrap.className = 'fixed inset-0 z-50 bg-black/30 flex items-start sm:items-center justify-center p-3 overflow-y-auto';
+      wrap.innerHTML = `
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-4 space-y-3">
+          <div class="flex justify-between items-center">
+            <h2 class="text-sm font-semibold text-slate-900">${k.label} de mercancía</h2>
+            <button data-close class="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div><label class="${label}">Fecha</label><input id="m-date" type="date" value="${today()}" class="${input}"></div>
+            ${kind === 'recepcion' ? `
+            <div class="sm:col-span-2"><label class="${label}">Contenedor (opcional)</label>
+              <div class="flex gap-2"><select id="m-container" class="${input}"><option value="">— Sin contenedor —</option>${containers.map(c => `<option value="${esc(c.id)}">${esc(c.bl_number || 'Sin BL')}${c.operation_date ? ' · ' + esc(String(c.operation_date).slice(0, 10)) : ''}</option>`).join('')}</select>
+              <button id="m-load" type="button" class="${btnSecondary} whitespace-nowrap">Cargar productos</button></div>
+            </div>` : `
+            <div class="sm:col-span-2"><label class="${label}">${kind === 'ajuste' ? 'Motivo' : 'Motivo o destino'}</label><input id="m-reason" type="text" placeholder="${kind === 'ajuste' ? 'Conteo físico, avería…' : 'Muestra, garantía, avería…'}" class="${input}"></div>`}
+            <div class="sm:col-span-3"><label class="${label}">Referencia</label><input id="m-ref" type="text" placeholder="Guía, nota de entrega…" class="${input}"></div>
+          </div>
+          <div>
+            <label class="${label}">Productos ${kind === 'ajuste' ? '<span class="font-normal text-slate-400">(cantidad positiva suma, negativa resta)</span>' : ''}</label>
+            <div class="flex gap-2">
+              <input id="m-product" list="m-products" placeholder="Buscar producto por nombre o código" class="${input}">
+              <datalist id="m-products">${all.map(p => `<option value="${esc(p.sku_briggs || p.name)} — ${esc(p.name)}"></option>`).join('')}</datalist>
+            </div>
+            <div id="m-lines" class="mt-2 divide-y divide-slate-100 max-h-72 overflow-y-auto"></div>
+          </div>
+          <div id="m-msg" class="text-xs text-red-600"></div>
+          <div class="flex justify-end gap-2">
+            <button data-close class="${btnSecondary}">Cancelar</button>
+            <button id="m-save" class="${btnPrimary}">Registrar ${k.label.toLowerCase()}</button>
+          </div>
+        </div>`;
+      document.body.appendChild(wrap);
+      const $ = (id) => wrap.querySelector('#' + id);
+      const drawLines = () => {
+        $('m-lines').innerHTML = lines.length ? lines.map((l, i) => `
+          <div class="flex items-center gap-2 py-1.5">
+            <div class="flex-1 min-w-0"><div class="text-sm text-slate-800 truncate">${esc(l.name)}</div><div class="text-[11px] font-mono text-slate-400">${esc(l.sku)} · existencia ${fmtInt((products().find(p => p.id === l.productId) || {}).stock)}</div></div>
+            <input data-q="${i}" type="number" step="1" ${kind === 'ajuste' ? '' : 'min="0"'} value="${l.qty}" class="w-24 p-1.5 border border-slate-200 rounded-md text-right text-sm">
+            <button data-rm="${i}" class="text-slate-300 hover:text-red-600">✕</button>
+          </div>`).join('') : '<p class="text-xs text-slate-400 py-2">Agrega productos con el buscador.</p>';
+      };
+      const addProduct = (p, qty = 1) => {
+        const ex = lines.find(l => l.productId === p.id);
+        if (ex) ex.qty += qty; else lines.push({ productId: p.id, name: p.name, sku: p.sku_briggs, qty });
+        drawLines();
+      };
+      $('m-product').addEventListener('change', (e) => {
+        const v = e.target.value;
+        const p = all.find(x => v === `${x.sku_briggs || x.name} — ${x.name}`) || all.find(x => x.sku_briggs && v.trim().toLowerCase() === String(x.sku_briggs).toLowerCase());
+        if (p) { addProduct(p); e.target.value = ''; }
+      });
+      if ($('m-load')) $('m-load').addEventListener('click', () => {
+        const c = containers.find(x => x.id === $('m-container').value);
+        if (!c) { $('m-msg').textContent = 'Elige un contenedor.'; return; }
+        $('m-msg').textContent = '';
+        lines = [];
+        for (const calc of computeContainer(c, Store.getItemsByContainer(c.id)).calculated) {
+          const p = calc.item.product_id && all.find(x => x.id === calc.item.product_id);
+          if (p && calc.qty > 0) addProduct(p, calc.qty);
+        }
+        if (!lines.length) $('m-msg').textContent = 'Ese contenedor no tiene productos vinculados al catálogo.';
+        drawLines();
+      });
+      wrap.addEventListener('input', (e) => { const i = e.target.dataset.q; if (i != null) lines[i].qty = Number(e.target.value) || 0; });
+      wrap.addEventListener('click', (e) => {
+        if (e.target.closest('[data-close]') || e.target === wrap) { wrap.remove(); return; }
+        const rm = e.target.closest('[data-rm]');
+        if (rm) { lines.splice(Number(rm.dataset.rm), 1); drawLines(); }
+      });
+      $('m-save').addEventListener('click', () => {
+        try {
+          const reason = $('m-reason') ? $('m-reason').value.trim() : '';
+          Store.registerStockMove({
+            kind, date: $('m-date').value || today(),
+            containerId: $('m-container') ? $('m-container').value : '',
+            reference: [$('m-ref').value.trim(), reason].filter(Boolean).join(' · '),
+            items: lines
+          });
+          wrap.remove();
+          tab = 'movimientos';
+          draw();
+        } catch (err) { $('m-msg').textContent = err.message; }
+      });
+      drawLines();
+    };
+
+    const draw = () => {
+      const body = `
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 class="text-xl font-semibold text-slate-900">Existencias</h1>
+            <p class="text-xs text-slate-400">Entra con las recepciones y sale con los despachos. Solo inventario, no mueve la contabilidad.</p>
+          </div>
+          <div class="flex gap-2">
+            <button data-new="ajuste" class="${btnSecondary}">Ajuste</button>
+            <button data-new="salida" class="${btnSecondary}">Salida</button>
+            <button data-new="recepcion" class="${btnPrimary}">Registrar recepción</button>
+          </div>
+        </div>
+        <div id="stock-audit"></div>
+        <div class="flex gap-4 border-b border-slate-200 text-sm">
+          ${[['stock', 'Existencias'], ['movimientos', 'Movimientos']].map(([t, l]) => `<button data-tab="${t}" class="pb-2 -mb-px border-b-2 ${tab === t ? 'border-blue-600 text-slate-900 font-medium' : 'border-transparent text-slate-500 hover:text-slate-800'}">${l}</button>`).join('')}
+        </div>
+        <div class="${tab === 'stock' ? '' : 'hidden'} space-y-3">
+          <div id="stock-summary" class="grid grid-cols-1 sm:grid-cols-3 gap-3"></div>
+          <div class="${card} space-y-3">
+            <div class="flex flex-wrap items-center gap-3">
+              <input id="stock-search" type="text" placeholder="Buscar producto…" value="${esc(query)}" class="${input} flex-1 min-w-[12rem]">
+              <label class="flex items-center gap-1.5 text-xs text-slate-500 whitespace-nowrap"><input id="stock-only" type="checkbox" ${onlyActive ? 'checked' : ''}> Solo con existencia o por despachar</label>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Producto</th><th class="p-2 text-right">En almacén</th><th class="p-2 text-right">Por despachar</th><th class="p-2 text-right">Disponible</th></tr></thead>
+                <tbody id="stock-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="${tab === 'movimientos' ? '' : 'hidden'} ${card} overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Tipo</th><th class="p-2">Referencia</th><th class="p-2">Productos</th><th class="p-2"></th></tr></thead>
+            <tbody id="history-tbody"></tbody>
+          </table>
+        </div>`;
+      app.innerHTML = AccountingShell.wrap(AccountingTabs.render('inventory'), body);
+      renderAudit();
+      renderStock();
+      renderHistory();
+      app.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { tab = b.dataset.tab; draw(); }));
+      app.querySelectorAll('[data-new]').forEach(b => b.addEventListener('click', () => openForm(b.dataset.new)));
+      document.getElementById('stock-search').addEventListener('input', (e) => { query = e.target.value; renderStock(); });
+      document.getElementById('stock-only').addEventListener('change', (e) => { onlyActive = e.target.checked; renderStock(); });
+      document.getElementById('history-tbody').addEventListener('click', (e) => {
+        const b = e.target.closest('[data-undo]');
+        if (!b || !confirm('¿Anular este movimiento? La existencia vuelve a como estaba antes.')) return;
+        Store.deleteStockMove(b.dataset.undo);
+        draw();
+      });
+    };
+
+    draw();
+    window.addEventListener('cif-data-updated', () => { if (document.getElementById('stock-tbody')) { renderAudit(); renderStock(); renderHistory(); } }, { signal });
     return () => destroy.abort();
   }
 };

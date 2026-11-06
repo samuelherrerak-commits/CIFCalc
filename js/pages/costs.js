@@ -20,6 +20,16 @@ const Costs = {
     const fs = Store.getFiscalSettings();
     let invoice = null;
 
+    // Contenedores a los que se puede asignar un costo (el más reciente primero).
+    const STATUS = { draft: 'Borrador', in_transit: 'En proceso', closed: 'Completo' };
+    const containers = () => {
+      const seen = new Set();
+      return Store.getAll('containers').filter(c => !seen.has(c.id) && seen.add(c.id))
+        .sort((a, b) => String(b.operation_date || '').localeCompare(String(a.operation_date || '')));
+    };
+    const containerOptions = (selected = '') => `<option value="">— Sin contenedor —</option>` + containers().map(c =>
+      `<option value="${esc(c.id)}" ${c.id === selected ? 'selected' : ''}>${esc(c.bl_number || 'Sin BL')} · ${STATUS[c.status] || c.status}${c.operation_date ? ' · ' + esc(String(c.operation_date).slice(0, 10)) : ''}</option>`).join('');
+
     // Una fila por documento (ref_doc): neto del gasto/costo, IVA y total.
     const recentDocs = () => {
       const byRef = new Map();
@@ -32,24 +42,29 @@ const Costs = {
         const iva = lines.filter(l => String(l.codigo_cuenta) === '1.1.03.01').reduce((s, l) => s + (Number(l.debit) || 0), 0);
         const debits = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
         const first = lines[0];
-        return { ref, date: first.entry_date, created: first.created_at, concepto: String(first.concepto || '').split('|')[0].trim(), entidad: first.entidad, net: debits - iva, iva, total: debits, invoice: (fiscal.get(ref) || {}).invoice_number };
+        return { ref, container: (lines.find(l => l.source_ref) || {}).source_ref || '', date: first.entry_date, created: first.created_at, concepto: String(first.concepto || '').split('|')[0].trim(), entidad: first.entidad, net: debits - iva, iva, total: debits, invoice: (fiscal.get(ref) || {}).invoice_number };
       }).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.created || '').localeCompare(String(a.created || ''))).slice(0, 30);
     };
     const renderList = () => {
       const tbody = document.getElementById('costs-tbody');
       const list = recentDocs();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin costos registrados todavía.</td></tr>`
+        ? `<tr><td colspan="7" class="p-4 text-center text-slate-400">Sin costos registrados todavía.</td></tr>`
         : list.map(d => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
             <td class="p-2">${esc(d.date)}</td>
             <td class="p-2">${esc(d.ref)} — ${esc(d.concepto)}${d.invoice ? ` <span class="text-[10px] font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full">Fact. ${esc(d.invoice)}</span>` : ''}</td>
             <td class="p-2 text-slate-500">${esc(d.entidad)}</td>
+            <td class="p-2"><select data-assign="${esc(d.ref)}" class="w-full max-w-[13rem] p-1 border border-slate-200 rounded-md text-xs bg-white ${d.container ? 'text-slate-700' : 'text-slate-400'}">${containerOptions(d.container)}</select></td>
             <td class="p-2 text-right font-mono">$${fmtNum(d.net)}</td>
             <td class="p-2 text-right font-mono text-slate-500">${d.iva ? '$' + fmtNum(d.iva) : '—'}</td>
             <td class="p-2 text-right font-mono font-semibold">$${fmtNum(d.total)}</td>
           </tr>
         `).join('');
+      tbody.querySelectorAll('[data-assign]').forEach(sel => sel.addEventListener('change', () => {
+        Store.assignCostToContainer(sel.dataset.assign, sel.value);
+        renderList();
+      }));
     };
 
     const handleContactChange = (e) => {
@@ -93,7 +108,9 @@ const Costs = {
         const ivaAccount = accounts.find(a => a.codigo === '1.1.03.01') || Store.ensureCatalogAccount('1.1.03.01');
         lines = lines.concat(buildTwoLineEntry({ date, total: inv.tax, concepto: `${concepto} | IVA crédito fiscal`, entidad, refDoc, debitAccount: ivaAccount, creditAccount: data.counterAccount }));
       }
-      Store.postJournalRows(withRoundingPlug(lines, diffAccount(), date, refDoc), { source: 'cost' });
+      const containerId = document.getElementById('f-container').value;
+      Store.postJournalRows(withRoundingPlug(lines, diffAccount(), date, refDoc), { source: 'cost', sourceRef: containerId || null });
+      if (containerId) Store.applyRealCosts();
       if (inv) Store.insert('fiscal_docs', purchaseFiscalDoc(Store, inv, { date, contact, entidad, concepto, refDoc }));
 
       document.getElementById('f-total').value = '';
@@ -106,7 +123,7 @@ const Costs = {
     const body = `
       <div class="${card} space-y-3">
         <h2 class="text-sm font-semibold text-slate-900">Registrar Costo</h2>
-        <p class="text-xs text-slate-400">Un costo no mueve caja ni banco de inmediato — se registra contra una cuenta contrapartida (Proveedores, Contenedores por Pagar, etc.), a diferencia de un Gasto.</p>
+        <p class="text-xs text-slate-400">Lo que pagas por la mercancía importada (FOB, flete, arancel, aduana…). Asígnalo a su contenedor para saber cuánto costó en realidad.</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label class="${label}">Fecha *</label>
@@ -115,6 +132,10 @@ const Costs = {
           <div>
             <label class="${label}">Subtipo de Costo *</label>
             <select id="f-cost" class="${input}">${accountOptions(byTipo('Costo'))}</select>
+          </div>
+          <div>
+            <label class="${label}">Contenedor</label>
+            <select id="f-container" class="${input}">${containerOptions()}</select>
           </div>
           <div>
             <label class="${label}">Proveedor / Contraparte</label>
@@ -127,7 +148,7 @@ const Costs = {
               ${accountOptions(accounts)}
             </select>
           </div>
-          <div class="sm:col-span-2 lg:col-span-3">
+          <div class="sm:col-span-2 lg:col-span-2">
             <label class="${label}">Concepto *</label>
             <input id="f-concepto" type="text" class="${input}">
           </div>
@@ -144,7 +165,7 @@ const Costs = {
       <div class="${card}">
         <h2 class="text-sm font-semibold text-slate-900 mb-3">Costos Registrados</h2>
         <table class="w-full text-left text-xs">
-          <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2">Contraparte</th><th class="p-2 text-right">Neto</th><th class="p-2 text-right">IVA</th><th class="p-2 text-right">Total</th></tr></thead>
+          <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Fecha</th><th class="p-2">Referencia</th><th class="p-2">Contraparte</th><th class="p-2">Contenedor</th><th class="p-2 text-right">Neto</th><th class="p-2 text-right">IVA</th><th class="p-2 text-right">Total</th></tr></thead>
           <tbody id="costs-tbody"></tbody>
         </table>
       </div>

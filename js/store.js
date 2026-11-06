@@ -3,7 +3,8 @@ import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
 import { isSandbox, setSandboxFlag, storageKey } from './sandbox.js';
 import { computeContainer } from './utils.js';
-import { PROMOTIONS_ENABLED } from './features.js';
+import { PROMOTIONS_ENABLED, CONTAINER_JOURNAL_ENABLED, STOCK_FROM_CONTAINERS } from './features.js';
+import { analyzeContainer, realCostLines } from './container-costs.js';
 import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping, CHART_OF_ACCOUNTS, inferirTipo, naturalezaForTipo, DEFAULT_CLOSING_MAPPING_CODES } from './accounting.js';
 
 // ============================================
@@ -46,13 +47,14 @@ const STORE_KEYS = {
   exchange_rates: 'cif_exchange_rates',
   sales_orders: 'cif_sales_orders',
   order_payments: 'cif_order_payments',
-  dispatches: 'cif_dispatches'
+  dispatches: 'cif_dispatches',
+  stock_moves: 'cif_stock_moves'
 };
 
 // Tablas que el Web App de Sheets respalda (schemas definidos en Code.gs).
 // Las demás entidades (contabilidad, ventas, gastos) viven en Supabase.
-const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'contacts', 'quotes', 'crm_activities', 'promotions', 'fiscal_docs', 'exchange_rates', 'sales_orders', 'order_payments', 'dispatches'];
-const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes', 'accounting_settings', 'crm_activities', 'promotions', 'fiscal_docs', 'exchange_rates', 'sales_orders', 'order_payments', 'dispatches'];
+const ENTITIES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'journal_entries', 'journal_lines', 'accounting_settings', 'expense_categories', 'sale_concepts', 'module_settings', 'contacts', 'quotes', 'crm_activities', 'promotions', 'fiscal_docs', 'exchange_rates', 'sales_orders', 'order_payments', 'dispatches', 'stock_moves'];
+const SHEET_TABLES = ['companies', 'suppliers', 'containers', 'items', 'products', 'accounts', 'movements', 'contacts', 'quotes', 'accounting_settings', 'crm_activities', 'promotions', 'fiscal_docs', 'exchange_rates', 'sales_orders', 'order_payments', 'dispatches', 'stock_moves'];
 
 function readAll(key) {
   try {
@@ -747,7 +749,7 @@ function seed() {
   if (!localStorage.getItem(storageKey(STORE_KEYS.promotions))) writeAll(STORE_KEYS.promotions, []);
   if (!localStorage.getItem(storageKey(STORE_KEYS.fiscal_docs))) writeAll(STORE_KEYS.fiscal_docs, []);
   if (!localStorage.getItem(storageKey(STORE_KEYS.exchange_rates))) writeAll(STORE_KEYS.exchange_rates, []);
-  for (const k of ['sales_orders', 'order_payments', 'dispatches']) {
+  for (const k of ['sales_orders', 'order_payments', 'dispatches', 'stock_moves']) {
     if (!localStorage.getItem(storageKey(STORE_KEYS[k]))) writeAll(STORE_KEYS[k], []);
   }
 
@@ -844,6 +846,10 @@ export function consolidateLines(lines) {
   }
   // Debe primero, luego Haber (orden contable habitual).
   return [...out.filter(l => l.debit > 0), ...out.filter(l => l.credit > 0)];
+}
+
+function parseItems(json) {
+  try { const v = JSON.parse(json || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
 }
 
 function notifyDataUpdated() {
@@ -992,13 +998,18 @@ const Store = {
         const prevCost = Number(product.avg_cost) || 0;
         const newQty = prevQty + c.qty;
         const newAvgCost = newQty > 0 ? ((prevQty * prevCost) + (c.qty * c.costNoVat)) / newQty : 0;
-        const patch = { id: product.id, stock: newQty, avg_cost: Math.round(newAvgCost * 100) / 100 };
+        const patch = STOCK_FROM_CONTAINERS
+          ? { id: product.id, stock: newQty, avg_cost: Math.round(newAvgCost * 100) / 100 }
+          : { id: product.id };
         // Precio de venta sugerido por la calculadora (costo ÷ (1 − margen)) del
         // último contenedor; si el ítem no tiene margen se deja el precio que ya había.
         if (Number(c.item.gain_margin) > 0 && c.salePriceOnCost > 0) patch.sale_price = Math.round(c.salePriceOnCost * 100) / 100;
         this.update('products', patch);
       }
       this.update('containers', { id: container.id, inventory_posted: true });
+      // Si ya hay costos registrados para este contenedor, el costo de sus
+      // productos pasa a ser el real (estimado solo en lo que falte).
+      this.applyRealCosts();
     } catch (e) {
       console.error('Maestro de Costo: error registrando el inventario del contenedor (el contenedor se guardó igual).', e);
     }
@@ -1010,6 +1021,7 @@ const Store = {
   // vez el mapeo esté listo (p. ej. desde un botón "Generar asiento" en la
   // Calculadora para contenedores ya cerrados sin asiento todavía).
   postClosingJournalForContainer(container, items) {
+    if (!CONTAINER_JOURNAL_ENABLED) return { ok: false, reason: 'desactivado' };
     try {
       const already = readAll(STORE_KEYS.movements)
         .some(m => m.source === 'container_close' && m.source_ref === container.id);
@@ -1276,13 +1288,15 @@ const Store = {
   // antigua Recepción manual o de contenedores ya eliminados).
   inventoryAudit() {
     const products = readAll(STORE_KEYS.products);
-    const inQty = new Map(), inCost = new Map();
+    const inQty = new Map(), costQty = new Map(), inCost = new Map();
+    const real = realCostLines(readAll(STORE_KEYS.movements), readAll(STORE_KEYS.accounts));
     for (const c of readAll(STORE_KEYS.containers).filter(x => x.status === 'closed')) {
-      for (const calc of computeContainer(c, this.getItemsByContainer(c.id)).calculated) {
-        const pid = calc.item.product_id;
-        if (!pid || !(calc.qty > 0)) continue;
-        inQty.set(pid, (inQty.get(pid) || 0) + calc.qty);
-        inCost.set(pid, (inCost.get(pid) || 0) + calc.qty * calc.costNoVat);
+      for (const pr of analyzeContainer(c, this.getItemsByContainer(c.id), real.get(c.id) || []).products) {
+        const pid = pr.productId;
+        if (!pid || !(pr.qty > 0)) continue;
+        costQty.set(pid, (costQty.get(pid) || 0) + pr.qty);
+        inCost.set(pid, (inCost.get(pid) || 0) + pr.usedTotal);
+        if (STOCK_FROM_CONTAINERS) inQty.set(pid, (inQty.get(pid) || 0) + pr.qty);
       }
     }
     // Ventas: por SKU (ventas nuevas) o por nombre tras "|" en el concepto.
@@ -1299,6 +1313,16 @@ const Store = {
       }
       if (p) outQty.set(p.id, (outQty.get(p.id) || 0) + Number(m.cantidad));
     }
+    // Recepciones, salidas manuales y ajustes (Existencias).
+    for (const mv of readAll(STORE_KEYS.stock_moves)) {
+      for (const it of parseItems(mv.items)) {
+        const q = Number(it.qty) || 0;
+        if (!it.productId || !q) continue;
+        if (mv.kind === 'salida') outQty.set(it.productId, (outQty.get(it.productId) || 0) + Math.abs(q));
+        else if (q > 0) inQty.set(it.productId, (inQty.get(it.productId) || 0) + q);
+        else outQty.set(it.productId, (outQty.get(it.productId) || 0) - q);
+      }
+    }
     // Despachos de órdenes de venta.
     for (const d of readAll(STORE_KEYS.dispatches)) {
       let items = [];
@@ -1309,9 +1333,81 @@ const Store = {
     return products.map(p => {
       const qIn = inQty.get(p.id) || 0;
       const expected = Math.max(0, qIn - (outQty.get(p.id) || 0));
-      const expectedCost = expected > 0 && qIn > 0 ? r2(inCost.get(p.id) / qIn) : 0;
+      // Costo: el de los contenedores completos (real donde ya se registró);
+      // un producto que no ha venido en ningún contenedor conserva el suyo.
+      const cq = costQty.get(p.id) || 0;
+      const expectedCost = cq > 0 ? r2(inCost.get(p.id) / cq) : (Number(p.avg_cost) || 0);
       return { product: p, current: Number(p.stock) || 0, currentCost: Number(p.avg_cost) || 0, expected, expectedCost, inQty: qIn, outQty: outQty.get(p.id) || 0 };
     }).filter(r => r.current !== r.expected || Math.abs(r.currentCost - r.expectedCost) > 0.01);
+  },
+
+  // Pasa a cada producto su costo con lo registrado en Costos (solo el
+  // costo; la existencia no se toca). Se llama al registrar o asignar costos.
+  applyRealCosts() {
+    const rows = this.inventoryAudit().filter(r => Math.abs(r.currentCost - r.expectedCost) > 0.01);
+    if (rows.length) this.updateMany('products', rows.map(r => ({ id: r.product.id, avg_cost: r.expectedCost })));
+    return rows.length;
+  },
+
+  // Existencias: recepción (entra), salida (sale) o ajuste (± por línea).
+  // Solo inventario: no genera asientos.
+  registerStockMove({ kind, date, containerId = '', reference = '', notes = '', items }) {
+    const lines = (items || []).map(it => ({ productId: it.productId, name: it.name || '', sku: it.sku || '', qty: Number(it.qty) || 0 })).filter(it => it.productId && it.qty);
+    if (!lines.length) throw new Error('Agrega al menos un producto con cantidad.');
+    const prefix = { recepcion: 'REC', salida: 'SAL', ajuste: 'AJU' }[kind] || 'MOV';
+    const year = String(date || '').slice(0, 4) || String(new Date().getFullYear());
+    const used = readAll(STORE_KEYS.stock_moves).map(m => String(m.move_number || '')).filter(n => n.startsWith(`${prefix}-${year}-`)).map(n => Number(n.split('-')[2]) || 0);
+    const moveNumber = `${prefix}-${year}-${String((used.length ? Math.max(...used) : 0) + 1).padStart(4, '0')}`;
+    const mv = this.insert('stock_moves', { move_number: moveNumber, kind, date, container_id: containerId || '', reference, notes, items: JSON.stringify(lines) });
+    this.applyStockDelta(lines, kind === 'salida' ? -1 : 1);
+    return mv;
+  },
+
+  // Anula un movimiento de existencias (devuelve la existencia como estaba).
+  deleteStockMove(id) {
+    const mv = this.getById('stock_moves', id);
+    if (!mv) return false;
+    this.applyStockDelta(parseItems(mv.items), mv.kind === 'salida' ? 1 : -1);
+    this.remove('stock_moves', id);
+    return true;
+  },
+
+  applyStockDelta(lines, sign) {
+    const patches = [];
+    for (const it of lines) {
+      const p = this.getById('products', it.productId);
+      if (p) patches.push({ id: p.id, stock: Math.max(0, (Number(p.stock) || 0) + sign * (Number(it.qty) || 0)) });
+    }
+    if (patches.length) this.updateMany('products', patches);
+  },
+
+  // Asigna (o quita, con '') un documento de Costos a un contenedor.
+  assignCostToContainer(refDoc, containerId) {
+    const rows = readAll(STORE_KEYS.movements).filter(m => m.ref_doc === refDoc && (m.source === 'cost' || m.source === 'expense'));
+    if (!rows.length) return 0;
+    this.updateMany('movements', rows.map(m => ({ id: m.id, source_ref: containerId || '' })));
+    this.applyRealCosts();
+    return rows.length;
+  },
+
+  // Asientos de cierre del modelo anterior (completar contenedor = asiento).
+  legacyClosingEntries() {
+    const byRef = new Map();
+    for (const m of readAll(STORE_KEYS.movements).filter(x => x.source === 'container_close' || x.source === 'container_payment')) {
+      const e = byRef.get(m.ref_doc) || { ref: m.ref_doc, source: m.source, date: m.entry_date, containerId: m.source_ref, total: 0, lines: 0 };
+      e.total += Number(m.debit) || 0; e.lines++;
+      byRef.set(m.ref_doc, e);
+    }
+    return [...byRef.values()];
+  },
+
+  deleteLegacyClosingEntries() {
+    const refs = new Set(this.legacyClosingEntries().map(e => e.ref));
+    const movements = readAll(STORE_KEYS.movements);
+    writeAll(STORE_KEYS.movements, movements.filter(m => !refs.has(m.ref_doc)));
+    for (const ref of refs) cloudDeleteWhere('movements', 'ref_doc', ref);
+    notifyDataUpdated();
+    return refs.size;
   },
 
   rebuildInventory() {
@@ -1327,10 +1423,15 @@ const Store = {
     const targetIds = new Set(targets.map(c => c.id));
     // 1) Diario: asientos de cierre y pagos de esos contenedores (y ventas si se pide).
     const movements = readAll(STORE_KEYS.movements);
-    const keep = movements.filter(m => !(m.source_ref && targetIds.has(m.source_ref)) && !(deleteSales && m.source === 'sale'));
+    const isRealCost = (m) => m.source === 'cost' || m.source === 'expense';
+    const doomed = (m) => (m.source_ref && targetIds.has(m.source_ref) && !isRealCost(m)) || (deleteSales && m.source === 'sale');
+    const keep = movements.filter(m => !doomed(m));
     const removedLines = movements.length - keep.length;
+    const doomedRefs = new Set(movements.filter(m => doomed(m) && m.source !== 'sale').map(m => m.ref_doc));
     writeAll(STORE_KEYS.movements, keep);
-    for (const id of targetIds) cloudDeleteWhere('movements', 'source_ref', id);
+    for (const ref of doomedRefs) cloudDeleteWhere('movements', 'ref_doc', ref);
+    const unassign = keep.filter(m => isRealCost(m) && m.source_ref && targetIds.has(m.source_ref));
+    if (unassign.length) this.updateMany('movements', unassign.map(m => ({ id: m.id, source_ref: '' })));
     if (deleteSales) cloudDeleteWhere('movements', 'source', 'sale');
 
     // 2) Contenedores e ítems.

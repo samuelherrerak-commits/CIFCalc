@@ -1,6 +1,6 @@
 import Store from './store.js';
-import { computeContainer } from './utils.js';
 import { inferirTipo } from './accounting.js';
+import { analyzeContainer, realCostLines } from './container-costs.js';
 import { stockOuts } from './analytics.js';
 
 // Estados financieros (VEN-NIF PYME, basada en la NIIF para las PYMES):
@@ -47,40 +47,38 @@ function balances(movements, from, to) {
   return map;
 }
 
-// Inventario valorado a una fecha (fin del día `date`).
+// Inventario valorado a una fecha (fin del día `date`). Solo cuenta costo
+// REGISTRADO en el diario (Costos asignados a cada contenedor): el estimado de
+// la calculadora no es contable. Lo pagado de contenedores que aún no se
+// completan es mercancía en tránsito (activo), no costo de ventas.
 export function inventoryAt(date) {
   const movements = Store.getAll('movements');
-  const closingDate = new Map();
-  const bookedCost = new Map(); // contenedor → costo llevado a cuentas de Costo en su asiento de cierre
-  for (const m of movements) {
-    if (m.source !== 'container_close' || !m.source_ref) continue;
-    if (!closingDate.has(m.source_ref)) closingDate.set(m.source_ref, String(m.entry_date).slice(0, 10));
-    if (String(m.codigo_cuenta).startsWith('5')) bookedCost.set(m.source_ref, (bookedCost.get(m.source_ref) || 0) + (Number(m.debit) || 0));
-  }
+  const real = realCostLines(movements, Store.getAll('accounts'), { date });
   const seen = new Set();
   const ins = new Map(); // productId → { qty, cost }
+  let transit = 0;
+  const transitDetail = [];
   for (const c of Store.getAll('containers')) {
     if (seen.has(c.id)) continue; // filas repetidas con el mismo id en la hoja
     seen.add(c.id);
-    const d = closingDate.get(c.id);
-    if (!d || d > date) continue; // solo contenedores cuyo costo ya está en el diario
-    const calc = computeContainer(c, Store.getItemsByContainer(c.id)).calculated;
-    // El costo de cada producto se reparte del costo REGISTRADO en el asiento
-    // (no del recalculado hoy): si el contenedor se editó después de
-    // completarlo, el inventario nunca vale más que lo que se compró.
-    const current = calc.reduce((s, x) => s + x.qty * x.costNoVat, 0);
-    const factor = current > 0 ? (bookedCost.get(c.id) || 0) / current : 0;
-    for (const x of calc) {
-      const pid = x.item.product_id;
-      if (!pid || !(x.qty > 0)) continue;
-      const e = ins.get(pid) || { qty: 0, cost: 0 };
-      e.qty += x.qty; e.cost += x.qty * x.costNoVat * factor;
-      ins.set(pid, e);
+    const lines = real.get(c.id) || [];
+    const arrived = c.status === 'closed' && String(c.operation_date || '').slice(0, 10) <= date;
+    if (!arrived) {
+      const paid = lines.reduce((s, m) => s + (Number(m.debit) || 0), 0);
+      if (paid > 0) { transit += paid; transitDetail.push({ name: `Mercancía en tránsito — ${c.bl_number || 'contenedor'}`, qty: 0, avg: 0, value: r2(paid) }); }
+      continue;
+    }
+    if (!lines.length) continue;
+    for (const pr of analyzeContainer(c, Store.getItemsByContainer(c.id), lines).products) {
+      if (!pr.productId || !(pr.qty > 0)) continue;
+      const e = ins.get(pr.productId) || { qty: 0, cost: 0 };
+      e.qty += pr.qty; e.cost += pr.realTotal;
+      ins.set(pr.productId, e);
     }
   }
   const outs = stockOuts(date);
-  let value = 0, units = 0;
-  const detail = [];
+  let value = transit, units = 0;
+  const detail = [...transitDetail];
   const products = new Map(Store.getAll('products').map(p => [p.id, p]));
   for (const [pid, e] of ins) {
     const onHand = Math.max(0, e.qty - (outs.get(pid) || 0));
@@ -89,7 +87,7 @@ export function inventoryAt(date) {
     value += onHand * avg; units += onHand;
     detail.push({ name: (products.get(pid) || {}).name || 'Producto', qty: onHand, avg, value: onHand * avg });
   }
-  return { value: r2(value), units, detail: detail.sort((a, b) => b.value - a.value) };
+  return { value: r2(value), units, transit: r2(transit), detail: detail.sort((a, b) => b.value - a.value) };
 }
 
 // Clasificación de cuentas para la presentación.
@@ -300,12 +298,12 @@ function dataIssues(movements, to) {
     orphanNames.add(c ? (c.bl_number || 'sin BL') : 'contenedor eliminado');
   }
   const products = new Set(Store.getAll('products').map(p => p.id));
-  const closedWithEntry = new Set(movements.filter(m => m.source === 'container_close').map(m => m.source_ref));
+  const real = realCostLines(movements, Store.getAll('accounts'), { date: to });
   let unlinkedCost = 0;
   for (const c of containers.values()) {
-    if (c.status !== 'closed' || !closedWithEntry.has(c.id)) continue;
-    for (const calc of computeContainer(c, Store.getItemsByContainer(c.id)).calculated) {
-      if (!calc.item.product_id || !products.has(calc.item.product_id)) unlinkedCost += calc.qty * calc.costNoVat;
+    if (c.status !== 'closed' || !real.has(c.id)) continue;
+    for (const pr of analyzeContainer(c, Store.getItemsByContainer(c.id), real.get(c.id)).products) {
+      if (!pr.productId || !products.has(pr.productId)) unlinkedCost += pr.realTotal;
     }
   }
   return { orphanTotal: r2(orphanTotal), orphanNames: [...orphanNames], unlinkedCost: r2(unlinkedCost) };

@@ -1,4 +1,5 @@
 import Store from '../store.js';
+import { CONTAINER_JOURNAL_ENABLED } from '../features.js';
 import { fmtNum, fmtInt, esc, num, computeContainer, ensureXlsx } from '../utils.js';
 
 const Calculator = {
@@ -835,7 +836,7 @@ const Calculator = {
       }
       const note = document.getElementById('closing-status-note');
       if (note) {
-        if (container.status === 'closed' && !Store.hasClosingJournal(containerId)) {
+        if (CONTAINER_JOURNAL_ENABLED && container.status === 'closed' && !Store.hasClosingJournal(containerId)) {
           note.textContent = '⚠ El inventario ya se registró, pero falta el asiento contable — carga el catálogo sugerido en Contabilidad > Cuentas y vuelve a abrir este contenedor.';
           note.className = 'text-xs text-amber-600';
         } else {

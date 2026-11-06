@@ -199,6 +199,12 @@ const SCHEMAS = {
   dispatches: [
     'id', 'order_id', 'dispatch_number', 'date', 'items', 'notes',
     'created_at', 'updated_at'
+  ],
+  // Movimientos de existencias (solo inventario, nada contable): recepciones
+  // de mercancía, salidas manuales y ajustes. items = JSON [{productId, name, sku, qty}].
+  stock_moves: [
+    'id', 'move_number', 'kind', 'date', 'container_id', 'reference', 'items', 'notes',
+    'created_at', 'updated_at'
   ]
 };
 
