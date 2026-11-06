@@ -102,7 +102,7 @@ const Receivables = {
       if (!accountId) { msgEl.textContent = 'Selecciona la cuenta de cobro (Efectivo/Banco).'; return; }
 
       const paymentAccount = accounts.find(a => a.id === accountId);
-      const refDoc = `COB-${Date.now().toString().slice(-6)}`;
+      const refDoc = Store.uniqueRef('COB');
       const data = {
         date, total: amount, concepto: `Cobro a ${clientName}`, entidad: clientName, refDoc,
         debitAccount: paymentAccount, creditAccount: receivableAccount()

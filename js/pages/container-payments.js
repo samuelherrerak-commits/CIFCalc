@@ -128,7 +128,7 @@ const ContainerPayments = {
       if (!payableAccount) { msgEl.textContent = 'No se encontró la cuenta del pasivo de este contenedor.'; return; }
 
       const paymentAccount = accountId.startsWith('new:') ? Store.ensureCatalogAccount(accountId.slice(4)) : accounts.find(a => a.id === accountId);
-      const refDoc = `PAG-${Date.now().toString().slice(-6)}`;
+      const refDoc = Store.uniqueRef('PAG');
       const data = {
         date, total: amount, concepto: `Pago contenedor ${row.container.bl_number || ''}`, entidad: '', refDoc,
         payableAccount, paymentAccount

@@ -5,7 +5,7 @@ const Nav = {
     const links = [
       { path: '#/', key: 'dashboard', label: 'Dashboard', icon: 'chart' },
       { path: '#/productos', key: 'products', label: 'Productos', icon: 'box' },
-      { path: '#/contabilidad/resumen', key: 'contabilidad', label: 'Contabilidad', icon: 'book' }
+      { path: '#/contabilidad/resumen', key: 'contabilidad', label: 'Gestión financiera', icon: 'book' }
     ];
     const nav = document.getElementById('navbar');
     nav.innerHTML = `

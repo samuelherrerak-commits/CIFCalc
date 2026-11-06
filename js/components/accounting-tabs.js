@@ -135,7 +135,7 @@ const AccountingTabs = {
         <div class="hidden xl:flex items-center gap-2.5 px-4 pt-4 pb-3 shrink-0">
           <span class="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-300 flex items-center justify-center">${icon('book', 'w-4 h-4')}</span>
           <div class="min-w-0">
-            <p class="text-sm font-semibold text-white leading-tight">Contabilidad</p>
+            <p class="text-sm font-semibold text-white leading-tight">Gestión financiera</p>
             <p class="text-[11px] text-slate-400 truncate">${biz ? biz.replace(/[<>&"]/g, '') : 'Maestro de Costo'}</p>
           </div>
         </div>
@@ -186,7 +186,7 @@ const AccountingTabs = {
       <div id="acc-more" class="hidden md:hidden fixed inset-0 z-50 bg-black/30" data-acc-more-close>
         <div class="absolute bottom-0 inset-x-0 bg-white rounded-t-2xl p-4 max-h-[80vh] overflow-y-auto space-y-4">
           <div class="flex justify-between items-center">
-            <p class="font-semibold text-slate-900">Contabilidad</p>
+            <p class="font-semibold text-slate-900">Gestión financiera</p>
             <button data-acc-more-close class="text-slate-400 text-xl leading-none">✕</button>
           </div>
           ${ACCOUNTING_SECTIONS.map(s => `

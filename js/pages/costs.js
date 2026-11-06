@@ -97,7 +97,7 @@ const Costs = {
       if (total <= 0) { msgEl.textContent = 'El monto debe ser mayor a 0.'; return; }
       if (!concepto) { msgEl.textContent = 'El concepto es obligatorio.'; return; }
 
-      const refDoc = `COS-${Date.now().toString().slice(-6)}`;
+      const refDoc = Store.uniqueRef('COS');
       const data = {
         date, total, concepto, entidad, refDoc,
         costAccount: accounts.find(a => a.id === costId),

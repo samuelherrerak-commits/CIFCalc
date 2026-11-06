@@ -103,7 +103,7 @@ const Payables = {
       if (!accountId) { msgEl.textContent = 'Selecciona la cuenta de pago (Efectivo/Banco).'; return; }
 
       const paymentAccount = accounts.find(a => a.id === accountId);
-      const refDoc = `ABP-${Date.now().toString().slice(-6)}`;
+      const refDoc = Store.uniqueRef('ABP');
       const data = {
         date, total: amount, concepto: `Abono a ${supplierName}`, entidad: supplierName, refDoc,
         debitAccount: payableAccount(), creditAccount: paymentAccount

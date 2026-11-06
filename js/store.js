@@ -848,6 +848,9 @@ export function consolidateLines(lines) {
   return [...out.filter(l => l.debit > 0), ...out.filter(l => l.credit > 0)];
 }
 
+// Referencias entregadas en esta sesión (aún sin guardar en el diario).
+const issuedRefs = new Set();
+
 function parseItems(json) {
   try { const v = JSON.parse(json || '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
 }
@@ -880,6 +883,12 @@ const Store = {
     if (!(keepPrevious && hasPrevious)) copyRealDataToSandbox();
     setSandboxFlag(true);
     location.reload();
+  },
+  // Vacía tablas del modo prueba (lo usa el ejercicio de 3 meses). Nunca
+  // toca los datos reales.
+  wipeSandbox(tables) {
+    if (!SANDBOX) throw new Error('Solo en modo prueba.');
+    for (const t of tables) if (STORE_KEYS[t]) writeAll(STORE_KEYS[t], []);
   },
   // Vuelve a empezar la prueba desde los datos reales actuales.
   resetSandbox() {
@@ -1349,6 +1358,19 @@ const Store = {
     return rows.length;
   },
 
+  // Referencia de documento única (p. ej. GST-482913): 6 dígitos del reloj y,
+  // si ya existe en el diario (dos registros en el mismo milisegundo o dos
+  // usuarios a la vez), se busca el siguiente libre.
+  uniqueRef(prefix) {
+    const used = new Set(readAll(STORE_KEYS.movements).map(m => m.ref_doc));
+    for (const q of readAll(STORE_KEYS.quotes)) used.add(q.quote_number);
+    let n = Number(Date.now().toString().slice(-6));
+    let ref = `${prefix}-${String(n).padStart(6, '0')}`;
+    while (used.has(ref) || issuedRefs.has(ref)) { n = (n + 1) % 1000000; ref = `${prefix}-${String(n).padStart(6, '0')}`; }
+    issuedRefs.add(ref);
+    return ref;
+  },
+
   // Existencias: recepción (entra), salida (sale) o ajuste (± por línea).
   // Solo inventario: no genera asientos.
   registerStockMove({ kind, date, containerId = '', reference = '', notes = '', items }) {
@@ -1568,7 +1590,7 @@ const Store = {
   newQuote(overrides = {}) {
     const validUntil = new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10);
     return {
-      quote_number: `COT-${Date.now().toString().slice(-6)}`,
+      quote_number: this.uniqueRef('COT'),
       date: new Date().toISOString().slice(0, 10),
       valid_until: validUntil,
       contact_id: '', contact_name: '', concepto: '',
