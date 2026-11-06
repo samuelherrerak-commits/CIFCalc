@@ -50,16 +50,16 @@ const Inventory = {
       const units = withStock.reduce((s, p) => s + Number(p.stock), 0);
       const atCost = withStock.reduce((s, p) => s + Number(p.stock) * (Number(p.avg_cost) || 0), 0);
       const atPrice = withStock.reduce((s, p) => s + Number(p.stock) * (Number(p.sale_price) || 0), 0);
-      const tile = (label, value, color) => `
-        <div class="rounded-xl border border-${color}-100 bg-${color}-50 p-3">
-          <div class="text-[10px] font-semibold uppercase tracking-wide text-${color}-600">${label}</div>
-          <div class="text-lg font-bold text-slate-800 font-mono">${value}</div>
+      const tile = (label, value) => `
+        <div class="rounded-lg border border-slate-200 bg-white px-3 py-2">
+          <div class="text-[11px] text-slate-500">${label}</div>
+          <div class="text-base font-semibold text-slate-800 tabular-nums">${value}</div>
         </div>`;
       document.getElementById('stock-summary').innerHTML =
-        tile('Productos con existencia', fmtInt(withStock.length), 'blue') +
-        tile('Unidades', fmtInt(units), 'violet') +
-        tile('Valor a costo', '$' + fmtNum(atCost), 'amber') +
-        tile('Valor a precio de venta', '$' + fmtNum(atPrice), 'emerald');
+        tile('Productos con existencia', fmtInt(withStock.length)) +
+        tile('Unidades', fmtInt(units)) +
+        tile('Valor a costo', '$' + fmtNum(atCost)) +
+        tile('Valor a precio de venta', '$' + fmtNum(atPrice));
     };
 
     const renderStock = () => {
@@ -242,27 +242,32 @@ const Inventory = {
       if (rows.length === 0) { el.innerHTML = ''; return; }
       const ready = Store.hasSyncedOnce() || !Store.isSheetsReachable();
       el.innerHTML = `
-        <div class="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-3">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div>
-              <p class="text-sm font-bold text-amber-800">⚠ ${rows.length} producto(s) tienen existencia o costo que no vienen de ningún contenedor completado ni venta</p>
-              <p class="text-xs text-amber-700">El inventario solo se alimenta de contenedores completados y se rebaja con las ventas. Esto suele ser stock de la antigua recepción manual o de contenedores ya eliminados.</p>
+        <details class="mb-3 group rounded-lg border border-slate-200 bg-white">
+          <summary class="flex items-center gap-2 cursor-pointer list-none px-3 py-2 text-sm text-slate-600">
+            <span class="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0"></span>
+            <span class="flex-1">${rows.length} producto(s) con existencia que no cuadra con los contenedores</span>
+            <span class="text-xs font-medium text-blue-600 group-open:hidden">Revisar</span>
+            <span class="text-xs font-medium text-slate-400 hidden group-open:inline">Ocultar</span>
+          </summary>
+          <div class="border-t border-slate-100 p-3 space-y-3">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <p class="text-xs text-slate-500">El inventario solo se alimenta de contenedores completados y se rebaja con los despachos. Esto suele ser stock de la antigua recepción manual o de contenedores ya eliminados.</p>
+              <button id="btn-rebuild" ${ready ? '' : 'disabled'} class="flex-shrink-0 border border-slate-300 hover:bg-slate-50 disabled:opacity-50 text-slate-700 text-sm font-medium py-1.5 px-3 rounded-lg">${ready ? 'Corregir inventario' : 'Sincronizando con Sheets…'}</button>
             </div>
-            <button id="btn-rebuild" ${ready ? '' : 'disabled'} class="flex-shrink-0 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-300 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm">${ready ? 'Corregir inventario' : 'Sincronizando con Sheets…'}</button>
+            <div class="max-h-56 overflow-y-auto rounded-lg border border-slate-200">
+              <table class="w-full text-left text-xs">
+                <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Producto</th><th class="p-2 text-right">Tiene</th><th class="p-2 text-right">Debería tener</th><th class="p-2">Origen</th></tr></thead>
+                <tbody>${rows.map(r => `
+                  <tr class="border-t border-slate-100">
+                    <td class="p-2"><div class="font-medium text-slate-700">${esc(r.product.name)}</div><div class="text-[10px] font-mono text-slate-400">${esc(r.product.sku_briggs)}</div></td>
+                    <td class="p-2 text-right font-mono text-slate-600">${fmtInt(r.current)} <span class="text-slate-400">· $${fmtNum(r.currentCost)}</span></td>
+                    <td class="p-2 text-right font-mono text-slate-800">${fmtInt(r.expected)} <span class="text-slate-400">· $${fmtNum(r.expectedCost)}</span></td>
+                    <td class="p-2 text-slate-500">${fmtInt(r.inQty)} de contenedores − ${fmtInt(r.outQty)} despachadas</td>
+                  </tr>`).join('')}</tbody>
+              </table>
+            </div>
           </div>
-          <div class="max-h-56 overflow-y-auto rounded-lg border border-amber-200 bg-white">
-            <table class="w-full text-left text-xs">
-              <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="p-2">Producto</th><th class="p-2 text-right">Tiene</th><th class="p-2 text-right">Debería tener</th><th class="p-2">Origen</th></tr></thead>
-              <tbody>${rows.map(r => `
-                <tr class="border-t border-slate-100">
-                  <td class="p-2"><div class="font-semibold text-slate-700">${esc(r.product.name)}</div><div class="text-[10px] font-mono text-slate-400">${esc(r.product.sku_briggs)}</div></td>
-                  <td class="p-2 text-right font-mono text-red-600">${fmtInt(r.current)} <span class="text-slate-400">· $${fmtNum(r.currentCost)}</span></td>
-                  <td class="p-2 text-right font-mono font-bold text-emerald-700">${fmtInt(r.expected)} <span class="font-normal text-slate-400">· $${fmtNum(r.expectedCost)}</span></td>
-                  <td class="p-2 text-slate-500">${fmtInt(r.inQty)} de contenedores completados − ${fmtInt(r.outQty)} vendidas</td>
-                </tr>`).join('')}</tbody>
-            </table>
-          </div>
-        </div>`;
+        </details>`;
       const btn = document.getElementById('btn-rebuild');
       if (btn) btn.addEventListener('click', () => {
         if (!confirm(`Se ajustará la existencia y el costo de ${rows.length} producto(s) a lo que dicen los contenedores completados y las ventas.\n\nTambién se guarda en Google Sheets. ¿Continuar?`)) return;

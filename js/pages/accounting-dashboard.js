@@ -3,6 +3,7 @@ import { fmtNum, esc } from '../utils.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { card } from '../components/accounting-shell.js';
 import { icon } from '../components/icons.js';
+import { CONTAINER_PAYMENTS_ENABLED } from '../features.js';
 import { salesLines } from '../analytics.js';
 
 // Prefijo del ref_doc → tipo de actividad (igual patrón que recentActivity de LegalYa).
@@ -151,8 +152,8 @@ const AccountingDashboard = {
     const dueTasks = Store.getAll('crm_activities').filter(a => a.kind === 'tarea' && !(a.done === true || String(a.done) === 'true') && a.due_date && a.due_date <= todayIso);
     const pendings = [
       dueTasks.length && { href: '#/contabilidad/contactos', icon: 'clock', title: `${dueTasks.length} seguimiento(s) de clientes para hoy o vencidos`, value: 'Ver clientes' },
-      payableCount && { href: '#/contabilidad/pagos', icon: 'ship', title: `${payableCount} contenedor(es) por pagar`, value: '$' + fmtNum(payableTotal) },
-      withoutEntry && { href: '#/contabilidad/pagos', icon: 'alert', warn: true, title: `${withoutEntry} contenedor(es) completo(s) sin asiento`, value: 'Generar' },
+      CONTAINER_PAYMENTS_ENABLED && payableCount && { href: '#/contabilidad/pagos', icon: 'ship', title: `${payableCount} contenedor(es) por pagar`, value: '$' + fmtNum(payableTotal) },
+      CONTAINER_PAYMENTS_ENABLED && withoutEntry && { href: '#/contabilidad/pagos', icon: 'alert', warn: true, title: `${withoutEntry} contenedor(es) completo(s) sin asiento`, value: 'Generar' },
       stats.porCobrar > 0.01 && { href: '#/contabilidad/por-cobrar', icon: 'inbox', title: 'Clientes te deben', value: '$' + fmtNum(stats.porCobrar) },
       pendingQuotes.length && { href: '#/contabilidad/presupuestos', icon: 'file', title: `${pendingQuotes.length} presupuesto(s) pendiente(s)`, value: '$' + fmtNum(pendingQuotes.reduce((s2, q) => s2 + (Number(q.total) || 0), 0)) },
       approvedQuotes.length && { href: '#/contabilidad/presupuestos', icon: 'check', title: `${approvedQuotes.length} presupuesto(s) aprobado(s) por vender`, value: 'Convertir' },
@@ -222,7 +223,7 @@ const AccountingDashboard = {
             <p class="text-xl font-semibold text-slate-900 tabular-nums">$${fmtNum(oweContainers + oweSuppliers + oweTaxes)}</p>
           </div>
           <div class="mt-3 divide-y divide-slate-100">
-            ${listRow('Contenedores por pagar', oweContainers, '#/contabilidad/pagos')}
+            ${CONTAINER_PAYMENTS_ENABLED || oweContainers > 0.005 ? listRow('Contenedores por pagar', oweContainers, CONTAINER_PAYMENTS_ENABLED ? '#/contabilidad/pagos' : '#/contabilidad/mayor') : ''}
             ${listRow('Proveedores por pagar', oweSuppliers, '#/contabilidad/por-pagar')}
             ${oweTaxes > 0.005 ? listRow('IVA por declarar y pagar', oweTaxes, '#/contabilidad/fiscal/declaracion') : ''}
           </div>

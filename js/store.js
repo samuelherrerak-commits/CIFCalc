@@ -3,6 +3,7 @@ import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
 import { isSandbox, setSandboxFlag, storageKey } from './sandbox.js';
 import { computeContainer } from './utils.js';
+import { PROMOTIONS_ENABLED } from './features.js';
 import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping, CHART_OF_ACCOUNTS, inferirTipo, naturalezaForTipo, DEFAULT_CLOSING_MAPPING_CODES } from './accounting.js';
 
 // ============================================
@@ -1495,7 +1496,7 @@ const Store = {
   // → { listPrice, unitPrice, discountPct, label } para vender `product` a `contact`.
   priceFor(product, contact, date) {
     const listPrice = Number(product.sale_price) || 0;
-    const promo = this.bestPromotionFor(product, date);
+    const promo = PROMOTIONS_ENABLED ? this.bestPromotionFor(product, date) : null;
     const promoPct = promo ? Number(promo.discount_pct) : 0;
     const clientPct = contact ? Number(contact.discount_pct) || 0 : 0;
     const pct = Math.max(promoPct, clientPct);

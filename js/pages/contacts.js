@@ -68,7 +68,7 @@ function contactModal(existing, onSaved) {
         <div><label class="${label}">Etiquetas</label><input id="m-tags" class="${input}" value="${esc(c.tags)}" placeholder="mayorista, constructora"></div>
         <div class="col-span-2"><label class="${label}">Retención de IVA (contribuyente especial)</label><select id="m-retention" class="${input}">${[[0, 'No retiene'], [75, 'Retiene el 75 % del IVA'], [100, 'Retiene el 100 % del IVA']].map(([v, t]) => `<option value="${v}" ${Number(c.iva_retention_pct) === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
         <div class="col-span-2"><label class="${label}">Notas</label><textarea id="m-notes" rows="3" class="${input}">${esc(c.notes)}</textarea></div>
-        <p class="col-span-2 text-[11px] text-slate-400">El descuento especial se aplica solo en Ventas cuando eliges a este cliente (si hay una promoción mayor, se usa la promoción).</p>
+        <p class="col-span-2 text-[11px] text-slate-400">El descuento especial se aplica en los presupuestos cuando eliges a este cliente.</p>
         <div id="m-msg" class="col-span-2 text-xs text-red-600"></div>
       </div>
       <div class="px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
