@@ -14,6 +14,7 @@ const Costs = {
     let accounts = Store.getAll('accounts').filter(a => a.is_active !== false);
     let contacts = Store.getAll('contacts');
 
+    const byTipoEspecifico = (te) => accounts.filter(a => a.tipo_especifico === te).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
     const byTipo = (tipo) => accounts.filter(a => a.tipo === tipo).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
     const accountOptions = (list) => list.map(a => `<option value="${a.id}">${esc(a.codigo)} — ${esc(a.nombre)}</option>`).join('');
     const diffAccount = () => accounts.find(a => a.codigo === '6.9.01.01');
@@ -90,7 +91,7 @@ const Costs = {
 
       if (!date) { msgEl.textContent = 'La fecha es obligatoria.'; return; }
       if (!costId) { msgEl.textContent = 'Selecciona el subtipo de costo.'; return; }
-      if (!counterId) { msgEl.textContent = 'Selecciona la cuenta contrapartida.'; return; }
+      if (!counterId) { msgEl.textContent = 'Selecciona el método de pago (caja o banco).'; return; }
       const invMsg = invoice.validate();
       if (invMsg) { msgEl.textContent = invMsg; return; }
       if (total <= 0) { msgEl.textContent = 'El monto debe ser mayor a 0.'; return; }
@@ -142,10 +143,11 @@ const Costs = {
             <select id="f-contact" class="${input}">${contactOptions(contacts, 'proveedor')}</select>
           </div>
           <div>
-            <label class="${label}">Cuenta Contrapartida *</label>
+            <label class="${label}">Método de pago *</label>
             <select id="f-counter" class="${input}">
-              <option value="">— Cuenta —</option>
-              ${accountOptions(accounts)}
+              <option value="">— Caja o banco —</option>
+              <optgroup label="Efectivo">${accountOptions(byTipoEspecifico('Efectivo'))}</optgroup>
+              <optgroup label="Banco">${accountOptions(byTipoEspecifico('Banco'))}</optgroup>
             </select>
           </div>
           <div class="sm:col-span-2 lg:col-span-2">
