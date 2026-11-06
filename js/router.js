@@ -23,7 +23,7 @@ import Reports from './pages/reports.js';
 import FinancialStatements from './pages/financial-statements.js';
 import Fiscal from './pages/fiscal.js';
 import Orders from './pages/orders.js';
-import { POS_ENABLED } from './features.js';
+import { POS_ENABLED, PROMOTIONS_ENABLED, CONTAINER_PAYMENTS_ENABLED } from './features.js';
 
 const routes = [
   { pattern: /^#\/?$/, handler: 'dashboard', key: 'dashboard' },
@@ -67,7 +67,7 @@ const pages = {
   // Punto de venta apagado: su ruta lleva a Presupuestos.
   sales: POS_ENABLED ? Sales : { render() { location.replace('#/contabilidad/presupuestos'); } },
   expenses: Expenses,
-  payments: ContainerPayments,
+  payments: CONTAINER_PAYMENTS_ENABLED ? ContainerPayments : { render() { location.replace('#/contabilidad/resumen'); } },
   inventory: Inventory,
   journal: Journal,
   ledger: Ledger,
@@ -75,7 +75,7 @@ const pages = {
   quotes: Quotes,
   receivables: Receivables,
   payables: Payables,
-  promotions: Promotions,
+  promotions: PROMOTIONS_ENABLED ? Promotions : { render() { location.replace('#/contabilidad/resumen'); } },
   reports: Reports,
   financials: FinancialStatements,
   fiscal: Fiscal,

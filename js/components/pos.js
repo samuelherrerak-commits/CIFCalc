@@ -173,10 +173,10 @@ export function mountPOS(root, opts) {
         // Existencia como texto discreto (rojo solo si se agotó).
         const stockText = capToStock
           ? (left > 0 ? `${fmtInt(left)} disp.` : '<span class="text-red-500">Agotado</span>')
-          : (stockOf(p) > 0 ? `${fmtInt(stockOf(p))} en stock` : 'Sin existencia');
+          : '';
         const pr = priceFor(p);
         const priceHtml = !(pr.listPrice > 0)
-          ? '<span class="text-xs text-amber-600">Sin precio</span>'
+          ? '<span class="text-xs text-slate-400">Sin precio</span>'
           : pr.discountPct > 0
             ? `<span class="flex items-baseline gap-1"><span class="font-semibold text-sm text-slate-900">$${fmtNum(pr.unitPrice)}</span><span class="text-[10px] text-slate-400 line-through">$${fmtNum(pr.listPrice)}</span></span>`
             : `<span class="font-semibold text-sm text-slate-900">$${fmtNum(pr.listPrice)}</span>`;
@@ -233,7 +233,6 @@ export function mountPOS(root, opts) {
            <p class="text-xs mt-0.5">Toca un producto para agregarlo</p>
          </div>`
       : cart.map((l, i) => {
-        const over = !capToStock && l.qty > stockOf(l.product);
         return `
         <div class="flex gap-2 py-2 border-b border-slate-100 last:border-b-0">
           ${l.product.foto_url
@@ -254,13 +253,13 @@ export function mountPOS(root, opts) {
                 <button data-plus="${i}" class="w-6 h-6 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-500 text-sm leading-none">+</button>
               </div>
               <div class="flex items-center gap-0.5 text-[11px] text-slate-400 whitespace-nowrap" title="Precio de lista">
-                × $<input data-list="${i}" type="number" min="0" step="0.01" value="${l.listPrice || ''}" placeholder="0.00" class="w-16 px-1 py-0.5 border ${l.listPrice > 0 ? 'border-slate-200 bg-white' : 'border-amber-400 bg-amber-50'} rounded text-right text-xs">
+                × $<input data-list="${i}" type="number" min="0" step="0.01" value="${l.listPrice || ''}" placeholder="0.00" class="w-16 px-1 py-0.5 border border-slate-200 bg-white rounded text-right text-xs">
               </div>
               <div class="flex items-center gap-0.5 text-[11px] text-slate-400 whitespace-nowrap" title="Descuento negociado">
                 −<input data-disc="${i}" type="number" min="0" max="100" step="0.5" value="${l.discountPct || ''}" placeholder="0" class="w-11 px-1 py-0.5 border border-slate-200 bg-white rounded text-right text-xs">%
               </div>
             </div>
-            ${over || l.discountPct > 0 ? `<p class="text-[10px] mt-0.5 ${over ? 'text-amber-600 font-semibold' : 'text-slate-500'}">${over ? `Supera la existencia (${fmtInt(stockOf(l.product))}) · se entrega después` : `Neto $${fmtNum(l.unitPrice)} c/u${l.label ? ' · ' + esc(l.label) : ''}`}</p>` : ''}
+            ${l.discountPct > 0 ? `<p class="text-[10px] mt-0.5 text-slate-500">Neto $${fmtNum(l.unitPrice)} c/u${l.label ? ' · ' + esc(l.label) : ''}</p>` : ''}
           </div>
         </div>`;
       }).join('');
