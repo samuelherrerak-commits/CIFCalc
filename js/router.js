@@ -3,6 +3,7 @@ import Store from './store.js';
 
 import Dashboard from './pages/dashboard.js';
 import Calculator from './pages/calculator.js';
+import CostAnalysis from './pages/cost-analysis.js';
 import Products from './pages/products.js';
 import Accounts from './pages/accounts.js';
 import AccountingDashboard from './pages/accounting-dashboard.js';
@@ -39,6 +40,7 @@ const routes = [
   { pattern: /^#\/contabilidad\/presupuestos\/([^/]+)$/, handler: 'quotes', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/gastos\/?$/, handler: 'expenses', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/pagos\/?$/, handler: 'payments', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/analisis-costos\/?$/, handler: 'costAnalysis', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/por-cobrar\/?$/, handler: 'receivables', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/por-pagar\/?$/, handler: 'payables', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/inventario\/?$/, handler: 'inventory', key: 'contabilidad' },
@@ -59,6 +61,7 @@ const routes = [
 const pages = {
   dashboard: Dashboard,
   calculator: Calculator,
+  costAnalysis: CostAnalysis,
   products: Products,
   accounts: Accounts,
   accountingDashboard: AccountingDashboard,

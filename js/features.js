@@ -12,3 +12,8 @@ export const PROMOTIONS_ENABLED = false;
 // Contenedores por pagar: apagado mientras se redefine cómo se registra el
 // costo de los contenedores.
 export const CONTAINER_PAYMENTS_ENABLED = false;
+
+// Asiento al completar un contenedor: apagado. El contenedor es solo un
+// estimado; lo real son los costos registrados y asignados al contenedor
+// (ver container-costs.js y la página Análisis de costos).
+export const CONTAINER_JOURNAL_ENABLED = false;

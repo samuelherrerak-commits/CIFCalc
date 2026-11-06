@@ -25,6 +25,7 @@ export const ACCOUNTING_SECTIONS = [
   { title: 'Compras', items: [
     { key: 'expenses', path: '#/contabilidad/gastos', label: 'Gastos', icon: 'wallet' },
     { key: 'costs', path: '#/contabilidad/costos', label: 'Costos', icon: 'tag' },
+    { key: 'cost-analysis', path: '#/contabilidad/analisis-costos', label: 'Análisis de costos', icon: 'chart' },
     { key: 'payments', path: '#/contabilidad/pagos', label: 'Contenedores por pagar', icon: 'ship', off: !CONTAINER_PAYMENTS_ENABLED },
     { key: 'payables', path: '#/contabilidad/por-pagar', label: 'Proveedores por pagar', icon: 'receipt' }
   ] },

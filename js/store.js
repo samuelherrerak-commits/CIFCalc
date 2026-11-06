@@ -3,7 +3,8 @@ import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
 import { isSandbox, setSandboxFlag, storageKey } from './sandbox.js';
 import { computeContainer } from './utils.js';
-import { PROMOTIONS_ENABLED } from './features.js';
+import { PROMOTIONS_ENABLED, CONTAINER_JOURNAL_ENABLED } from './features.js';
+import { analyzeContainer, realCostLines } from './container-costs.js';
 import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping, CHART_OF_ACCOUNTS, inferirTipo, naturalezaForTipo, DEFAULT_CLOSING_MAPPING_CODES } from './accounting.js';
 
 // ============================================
@@ -999,6 +1000,9 @@ const Store = {
         this.update('products', patch);
       }
       this.update('containers', { id: container.id, inventory_posted: true });
+      // Si ya hay costos registrados para este contenedor, el costo de sus
+      // productos pasa a ser el real (estimado solo en lo que falte).
+      this.applyRealCosts();
     } catch (e) {
       console.error('Maestro de Costo: error registrando el inventario del contenedor (el contenedor se guardó igual).', e);
     }
@@ -1010,6 +1014,7 @@ const Store = {
   // vez el mapeo esté listo (p. ej. desde un botón "Generar asiento" en la
   // Calculadora para contenedores ya cerrados sin asiento todavía).
   postClosingJournalForContainer(container, items) {
+    if (!CONTAINER_JOURNAL_ENABLED) return { ok: false, reason: 'desactivado' };
     try {
       const already = readAll(STORE_KEYS.movements)
         .some(m => m.source === 'container_close' && m.source_ref === container.id);
@@ -1277,12 +1282,13 @@ const Store = {
   inventoryAudit() {
     const products = readAll(STORE_KEYS.products);
     const inQty = new Map(), inCost = new Map();
+    const real = realCostLines(readAll(STORE_KEYS.movements), readAll(STORE_KEYS.accounts));
     for (const c of readAll(STORE_KEYS.containers).filter(x => x.status === 'closed')) {
-      for (const calc of computeContainer(c, this.getItemsByContainer(c.id)).calculated) {
-        const pid = calc.item.product_id;
-        if (!pid || !(calc.qty > 0)) continue;
-        inQty.set(pid, (inQty.get(pid) || 0) + calc.qty);
-        inCost.set(pid, (inCost.get(pid) || 0) + calc.qty * calc.costNoVat);
+      for (const pr of analyzeContainer(c, this.getItemsByContainer(c.id), real.get(c.id) || []).products) {
+        const pid = pr.productId;
+        if (!pid || !(pr.qty > 0)) continue;
+        inQty.set(pid, (inQty.get(pid) || 0) + pr.qty);
+        inCost.set(pid, (inCost.get(pid) || 0) + pr.usedTotal);
       }
     }
     // Ventas: por SKU (ventas nuevas) o por nombre tras "|" en el concepto.
@@ -1314,6 +1320,43 @@ const Store = {
     }).filter(r => r.current !== r.expected || Math.abs(r.currentCost - r.expectedCost) > 0.01);
   },
 
+  // Pasa a cada producto su costo con lo registrado en Costos (solo el
+  // costo; la existencia no se toca). Se llama al registrar o asignar costos.
+  applyRealCosts() {
+    const rows = this.inventoryAudit().filter(r => r.expected > 0 && Math.abs(r.currentCost - r.expectedCost) > 0.01);
+    if (rows.length) this.updateMany('products', rows.map(r => ({ id: r.product.id, avg_cost: r.expectedCost })));
+    return rows.length;
+  },
+
+  // Asigna (o quita, con '') un documento de Costos a un contenedor.
+  assignCostToContainer(refDoc, containerId) {
+    const rows = readAll(STORE_KEYS.movements).filter(m => m.ref_doc === refDoc && (m.source === 'cost' || m.source === 'expense'));
+    if (!rows.length) return 0;
+    this.updateMany('movements', rows.map(m => ({ id: m.id, source_ref: containerId || '' })));
+    this.applyRealCosts();
+    return rows.length;
+  },
+
+  // Asientos de cierre del modelo anterior (completar contenedor = asiento).
+  legacyClosingEntries() {
+    const byRef = new Map();
+    for (const m of readAll(STORE_KEYS.movements).filter(x => x.source === 'container_close' || x.source === 'container_payment')) {
+      const e = byRef.get(m.ref_doc) || { ref: m.ref_doc, source: m.source, date: m.entry_date, containerId: m.source_ref, total: 0, lines: 0 };
+      e.total += Number(m.debit) || 0; e.lines++;
+      byRef.set(m.ref_doc, e);
+    }
+    return [...byRef.values()];
+  },
+
+  deleteLegacyClosingEntries() {
+    const refs = new Set(this.legacyClosingEntries().map(e => e.ref));
+    const movements = readAll(STORE_KEYS.movements);
+    writeAll(STORE_KEYS.movements, movements.filter(m => !refs.has(m.ref_doc)));
+    for (const ref of refs) cloudDeleteWhere('movements', 'ref_doc', ref);
+    notifyDataUpdated();
+    return refs.size;
+  },
+
   rebuildInventory() {
     const rows = this.inventoryAudit();
     this.updateMany('products', rows.map(r => ({ id: r.product.id, stock: r.expected, avg_cost: r.expectedCost })));
@@ -1327,10 +1370,15 @@ const Store = {
     const targetIds = new Set(targets.map(c => c.id));
     // 1) Diario: asientos de cierre y pagos de esos contenedores (y ventas si se pide).
     const movements = readAll(STORE_KEYS.movements);
-    const keep = movements.filter(m => !(m.source_ref && targetIds.has(m.source_ref)) && !(deleteSales && m.source === 'sale'));
+    const isRealCost = (m) => m.source === 'cost' || m.source === 'expense';
+    const doomed = (m) => (m.source_ref && targetIds.has(m.source_ref) && !isRealCost(m)) || (deleteSales && m.source === 'sale');
+    const keep = movements.filter(m => !doomed(m));
     const removedLines = movements.length - keep.length;
+    const doomedRefs = new Set(movements.filter(m => doomed(m) && m.source !== 'sale').map(m => m.ref_doc));
     writeAll(STORE_KEYS.movements, keep);
-    for (const id of targetIds) cloudDeleteWhere('movements', 'source_ref', id);
+    for (const ref of doomedRefs) cloudDeleteWhere('movements', 'ref_doc', ref);
+    const unassign = keep.filter(m => isRealCost(m) && m.source_ref && targetIds.has(m.source_ref));
+    if (unassign.length) this.updateMany('movements', unassign.map(m => ({ id: m.id, source_ref: '' })));
     if (deleteSales) cloudDeleteWhere('movements', 'source', 'sale');
 
     // 2) Contenedores e ítems.
