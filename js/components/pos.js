@@ -43,10 +43,6 @@ export function mountPOS(root, opts) {
   });
   let query = '';
   let category = '';
-  // Vista del catálogo: "list" (filas compactas, por defecto en presupuestos)
-  // o "grid" (tarjetas con foto). Se recuerda en este navegador.
-  const VIEW_KEY = 'pos_view_' + (capToStock ? 'venta' : 'presupuesto');
-  let view = (() => { try { return localStorage.getItem(VIEW_KEY); } catch { return null; } })() || (capToStock ? 'grid' : 'list');
   let flashTimer = null;
   let actionInView = false;
 
@@ -64,13 +60,9 @@ export function mountPOS(root, opts) {
               class="w-full pl-9 pr-3 py-2 rounded-lg bg-white border border-slate-200 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-sm">
           </div>
           <span id="pos-count" class="hidden sm:block text-[11px] text-slate-400 whitespace-nowrap"></span>
-          <div class="flex rounded-lg border border-slate-200 bg-white p-0.5 shrink-0" role="group" aria-label="Vista">
-            <button data-view="list" title="Lista" class="p-1.5 rounded-md"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
-            <button data-view="grid" title="Cuadrícula" class="p-1.5 rounded-md"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
-          </div>
         </div>
         <div id="pos-categories" class="flex gap-1.5 overflow-x-auto no-scrollbar shrink-0"></div>
-        <div id="pos-grid" class="lg:flex-1 lg:min-h-0 lg:overflow-y-auto thin-scroll pr-1 pb-1"></div>
+        <div id="pos-grid" class="grid [grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr))] auto-rows-max content-start gap-2.5 lg:flex-1 lg:min-h-0 lg:overflow-y-auto thin-scroll pr-1 pb-1"></div>
       </div>
 
       <div class="min-h-0">
@@ -169,14 +161,6 @@ export function mountPOS(root, opts) {
     $('pos-count').textContent = `${list.length} producto${list.length === 1 ? '' : 's'}${capToStock ? ' disponible' + (list.length === 1 ? '' : 's') : ''}`;
 
     const grid = $('pos-grid');
-    root.querySelectorAll('[data-view]').forEach(b => {
-      const on = b.dataset.view === view;
-      b.className = 'p-1.5 rounded-md ' + (on ? 'bg-slate-100 text-slate-900' : 'text-slate-400 hover:text-slate-700');
-    });
-    grid.className = (view === 'list'
-      ? 'flex flex-col bg-white rounded-xl border border-slate-200/70 divide-y divide-slate-100 content-start'
-      : 'grid [grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr))] auto-rows-max content-start gap-2.5')
-      + ' lg:flex-1 lg:min-h-0 lg:overflow-y-auto thin-scroll pb-1' + (view === 'list' ? ' self-stretch' : ' pr-1');
     grid.innerHTML = list.length === 0
       ? `<div class="col-span-full py-16 text-center text-slate-400">
            <div class="flex justify-center mb-2 text-slate-300">${icon('box', 'w-8 h-8')}</div>
@@ -189,25 +173,13 @@ export function mountPOS(root, opts) {
         // Existencia como texto discreto (rojo solo si se agotó).
         const stockText = capToStock
           ? (left > 0 ? `${fmtInt(left)} disp.` : '<span class="text-red-500">Agotado</span>')
-          : (stockOf(p) > 0 ? `${fmtInt(stockOf(p))} en stock` : '');
+          : '';
         const pr = priceFor(p);
         const priceHtml = !(pr.listPrice > 0)
           ? '<span class="text-xs text-slate-400">Sin precio</span>'
           : pr.discountPct > 0
             ? `<span class="flex items-baseline gap-1"><span class="font-semibold text-sm text-slate-900">$${fmtNum(pr.unitPrice)}</span><span class="text-[10px] text-slate-400 line-through">$${fmtNum(pr.listPrice)}</span></span>`
             : `<span class="font-semibold text-sm text-slate-900">$${fmtNum(pr.listPrice)}</span>`;
-        if (view === 'list') return `
-        <button data-add="${esc(p.id)}" class="w-full text-left flex items-center gap-3 px-3 py-2 ${line ? 'bg-blue-50/60' : 'hover:bg-slate-50'} transition ${capToStock && left <= 0 ? 'opacity-50' : ''}">
-          ${p.foto_url
-            ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-9 h-9 object-contain flex-shrink-0" alt="">`
-            : `<span class="w-9 h-9 flex items-center justify-center text-slate-200 flex-shrink-0">${icon('box', 'w-5 h-5')}</span>`}
-          <span class="flex-1 min-w-0">
-            <span class="block text-[13px] text-slate-700 truncate" title="${esc(p.name)}" data-name>${esc(p.name) || 'Sin nombre'}</span>
-            <span class="block text-[10px] font-mono text-slate-400 truncate">${esc(p.sku_briggs)}${stockText ? ` · <span class="font-sans">${stockText}</span>` : ''}</span>
-          </span>
-          <span class="text-right whitespace-nowrap">${priceHtml}</span>
-          <span class="w-6 flex justify-end flex-shrink-0">${line ? `<span class="min-w-[1.25rem] h-5 px-1 rounded-full bg-blue-600 text-white text-[11px] font-semibold flex items-center justify-center">${fmtInt(line.qty)}</span>` : `<span class="text-slate-300">${icon('plus', 'w-4 h-4')}</span>`}</span>
-        </button>`;
         return `
         <button data-add="${esc(p.id)}" class="group relative text-left bg-white rounded-xl border shadow-sm hover:shadow ${line ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-200/70 hover:border-slate-300'} active:scale-[0.98] transition overflow-hidden flex flex-col ${capToStock && left <= 0 ? 'opacity-50' : ''}">
           <div class="relative aspect-[4/3] bg-white flex-shrink-0">
@@ -281,7 +253,7 @@ export function mountPOS(root, opts) {
                 <button data-plus="${i}" class="w-6 h-6 rounded-md border border-slate-200 hover:bg-slate-100 text-slate-500 text-sm leading-none">+</button>
               </div>
               <div class="flex items-center gap-0.5 text-[11px] text-slate-400 whitespace-nowrap" title="Precio de lista">
-                × $<input data-list="${i}" type="number" min="0" step="0.01" value="${l.listPrice || ''}" placeholder="0.00" class="w-16 px-1 py-0.5 border ${l.listPrice > 0 ? 'border-slate-200' : 'border-slate-300'} bg-white rounded text-right text-xs">
+                × $<input data-list="${i}" type="number" min="0" step="0.01" value="${l.listPrice || ''}" placeholder="0.00" class="w-16 px-1 py-0.5 border border-slate-200 bg-white rounded text-right text-xs">
               </div>
               <div class="flex items-center gap-0.5 text-[11px] text-slate-400 whitespace-nowrap" title="Descuento negociado">
                 −<input data-disc="${i}" type="number" min="0" max="100" step="0.5" value="${l.discountPct || ''}" placeholder="0" class="w-11 px-1 py-0.5 border border-slate-200 bg-white rounded text-right text-xs">%
@@ -339,11 +311,6 @@ export function mountPOS(root, opts) {
     $('pos-jump').classList.toggle('flex', showJump);
   }).observe($('pos-action'));
   $('pos-search').addEventListener('input', (e) => { query = e.target.value; renderGrid(); });
-  root.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
-    view = b.dataset.view;
-    try { localStorage.setItem(VIEW_KEY, view); } catch { /* sin almacenamiento */ }
-    renderGrid();
-  }));
   // Enter con un único resultado (p. ej. un código tecleado) lo agrega directo.
   $('pos-search').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;

@@ -298,9 +298,6 @@ function renderBuilder(app, editId, opts = {}) {
         <a href="#/contabilidad/presupuestos" class="w-9 h-9 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-600">←</a>
         <div>
           <h2 class="text-lg font-bold text-slate-800">${editing ? `Editar ${isOffer ? 'oferta' : 'presupuesto'} ${esc(editing.quote_number)}` : (isOffer ? 'Nueva oferta' : 'Nuevo presupuesto')}</h2>
-          <p class="text-xs text-slate-400">${isOffer
-            ? 'Los productos que este cliente ya compra aparecen primero (⭐). Aplica un descuento a toda la oferta o cambia el precio de cada línea; luego imprímela o mándala por WhatsApp.'
-            : 'Elige cualquier producto del catálogo, haya o no existencia, y negocia el descuento en % por línea. Al emitirlo queda pendiente; no toca la contabilidad ni el inventario.'}</p>
         </div>
       </div>
     </div>
