@@ -122,7 +122,7 @@ const Expenses = {
             <select id="f-contact" class="${input}">${contactOptions(contacts, 'proveedor')}</select>
           </div>
           <div>
-            <label class="${label}">Forma de Pago *</label>
+            <label class="${label}">Método de pago *</label>
             <select id="f-payment" class="${input}">
               <option value="">— Cuenta —</option>
               <optgroup label="Efectivo">${accountOptions(byTipoEspecifico('Efectivo'))}</optgroup>
