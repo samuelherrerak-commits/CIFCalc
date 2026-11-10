@@ -895,6 +895,8 @@ const Store = {
   },
   syncWithCloud,
   processRetryQueue,
+  // Cambios guardados en este navegador que aún no llegan a la base de datos.
+  pendingWrites: () => getRetryQueue().length,
   isSheetsReachable,
 
   getAll(key) { return readAll(STORE_KEYS[key]); },

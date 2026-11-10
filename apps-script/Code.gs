@@ -26,8 +26,40 @@
 // CONFIGURACIÓN
 // ---------------------------------------------------------------------------
 
-/** Token compartido. Debe ser idéntico al que use la app en "pt". */
+/**
+ * Token compartido del modelo anterior (sin login). Con ALLOW_SHARED_TOKEN en
+ * false ya NO da acceso: cada petición necesita la sesión ("st") de un
+ * usuario que inició sesión con su usuario y contraseña.
+ */
 const TOKEN = 'MAESTRO_DE_COSTOS_V1';
+const ALLOW_SHARED_TOKEN = false;
+
+/** Duración de una sesión sin uso (segundos; máximo 6 h por CacheService). */
+const SESSION_TTL = 21600;
+/** Vueltas de SHA-256 para guardar contraseñas (con sal por usuario). */
+const PASSWORD_ROUNDS = 300;
+/** Intentos fallidos permitidos antes de bloquear el usuario 10 minutos. */
+const MAX_LOGIN_FAILS = 5;
+
+/**
+ * Administradores iniciales (se crean solos si la hoja users está vacía).
+ * Entran con una contraseña temporal y el sistema les pide cambiarla.
+ * Aquí solo hay el hash (SHA-256 con sal), nunca la contraseña.
+ */
+const SEED_ADMINS = [
+  {
+    "username": "orlando",
+    "name": "Orlando Venturini",
+    "salt": "f0152f0511193e04b9aba12d7d45e37c",
+    "hash": "b066e34e94b2f14149781bd2c73521297a8692cb8b6dc5025dee3e6428eae017"
+  },
+  {
+    "username": "samuel",
+    "name": "Samuel Herrera",
+    "salt": "830f5b849bcac96aee86496624602ee1",
+    "hash": "a6d2d3d26e3a8da658b6244ae55c99cd2c97b17a7c6cfc4dd450e12df71fe6b4"
+  }
+];
 
 /**
  * Si es true, las lecturas (GET) también exigen el token "pt".
@@ -202,6 +234,13 @@ const SCHEMAS = {
     'id', 'order_id', 'dispatch_number', 'date', 'items', 'notes',
     'created_at', 'updated_at'
   ],
+  // Usuarios de la app. La contraseña nunca se guarda: solo su hash con sal.
+  // Esta hoja NO se puede leer ni escribir con las acciones genéricas; solo
+  // con las acciones de usuarios (login, saveUser…), y nunca devuelve el hash.
+  users: [
+    'id', 'username', 'name', 'role', 'permissions', 'active',
+    'password_hash', 'salt', 'must_change', 'created_at', 'updated_at'
+  ],
   // Movimientos de existencias (solo inventario, nada contable): recepciones
   // de mercancía, salidas manuales y ajustes. items = JSON [{productId, name, sku, qty}].
   stock_moves: [
@@ -240,13 +279,14 @@ function doGet(e) {
   try {
     ensureSheets();
 
-    if (REQUIRE_TOKEN_ON_GET && !isAuthorized_(p.pt)) {
+    if (REQUIRE_TOKEN_ON_GET && !isAuthorized_(p.pt) && !sessionUser_(p.st)) {
       return json_({ ok: false, error: 'unauthorized', code: 401 });
     }
 
     const table = p.table;
     const tableErr = validateTable_(table);
     if (tableErr) return json_({ ok: false, error: tableErr, code: 400 });
+    if (table === 'users') return json_({ ok: false, error: 'forbidden', code: 403 });
 
     let data = readTable_(table);
 
@@ -281,11 +321,15 @@ function doPost(e) {
       return json_({ ok: false, error: 'JSON inválido en el cuerpo', code: 400 });
     }
 
+    // Inicio de sesión y administración de usuarios.
+    if (AUTH_ACTIONS.indexOf(body.action) >= 0) return json_(handleAuth_(body));
+
     // El token puede venir en el cuerpo o como parámetro de la URL.
     const pt = body.pt !== undefined ? body.pt : (e && e.parameter && e.parameter.pt);
-    if (!isAuthorized_(pt)) {
+    if (!isAuthorized_(pt) && !sessionUser_(body.st)) {
       return json_({ ok: false, error: 'unauthorized', code: 401 });
     }
+    if (body.table === 'users') return json_({ ok: false, error: 'forbidden', code: 403 });
 
     // Subida de fotos: se resuelve antes de validar "table" porque el cuerpo
     // trae un archivo, no filas de tabla.
@@ -749,7 +793,158 @@ function validateTable_(table) {
 }
 
 function isAuthorized_(pt) {
-  return typeof pt === 'string' && pt.length > 0 && pt === TOKEN;
+  return ALLOW_SHARED_TOKEN && typeof pt === 'string' && pt.length > 0 && pt === TOKEN;
+}
+
+// ---------------------------------------------------------------------------
+// USUARIOS Y SESIONES
+// ---------------------------------------------------------------------------
+
+const AUTH_ACTIONS = ['login', 'logout', 'me', 'changePassword', 'listUsers', 'saveUser'];
+
+function hex_(bytes) {
+  return bytes.map(function (b) { const v = (b < 0 ? b + 256 : b).toString(16); return v.length === 1 ? '0' + v : v; }).join('');
+}
+
+function hashPassword_(password, salt) {
+  let h = String(password);
+  for (let i = 0; i < PASSWORD_ROUNDS; i++) {
+    h = hex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + h, Utilities.Charset.UTF_8));
+  }
+  return h;
+}
+
+function newSalt_() {
+  return Utilities.getUuid().replace(/-/g, '');
+}
+
+const norm_ = function (s) { return String(s || '').trim().toLowerCase(); };
+const isTrue_ = function (v) { return v === true || String(v).toLowerCase() === 'true'; };
+
+function publicUser_(u) {
+  let perms = [];
+  try { perms = JSON.parse(u.permissions || '[]'); } catch (e) { perms = []; }
+  return {
+    id: u.id, username: u.username, name: u.name, role: u.role === 'admin' ? 'admin' : 'usuario',
+    permissions: Array.isArray(perms) ? perms : [], active: isTrue_(u.active), must_change: isTrue_(u.must_change),
+    updated_at: u.updated_at
+  };
+}
+
+function readUsers_() {
+  let users = readTable_('users');
+  if (users.length === 0) {
+    const now = new Date().toISOString();
+    upsert_('users', SEED_ADMINS.map(function (a) {
+      return {
+        id: Utilities.getUuid(), username: a.username, name: a.name, role: 'admin', permissions: '[]',
+        active: 'true', password_hash: a.hash, salt: a.salt, must_change: 'true', created_at: now, updated_at: now
+      };
+    }));
+    users = readTable_('users');
+  }
+  return users;
+}
+
+/** Usuario de una sesión válida (o null). Renueva la sesión en cada uso. */
+function sessionUser_(st) {
+  if (typeof st !== 'string' || st.length < 20) return null;
+  const cache = CacheService.getScriptCache();
+  const userId = cache.get('sess_' + st);
+  if (!userId) return null;
+  const cached = cache.get('user_' + userId);
+  let u = cached ? JSON.parse(cached) : null;
+  if (!u) {
+    const row = readTable_('users').filter(function (x) { return x.id === userId; })[0];
+    if (!row) return null;
+    u = publicUser_(row);
+    cache.put('user_' + userId, JSON.stringify(u), 300);
+  }
+  if (!u.active) return null;
+  cache.put('sess_' + st, userId, SESSION_TTL);
+  return u;
+}
+
+function handleAuth_(body) {
+  const cache = CacheService.getScriptCache();
+  const fail = function (msg, code) { return { ok: false, error: msg, code: code || 400 }; };
+
+  if (body.action === 'login') {
+    const username = norm_(body.username);
+    const lockKey = 'fails_' + username;
+    const fails = Number(cache.get(lockKey) || 0);
+    if (fails >= MAX_LOGIN_FAILS) return fail('Demasiados intentos. Espera 10 minutos e inténtalo de nuevo.', 429);
+    const row = readUsers_().filter(function (u) { return norm_(u.username) === username; })[0];
+    if (!row || !isTrue_(row.active) || hashPassword_(body.password || '', row.salt) !== row.password_hash) {
+      cache.put(lockKey, String(fails + 1), 600);
+      return fail('Usuario o contraseña incorrectos.', 401);
+    }
+    cache.remove(lockKey);
+    const token = Utilities.getUuid() + Utilities.getUuid();
+    cache.put('sess_' + token, row.id, SESSION_TTL);
+    return { ok: true, token: token, user: publicUser_(row) };
+  }
+
+  const me = sessionUser_(body.st);
+  if (!me) return fail('unauthorized', 401);
+
+  if (body.action === 'logout') {
+    cache.remove('sess_' + body.st);
+    return { ok: true };
+  }
+  if (body.action === 'me') return { ok: true, user: me };
+
+  if (body.action === 'changePassword') {
+    const row = readTable_('users').filter(function (u) { return u.id === me.id; })[0];
+    if (!row || hashPassword_(body.current || '', row.salt) !== row.password_hash) return fail('La contraseña actual no es correcta.', 400);
+    const next = String(body.next || '');
+    if (next.length < 6) return fail('La nueva contraseña debe tener al menos 6 caracteres.', 400);
+    const salt = newSalt_();
+    upsert_('users', [{ id: me.id, password_hash: hashPassword_(next, salt), salt: salt, must_change: 'false', updated_at: '' }]);
+    cache.remove('user_' + me.id);
+    return { ok: true, user: publicUser_(readTable_('users').filter(function (u) { return u.id === me.id; })[0]) };
+  }
+
+  if (me.role !== 'admin') return fail('Solo un administrador puede administrar usuarios.', 403);
+
+  if (body.action === 'listUsers') {
+    return { ok: true, data: readUsers_().map(publicUser_) };
+  }
+
+  if (body.action === 'saveUser') {
+    const u = body.user || {};
+    const users = readUsers_();
+    const username = norm_(u.username);
+    if (!username || !/^[a-z0-9._-]{3,30}$/.test(username)) return fail('El usuario debe tener de 3 a 30 letras, números, punto, guion o guion bajo, sin espacios.', 400);
+    if (!String(u.name || '').trim()) return fail('Escribe el nombre de la persona.', 400);
+    if (users.some(function (x) { return norm_(x.username) === username && x.id !== u.id; })) return fail('Ya existe un usuario "' + username + '".', 400);
+    const existing = u.id ? users.filter(function (x) { return x.id === u.id; })[0] : null;
+    if (u.id && !existing) return fail('Usuario no encontrado.', 404);
+    const role = u.role === 'admin' ? 'admin' : 'usuario';
+    const active = u.active !== false;
+    // Nunca quedarse sin administradores activos, ni quitarse el acceso a uno mismo.
+    if (existing && existing.id === me.id && (role !== 'admin' || !active)) return fail('No puedes quitarte tu propio acceso de administrador.', 400);
+    const adminsLeft = users.filter(function (x) { return x.id !== u.id && x.role === 'admin' && isTrue_(x.active); }).length + (role === 'admin' && active ? 1 : 0);
+    if (adminsLeft === 0) return fail('Debe quedar al menos un administrador activo.', 400);
+    const row = {
+      id: existing ? existing.id : Utilities.getUuid(), username: username, name: String(u.name).trim(), role: role,
+      permissions: JSON.stringify(Array.isArray(u.permissions) ? u.permissions : []), active: String(active), updated_at: ''
+    };
+    if (u.password) {
+      if (String(u.password).length < 6) return fail('La contraseña debe tener al menos 6 caracteres.', 400);
+      row.salt = newSalt_();
+      row.password_hash = hashPassword_(u.password, row.salt);
+      row.must_change = 'true'; // contraseña temporal: se cambia al entrar
+    } else if (!existing) {
+      return fail('Indica una contraseña temporal para el usuario nuevo.', 400);
+    }
+    if (!existing) row.created_at = '';
+    upsert_('users', [row]);
+    cache.remove('user_' + row.id);
+    return { ok: true, user: publicUser_(readTable_('users').filter(function (x) { return x.id === row.id; })[0]) };
+  }
+
+  return fail('acción desconocida: ' + body.action, 400);
 }
 
 /**
