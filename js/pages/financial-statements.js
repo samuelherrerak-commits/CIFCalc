@@ -35,8 +35,8 @@ function row(text, cur, prev, o = {}) {
   if (o.head) return `<tr><td colspan="3" class="py-1 ${cls}" style="${indent}">${esc(text)}</td></tr>`;
   return `<tr class="${o.muted ? 'text-slate-500' : ''}">
     <td class="py-1 pr-3 ${cls}" style="${indent}">${esc(text)}${o.note ? ` <span class="text-[10px] text-blue-600 align-super">${o.note}</span>` : ''}</td>
-    <td class="py-1 text-right font-mono tabular-nums ${cls}">${money(cur)}</td>
-    <td class="py-1 text-right font-mono tabular-nums text-slate-500 ${cls}">${money(prev)}</td></tr>`;
+    <td class="py-1 text-right font-mono tabular-nums ${cls} ${Number(cur) < -0.005 ? 'text-red-600' : ''}">${money(cur)}</td>
+    <td class="py-1 text-right font-mono tabular-nums ${Number(prev) < -0.005 ? 'text-red-400' : 'text-slate-500'} ${cls}">${money(prev)}</td></tr>`;
 }
 function table(p, rows, curLabel, prevLabel) {
   return `<table class="w-full text-[13px]">
@@ -58,24 +58,24 @@ function esfHtml(s) {
     row('ACTIVO', 0, 0, { head: true }),
     row('Activo corriente', 0, 0, { head: true, indent: 1 }),
     row('Efectivo y equivalentes de efectivo', a.efectivo, b.efectivo, { indent: 1, note: '4' }), ...lines('efectivo'),
-    row('Cuentas por cobrar comerciales', a.cxc, b.cxc, { indent: 1, note: '5' }),
+    row('Cuentas por cobrar comerciales', a.cxc, b.cxc, { indent: 1, note: '5' }), ...lines('cxc'),
     row('Inventarios', a.inventario, b.inventario, { indent: 1, note: '6' }),
-    row('Impuestos por recuperar (IVA)', a.impuestos, b.impuestos, { indent: 1 }),
-    ...(a.otrosCorr || b.otrosCorr ? [row('Otros activos corrientes', a.otrosCorr, b.otrosCorr, { indent: 1 })] : []),
+    row('Impuestos por recuperar (IVA)', a.impuestos, b.impuestos, { indent: 1 }), ...lines('impuestos'),
+    ...(a.otrosCorr || b.otrosCorr ? [row('Otros activos corrientes', a.otrosCorr, b.otrosCorr, { indent: 1 }), ...lines('otrosCorr')] : []),
     row('Total activo corriente', a.activoCorriente, b.activoCorriente, { total: true, indent: 1 }),
     ...(a.activoNC || b.activoNC ? [row('Activo no corriente', a.activoNC, b.activoNC, { indent: 1 }), ...lines('nc')] : []),
     row('TOTAL ACTIVO', a.activoTotal, b.activoTotal, { grand: true }),
     row('PASIVO Y PATRIMONIO', 0, 0, { head: true }),
     row('Pasivo corriente', 0, 0, { head: true, indent: 1 }),
     row('Cuentas por pagar comerciales', a.cxp, b.cxp, { indent: 1, note: '7' }), ...lines('cxp'),
-    row('Préstamos por pagar', a.prestamos, b.prestamos, { indent: 1 }),
-    ...(a.pImpuestos || b.pImpuestos ? [row('Impuestos por pagar (IVA)', a.pImpuestos, b.pImpuestos, { indent: 1 })] : []),
-    ...(a.pOtros || b.pOtros ? [row('Otros pasivos corrientes', a.pOtros, b.pOtros, { indent: 1 })] : []),
+    row('Préstamos por pagar', a.prestamos, b.prestamos, { indent: 1 }), ...lines('prestamos'),
+    ...(a.pImpuestos || b.pImpuestos ? [row('Impuestos por pagar (IVA)', a.pImpuestos, b.pImpuestos, { indent: 1 }), ...lines('pImpuestos')] : []),
+    ...(a.pOtros || b.pOtros ? [row('Otros pasivos corrientes', a.pOtros, b.pOtros, { indent: 1 }), ...lines('pOtrosCorr')] : []),
     row('Total pasivo corriente', a.pasivoCorriente, b.pasivoCorriente, { total: true, indent: 1 }),
-    ...(a.pasivoNC || b.pasivoNC ? [row('Pasivo no corriente', a.pasivoNC, b.pasivoNC, { indent: 1 })] : []),
+    ...(a.pasivoNC || b.pasivoNC ? [row('Pasivo no corriente', a.pasivoNC, b.pasivoNC, { indent: 1 }), ...lines('pNc')] : []),
     row('TOTAL PASIVO', a.pasivoTotal, b.pasivoTotal, { total: true }),
     row('Patrimonio', 0, 0, { head: true, indent: 1 }),
-    row('Capital social', a.capital, b.capital, { indent: 1 }),
+    row('Capital social', a.capital, b.capital, { indent: 1 }), ...lines('capital'),
     row('Resultados acumulados', a.resultadosAcumulados, b.resultadosAcumulados, { indent: 1 }),
     row('Resultado del ejercicio', a.resultadoEjercicio, b.resultadoEjercicio, { indent: 1 }),
     row('TOTAL PATRIMONIO', a.patrimonio, b.patrimonio, { total: true }),
@@ -258,7 +258,8 @@ const FinancialStatements = {
       const warnings = [
         issues.orphanTotal > 0.01 ? warn(`Hay asiento(s) de cierre de contenedores que no están completos por $${fmtNum(issues.orphanTotal)} (${esc(issues.orphanNames.join(', '))}): suman a compras y al costo de ventas`) : '',
         s.is.costoVentas < -0.01 ? warn(`El costo de ventas salió negativo ($${fmtNum(s.is.costoVentas)}): el inventario final vale más que las compras registradas; revisa los contenedores completados`) : '',
-        issues.unlinkedCost > 0.01 ? warn(`$${fmtNum(issues.unlinkedCost)} de contenedores completos son productos sin vincular al catálogo: no entran al inventario y van completos al costo de ventas`) : ''
+        issues.unlinkedCost > 0.01 ? warn(`$${fmtNum(issues.unlinkedCost)} de contenedores completos son productos sin vincular al catálogo: no entran al inventario y van completos al costo de ventas`) : '',
+        ...(s.overdrawn || []).map(r => `<a href="#/contabilidad/mayor?analizar=${encodeURIComponent(r.code)}" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-50 text-red-700 hover:bg-red-100">⚠ ${esc(r.code)} ${esc(r.name)}: ${r.misclassified ? `marcada como ${esc(r.tipo)}, por su código es ${esc(r.misclassified)}` : `sobregirada ${money(r.balance)}`} · Analizar →</a>`)
       ].join('');
       document.getElementById('fs-checks').innerHTML = warnings +
         check(okBs, 'Activo = Pasivo + Patrimonio', `El balance no cuadra por ${money(s.bs.diferencia)}`) +

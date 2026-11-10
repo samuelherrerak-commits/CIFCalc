@@ -2,6 +2,7 @@ import Store from '../store.js';
 import { fmtNum, esc, ensureXlsx } from '../utils.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { card, input, label, btnSecondary } from '../components/accounting-shell.js';
+import { accountBalances, analyzeAccount, isOverdrawn } from '../overdrawn.js';
 
 // Libro mayor: se elige la cuenta y el rango de fechas; muestra el saldo
 // anterior al rango, los movimientos con su saldo acumulado y los totales, y
@@ -12,7 +13,7 @@ const dmy = (iso) => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 // Estado del filtro, se conserva al volver a la página en esta sesión.
-const state = { accountId: null, from: yearStart(), to: today() };
+const state = { accountId: null, from: yearStart(), to: today(), onlyOverdrawn: false, analyze: null };
 
 function ledgerFor(account, movements, from, to) {
   const sign = account.naturaleza === 'Acreedora' ? -1 : 1;
@@ -65,7 +66,7 @@ const Ledger = {
         <tr class="border-b border-slate-100 bg-slate-50/60">
           <td class="p-2 text-slate-500">${esc(dmy(state.from))}</td><td class="p-2"></td><td class="p-2"></td><td class="p-2 text-slate-500">Saldo anterior</td>
           <td class="p-2"></td><td class="p-2"></td>
-          <td class="p-2 text-right tabular-nums text-slate-700">$${fmtNum(L.opening)}</td>
+          <td class="p-2 text-right tabular-nums ${L.opening < -0.005 ? 'text-red-600' : 'text-slate-700'}">${L.opening < -0.005 ? `($${fmtNum(-L.opening)})` : '$' + fmtNum(L.opening)}</td>
         </tr>` + (L.rows.length ? L.rows.map(r => `
         <tr class="border-b border-slate-100 hover:bg-slate-50">
           <td class="p-2 whitespace-nowrap">${esc(dmy(r.date))}</td>
@@ -74,14 +75,14 @@ const Ledger = {
           <td class="p-2 text-slate-700">${esc(r.concepto)}${r.entidad ? `<span class="text-slate-400"> · ${esc(r.entidad)}</span>` : ''}</td>
           <td class="p-2 text-right tabular-nums">${r.debit ? '$' + fmtNum(r.debit) : ''}</td>
           <td class="p-2 text-right tabular-nums">${r.credit ? '$' + fmtNum(r.credit) : ''}</td>
-          <td class="p-2 text-right tabular-nums">$${fmtNum(r.balance)}</td>
+          <td class="p-2 text-right tabular-nums ${r.balance < -0.005 ? 'text-red-600 font-medium' : ''}">${r.balance < -0.005 ? `($${fmtNum(-r.balance)})` : '$' + fmtNum(r.balance)}</td>
         </tr>`).join('') : '<tr><td colspan="7" class="p-4 text-center text-slate-400">Sin movimientos en este rango de fechas.</td></tr>');
       foot.innerHTML = `
         <tr class="border-t border-slate-300 font-semibold">
           <td class="p-2" colspan="4">Totales del período · ${L.rows.length} movimiento${L.rows.length === 1 ? '' : 's'}</td>
           <td class="p-2 text-right tabular-nums">$${fmtNum(L.debit)}</td>
           <td class="p-2 text-right tabular-nums">$${fmtNum(L.credit)}</td>
-          <td class="p-2 text-right tabular-nums">$${fmtNum(L.closing)}</td>
+          <td class="p-2 text-right tabular-nums ${L.closing < -0.005 ? 'text-red-600' : ''}">${L.closing < -0.005 ? `($${fmtNum(-L.closing)})` : '$' + fmtNum(L.closing)}</td>
         </tr>`;
       document.getElementById('ledger-nature').textContent = `Naturaleza ${String(account.naturaleza || '').toLowerCase()} · ${account.tipo || ''}`;
     };
@@ -126,29 +127,79 @@ const Ledger = {
       }
     };
 
+    const money = (v) => (v < -0.005 ? `($${fmtNum(-v)})` : '$' + fmtNum(v));
     const renderTrialBalance = () => {
-      let totalDebit = 0, totalCredit = 0;
-      const rows = accounts.map(a => {
-        const lines = allLines.filter(l => l.codigo_cuenta === a.codigo);
-        if (lines.length === 0) return null;
-        const debit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
-        const credit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
-        const balance = a.naturaleza === 'Acreedora' ? (credit - debit) : (debit - credit);
-        totalDebit += debit;
-        totalCredit += credit;
+      const all = accountBalances(allLines, accounts, state.to);
+      const over = all.filter(isOverdrawn);
+      const wrong = all.filter(r => r.misclassified);
+      const rows = state.onlyOverdrawn ? all.filter(r => isOverdrawn(r) || r.misclassified) : all;
+      const totalDebit = all.reduce((s, r) => s + r.debit, 0), totalCredit = all.reduce((s, r) => s + r.credit, 0);
+      document.getElementById('trial-alert').innerHTML = over.length || wrong.length ? `
+        <div class="flex flex-wrap items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <span class="flex-1">${over.length ? `<strong>${over.length}</strong> cuenta(s) con saldo contrario a su naturaleza (sobregiradas)` : ''}${over.length && wrong.length ? ' · ' : ''}${wrong.length ? `<strong>${wrong.length}</strong> cuenta(s) con un tipo que no corresponde a su código` : ''}.</span>
+          <label class="flex items-center gap-1.5 text-xs"><input id="trial-only" type="checkbox" ${state.onlyOverdrawn ? 'checked' : ''}> Ver solo esas</label>
+        </div>` : '<div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">✓ Ninguna cuenta está sobregirada: todos los saldos están según su naturaleza.</div>';
+      const only = document.getElementById('trial-only');
+      if (only) only.addEventListener('change', () => { state.onlyOverdrawn = only.checked; renderTrialBalance(); });
+
+      document.getElementById('trial-tbody').innerHTML = rows.length === 0 ? '<tr><td colspan="7" class="p-4 text-center text-slate-400">Sin asientos contabilizados todavía.</td></tr>' : rows.map(r => {
+        const bad = isOverdrawn(r);
         return `
-          <tr data-acc="${esc(a.id)}" class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer" title="Ver el mayor de esta cuenta">
-            <td class="p-2 font-mono text-slate-700">${esc(a.codigo)}</td>
-            <td class="p-2 text-slate-800">${esc(a.nombre)}</td>
-            <td class="p-2 text-slate-500">${esc(a.tipo)}</td>
-            <td class="p-2 text-right tabular-nums">$${fmtNum(debit)}</td>
-            <td class="p-2 text-right tabular-nums">$${fmtNum(credit)}</td>
-            <td class="p-2 text-right tabular-nums font-semibold">$${fmtNum(balance)}</td>
+          <tr data-acc="${esc((accounts.find(a => a.codigo === r.code) || {}).id || '')}" data-code="${esc(r.code)}" class="border-b border-slate-100 cursor-pointer ${bad ? 'bg-red-50/60 hover:bg-red-50' : 'hover:bg-slate-50'}" title="Ver el mayor de esta cuenta">
+            <td class="p-2 font-mono text-slate-700">${esc(r.code)}</td>
+            <td class="p-2 text-slate-800">${esc(r.name)}${bad ? ' <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-600 text-white">Sobregirada</span>' : ''}${r.misclassified ? ` <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500 text-white" title="Por su código debería ser ${esc(r.misclassified)}">Tipo: ${esc(r.tipo)} → ${esc(r.misclassified)}</span>` : ''}</td>
+            <td class="p-2 text-slate-500">${esc(r.tipo)} <span class="text-slate-400">· ${esc(String(r.nature).toLowerCase())}</span></td>
+            <td class="p-2 text-right tabular-nums">$${fmtNum(r.debit)}</td>
+            <td class="p-2 text-right tabular-nums">$${fmtNum(r.credit)}</td>
+            <td class="p-2 text-right tabular-nums font-semibold ${bad ? 'text-red-600' : ''}">${money(r.balance)}</td>
+            <td class="p-2 text-right">${bad || r.misclassified ? `<button data-analyze="${esc(r.code)}" class="text-xs font-semibold text-red-700 hover:text-red-900">Analizar</button>` : ''}</td>
           </tr>`;
-      }).filter(Boolean);
-      document.getElementById('trial-tbody').innerHTML = rows.join('') || '<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin asientos contabilizados todavía.</td></tr>';
+      }).join('');
       document.getElementById('trial-total-debit').textContent = `$${fmtNum(totalDebit)}`;
       document.getElementById('trial-total-credit').textContent = `$${fmtNum(totalCredit)}`;
+      document.getElementById('trial-date').textContent = `Saldos al ${dmy(state.to)}, según la naturaleza de cada cuenta. Toca una cuenta para ver su mayor.`;
+    };
+
+    // Panel de análisis de una cuenta sobregirada o mal clasificada.
+    const renderAnalysis = () => {
+      const el = document.getElementById('od-analysis');
+      if (!state.analyze) { el.innerHTML = ''; return; }
+      const A = analyzeAccount(state.analyze, allLines.filter(l => String(l.entry_date || '').slice(0, 10) <= state.to), accounts);
+      const r = A.row;
+      const tr = A.trigger;
+      el.innerHTML = `
+        <div class="${card} border-red-200 space-y-4">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h2 class="text-sm font-semibold text-slate-900">Análisis · ${esc(r.code)} — ${esc(r.name)}</h2>
+              <p class="text-xs text-slate-500">${esc(r.tipo)} de naturaleza ${esc(String(r.nature).toLowerCase())}: su saldo normal es ${r.nature === 'Acreedora' ? 'acreedor (Haber mayor que Debe)' : 'deudor (Debe mayor que Haber)'}.</p>
+            </div>
+            <button id="od-close" class="text-xs text-slate-500 hover:text-slate-800">Cerrar análisis</button>
+          </div>
+          ${r.misclassified ? `<div class="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-900">Esta cuenta está marcada como <strong>${esc(r.tipo)}</strong> pero su código (${esc(r.code)}) corresponde a <strong>${esc(r.misclassified)}</strong>. Por eso aparece en el lugar equivocado de los estados financieros. Corrígela en <a class="underline" href="#/contabilidad/cuentas">Plan de cuentas</a>.</div>` : ''}
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="rounded-lg border border-slate-200 px-3 py-2"><div class="text-[11px] text-slate-500">Saldo al ${esc(dmy(state.to))}</div><div class="text-lg font-semibold tabular-nums ${A.balance < -0.005 ? 'text-red-600' : 'text-slate-900'}">${money(A.balance)}</div><div class="text-[11px] text-slate-400">${A.balance < -0.005 ? 'contrario a su naturaleza' : 'según su naturaleza'}</div></div>
+            <div class="rounded-lg border border-slate-200 px-3 py-2"><div class="text-[11px] text-slate-500">Negativa desde</div><div class="text-lg font-semibold text-slate-900">${A.since ? esc(dmy(A.since)) : '—'}</div><div class="text-[11px] text-slate-400 truncate">${tr ? `${esc(tr.entry_number || '')} ${esc(tr.ref_doc || '')} · ${esc(String(tr.concepto || '').split('|')[0])}` : 'no está en negativo'}</div></div>
+            <div class="rounded-lg border border-slate-200 px-3 py-2"><div class="text-[11px] text-slate-500">Punto más bajo</div><div class="text-lg font-semibold tabular-nums ${A.worst.balance < -0.005 ? 'text-red-600' : 'text-slate-900'}">${money(A.worst.balance)}</div><div class="text-[11px] text-slate-400">${A.worst.date ? esc(dmy(A.worst.date)) : '—'}</div></div>
+          </div>
+          ${tr ? `<div class="text-sm text-slate-700">El movimiento que la llevó a negativo: <strong>${esc(dmy(String(tr.entry_date).slice(0, 10)))}</strong> · asiento ${esc(tr.entry_number || '')} · ${esc(tr.ref_doc || '')} · ${esc(String(tr.concepto || '').split('|')[0])}${tr.entidad ? ' · ' + esc(tr.entidad) : ''} · ${Number(tr.debit) ? 'Debe $' + fmtNum(tr.debit) : 'Haber $' + fmtNum(tr.credit)}</div>` : ''}
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <h3 class="text-xs font-semibold text-slate-500 mb-1">Por cliente / proveedor (saldo según su naturaleza)</h3>
+              ${A.byEntity.length ? `<table class="w-full text-xs"><tbody>${A.byEntity.slice(0, 12).map(e => `<tr class="border-t border-slate-100"><td class="py-1.5 text-slate-700">${esc(e.entidad)}</td><td class="py-1.5 text-right tabular-nums ${e.balance < -0.005 ? 'text-red-600 font-medium' : ''}">${money(e.balance)}</td></tr>`).join('')}</tbody></table>` : '<p class="text-xs text-slate-400">Sin desglose por entidad.</p>'}
+            </div>
+            <div>
+              <h3 class="text-xs font-semibold text-slate-500 mb-1">Por tipo de operación</h3>
+              <table class="w-full text-xs"><thead><tr class="text-[10px] uppercase text-slate-400"><th class="text-left py-1">Origen</th><th class="text-right py-1">Debe</th><th class="text-right py-1">Haber</th></tr></thead>
+                <tbody>${A.bySource.map(x => `<tr class="border-t border-slate-100"><td class="py-1.5 text-slate-700">${esc(x.source)} <span class="text-slate-400">(${x.count})</span></td><td class="py-1.5 text-right tabular-nums">$${fmtNum(x.debit)}</td><td class="py-1.5 text-right tabular-nums">$${fmtNum(x.credit)}</td></tr>`).join('')}</tbody></table>
+            </div>
+          </div>
+          <div>
+            <h3 class="text-xs font-semibold text-slate-500 mb-1">Posibles causas a revisar</h3>
+            <ul class="list-disc pl-5 space-y-1 text-sm text-slate-700">${A.hints.map(h => `<li>${esc(h)}</li>`).join('')}</ul>
+          </div>
+        </div>`;
+      document.getElementById('od-close').addEventListener('click', () => { state.analyze = null; renderAnalysis(); });
     };
 
     const body = `
@@ -169,6 +220,7 @@ const Ledger = {
           <button id="ledger-xlsx" class="${btnSecondary} whitespace-nowrap">Exportar a Excel</button>
         </div>
         <p id="ledger-nature" class="text-[11px] text-slate-400"></p>
+        <div id="od-analysis"></div>
         <div class="overflow-x-auto">
           <table class="w-full text-left text-xs">
             <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
@@ -183,12 +235,13 @@ const Ledger = {
 
       <div class="${card}">
         <h2 class="text-sm font-semibold text-slate-900">Balance de comprobación</h2>
-        <p class="text-xs text-slate-400 mb-3">Todas las cuentas con movimientos. Toca una para ver su mayor.</p>
+        <p id="trial-date" class="text-xs text-slate-400 mb-3"></p>
+        <div id="trial-alert" class="mb-3"></div>
         <div class="overflow-x-auto">
         <table class="w-full text-left text-xs">
           <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
             <th class="p-2">Código</th><th class="p-2">Cuenta</th><th class="p-2">Tipo</th>
-            <th class="p-2 text-right">Σ Debe</th><th class="p-2 text-right">Σ Haber</th><th class="p-2 text-right">Saldo</th>
+            <th class="p-2 text-right">Σ Debe</th><th class="p-2 text-right">Σ Haber</th><th class="p-2 text-right">Saldo</th><th class="p-2"></th>
           </tr></thead>
           <tbody id="trial-tbody"></tbody>
           <tfoot>
@@ -196,7 +249,7 @@ const Ledger = {
               <td class="p-2" colspan="3">Totales</td>
               <td class="p-2 text-right tabular-nums" id="trial-total-debit"></td>
               <td class="p-2 text-right tabular-nums" id="trial-total-credit"></td>
-              <td class="p-2"></td>
+              <td class="p-2"></td><td class="p-2"></td>
             </tr>
           </tfoot>
         </table>
@@ -208,19 +261,30 @@ const Ledger = {
 
     document.getElementById('ledger-account').addEventListener('change', (e) => { state.accountId = e.target.value; renderMovements(); }, { signal });
     document.getElementById('ledger-from').addEventListener('change', (e) => { state.from = e.target.value; renderMovements(); }, { signal });
-    document.getElementById('ledger-to').addEventListener('change', (e) => { state.to = e.target.value; renderMovements(); }, { signal });
+    document.getElementById('ledger-to').addEventListener('change', (e) => { state.to = e.target.value; renderMovements(); renderTrialBalance(); renderAnalysis(); }, { signal });
     document.getElementById('ledger-xlsx').addEventListener('click', exportExcel, { signal });
     document.getElementById('trial-tbody').addEventListener('click', (e) => {
+      const an = e.target.closest('[data-analyze]');
       const tr = e.target.closest('[data-acc]');
       if (!tr) return;
-      state.accountId = tr.dataset.acc;
+      if (an) state.analyze = an.dataset.analyze;
+      if (tr.dataset.acc) state.accountId = tr.dataset.acc;
+      renderAnalysis();
       document.getElementById('ledger-account').value = state.accountId;
       renderMovements();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }, { signal });
 
+    // Desde Estados financieros: #/contabilidad/mayor?analizar=<código>
+    const q = new URLSearchParams((location.hash.split('?')[1] || ''));
+    if (q.get('analizar')) {
+      state.analyze = q.get('analizar');
+      const acc = accounts.find(a => a.codigo === state.analyze);
+      if (acc) { state.accountId = acc.id; document.getElementById('ledger-account').value = acc.id; }
+    }
     renderMovements();
     renderTrialBalance();
+    renderAnalysis();
 
     return () => destroy.abort();
   }
