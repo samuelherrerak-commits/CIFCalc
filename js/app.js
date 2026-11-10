@@ -22,26 +22,10 @@ if (Store.isSandbox()) {
   bar.innerHTML = `
     <span><strong class="font-semibold">Modo prueba</strong> · trabajas con una copia; nada se guarda en la base de datos</span>
     <span class="flex gap-3">
-      <button id="sbx-demo" class="underline underline-offset-2 hover:text-amber-700">Cargar ejercicio de 3 meses</button>
       <button data-sbx="reset" class="underline underline-offset-2 hover:text-amber-700">Reiniciar</button>
       <button data-sbx="exit" class="font-semibold underline underline-offset-2 hover:text-amber-700">Salir</button>
     </span>`;
   document.getElementById('topbar').prepend(bar);
-  // Ejercicio de prueba: agosto a octubre 2026 con todos los módulos.
-  bar.querySelector('#sbx-demo').addEventListener('click', async (e) => {
-    if (!confirm('Se borrará lo que hay en el modo prueba (productos, clientes, contenedores, asientos, órdenes…) y se cargará un ejercicio de 3 meses (agosto a octubre 2026) para revisar que todo se registre bien.\n\nTus datos reales no se tocan. ¿Continuar?')) return;
-    e.target.textContent = 'Cargando…';
-    try {
-      const { runDemoExercise } = await import('./demo-exercise.js');
-      const log = await runDemoExercise();
-      alert(`Listo: ${log.length} operaciones cargadas de agosto a octubre 2026.`);
-      location.hash = '#/contabilidad/resumen';
-      location.reload();
-    } catch (err) {
-      alert(`No se pudo cargar el ejercicio: ${err.message}`);
-      e.target.textContent = 'Cargar ejercicio de 3 meses';
-    }
-  });
 }
 
 // Alto real del encabezado fijo → --top (lo usan el menú lateral y el punto

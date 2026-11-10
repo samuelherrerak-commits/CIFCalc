@@ -884,12 +884,6 @@ const Store = {
     setSandboxFlag(true);
     location.reload();
   },
-  // Vacía tablas del modo prueba (lo usa el ejercicio de 3 meses). Nunca
-  // toca los datos reales.
-  wipeSandbox(tables) {
-    if (!SANDBOX) throw new Error('Solo en modo prueba.');
-    for (const t of tables) if (STORE_KEYS[t]) writeAll(STORE_KEYS[t], []);
-  },
   // Vuelve a empezar la prueba desde los datos reales actuales.
   resetSandbox() {
     copyRealDataToSandbox();
