@@ -37,11 +37,12 @@ const BOOL_FIELDS = {
   crm_activities: ['done'],
   promotions: ['active'],
   sales_orders: ['fiscal'],
+  quotes: ['fiscal'],
   accounting_settings: ['iva_enabled', 'prices_include_iva']
 };
 // Valor cuando la celda viene vacía (p. ej. una columna recién agregada a la
 // hoja): una cuenta sin marca se considera activa.
-const BOOL_DEFAULTS = { accounts: { is_active: true }, accounting_settings: { iva_enabled: true } };
+const BOOL_DEFAULTS = { accounts: { is_active: true }, accounting_settings: { iva_enabled: true }, quotes: { fiscal: true } };
 
 // Sheets puede devolver TRUE/FALSE (si la celda no quedó como texto) o
 // 'true'/'false'; se aceptan ambos.

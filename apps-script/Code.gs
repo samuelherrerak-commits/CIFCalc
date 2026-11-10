@@ -146,7 +146,9 @@ const SCHEMAS = {
     'items', 'total', 'status', 'converted_ref', 'created_at', 'updated_at',
     'valid_until',
     // 'presupuesto' u 'oferta' (oferta personalizada desde el CRM).
-    'kind'
+    'kind',
+    // Con factura (IVA) o sin factura: pasa a la orden de venta al convertir.
+    'fiscal'
   ],
   // Mapeo contable del cierre de contenedores (una sola fila, id = 'default').
   // Cada columna guarda el id de la cuenta a la que va ese concepto; si una

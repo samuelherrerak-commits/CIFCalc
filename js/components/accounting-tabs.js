@@ -23,12 +23,14 @@ export const ACCOUNTING_SECTIONS = [
     { key: 'income', path: '#/contabilidad/ingresos', label: 'Otros ingresos', icon: 'plus' },
     { key: 'promotions', path: '#/contabilidad/promociones', label: 'Promociones', icon: 'gift', off: !PROMOTIONS_ENABLED }
   ] },
-  { title: 'Gastos y compras', items: [
+  { title: 'Gastos', items: [
     { key: 'expenses', path: '#/contabilidad/gastos', label: 'Gastos', icon: 'wallet' },
-    { key: 'costs', path: '#/contabilidad/costos', label: 'Costos', icon: 'tag' },
-    { key: 'cost-analysis', path: '#/contabilidad/analisis-costos', label: 'Análisis de costos', icon: 'chart' },
-    { key: 'payments', path: '#/contabilidad/pagos', label: 'Contenedores por pagar', icon: 'ship', off: !CONTAINER_PAYMENTS_ENABLED },
     { key: 'payables', path: '#/contabilidad/por-pagar', label: 'Proveedores por pagar', icon: 'receipt' }
+  ] },
+  { title: 'Costos', items: [
+    { key: 'costs', path: '#/contabilidad/costos', label: 'Costos de importación', short: 'Costos', icon: 'tag' },
+    { key: 'cost-analysis', path: '#/contabilidad/analisis-costos', label: 'Análisis de costos', icon: 'chart' },
+    { key: 'payments', path: '#/contabilidad/pagos', label: 'Contenedores por pagar', icon: 'ship', off: !CONTAINER_PAYMENTS_ENABLED }
   ] },
   { title: 'Inventario', items: [
     { key: 'catalog', path: '#/contabilidad/catalogo', label: 'Catálogo', icon: 'tag' },

@@ -353,6 +353,15 @@ export function mountPOS(root, opts) {
       }
       changed();
     },
-    refresh: () => { renderCategories(); changed(); }
+    refresh: () => { renderCategories(); changed(); },
+    // Agrega al carrito un producto recién creado (fuera del catálogo).
+    addProduct: (product, qty = 1, price = null) => {
+      renderCategories();
+      const pr = priceFor(product);
+      const unit = price != null ? Number(price) : pr.unitPrice;
+      cart.push({ product, qty: Number(qty) || 1, unitPrice: unit, listPrice: price != null ? Number(price) : pr.listPrice, discountPct: 0, label: '', manual: price != null });
+      success('');
+      changed();
+    }
   };
 }

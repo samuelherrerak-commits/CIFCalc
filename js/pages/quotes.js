@@ -10,11 +10,14 @@ import { createOrder } from '../orders.js';
 
 // IVA de un presupuesto con la configuración fiscal actual (informativo: el
 // impuesto se registra al convertirlo en venta).
-function quoteTax(lines) {
-  const fs = Store.getFiscalSettings();
+// fiscal = false → venta sin factura: no lleva IVA.
+function quoteTax(lines, fiscal = true) {
+  const fs0 = Store.getFiscalSettings();
+  const fs = { ...fs0, ivaEnabled: fs0.ivaEnabled && fiscal };
   const t = computeTax(lines.map(l => ({ amount: l.qty * l.unitPrice, tipo: ivaTipoOf(l.product) })), fs);
   return { rows: taxSummaryRows(t, fs), total: t.total };
 }
+export const isQuoteFiscal = (q) => !(q.fiscal === false || String(q.fiscal) === 'false');
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { input, label } from '../components/accounting-shell.js';
 
@@ -53,7 +56,7 @@ export function quoteDocument(q) {
     terms: Store.getBusinessProfile().terms,
     fiscal: (() => {
       const items = Store.getQuoteItems(q);
-      const t = quoteTax(items.map(it => ({ qty: it.qty, unitPrice: it.unitPrice, product: Store.getById('products', it.productId) })));
+      const t = quoteTax(items.map(it => ({ qty: it.qty, unitPrice: it.unitPrice, product: Store.getById('products', it.productId) })), isQuoteFiscal(q));
       return t.rows.length ? { ...t, rate: Store.usdRateFor(q.date) } : null;
     })()
   };
@@ -163,6 +166,7 @@ function renderHome(app) {
               <div class="flex items-center gap-2 flex-wrap">
                 <span class="font-mono font-bold text-slate-800">${esc(x.quote_number)}</span>
                 ${x.kind === 'oferta' ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-violet-700 bg-violet-100">Oferta</span>' : ''}
+                ${isQuoteFiscal(x) ? '' : '<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold text-slate-600 bg-slate-100">Sin factura</span>'}
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-${st.color}-700 bg-${st.color}-100">${st.label}</span>
                 ${isExpired(x) ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-red-700 bg-red-100">Vencido</span>' : ''}
                 ${x.converted_ref ? `<span class="text-[10px] font-mono text-emerald-700">→ ${esc(x.converted_ref)}</span>` : ''}
@@ -205,7 +209,7 @@ function renderHome(app) {
         };
       });
       const contact = q.contact_id ? Store.getById('contacts', q.contact_id) : null;
-      const order = createOrder({ date: new Date().toISOString().slice(0, 10), contact: contact || (q.contact_name ? { id: '', name: q.contact_name } : null), items, fiscal: true, notes: q.concepto || '', quoteId: q.id });
+      const order = createOrder({ date: new Date().toISOString().slice(0, 10), contact: contact || (q.contact_name ? { id: '', name: q.contact_name } : null), items, fiscal: isQuoteFiscal(q), notes: q.concepto || '', quoteId: q.id });
       Store.update('quotes', { id, status: 'convertido', converted_ref: order.order_number });
       location.hash = `#/contabilidad/ordenes/${order.id}`;
     });
@@ -305,6 +309,7 @@ function renderBuilder(app, editId, opts = {}) {
   `;
   app.innerHTML = AccountingShell.wrap(AccountingTabs.render('quotes'), body);
 
+  const fiscalNow = () => ((document.getElementById('f-fiscal') || {}).value || (editing && !isQuoteFiscal(editing) ? 'no' : 'si')) !== 'no';
   const pos = mountPOS(document.getElementById('pos-root'), {
     products: () => products,
     cart: initialCart,
@@ -313,12 +318,22 @@ function renderBuilder(app, editId, opts = {}) {
     actionLabel: editing ? 'Guardar cambios' : (isOffer ? 'Emitir oferta' : 'Emitir presupuesto'),
     suggestedIds: suggested,
     priceFor: (p) => Store.priceFor(p, currentContact()),
-    summary: (cart) => quoteTax(cart),
+    summary: (cart) => quoteTax(cart, fiscalNow()),
     headerFieldsHtml: `
-      <div>
-        <label class="${label}">Cliente</label>
-        <select id="f-contact" class="${input}">${contactOptions(contacts, 'cliente', presetContact)}</select>
-      </div>`,
+      <div class="grid grid-cols-[minmax(0,1fr)_9.5rem] gap-2">
+        <div>
+          <label class="${label}">Cliente</label>
+          <select id="f-contact" class="${input}">${contactOptions(contacts, 'cliente', presetContact)}</select>
+        </div>
+        <div>
+          <label class="${label}">Venta</label>
+          <select id="f-fiscal" class="${input}">
+            <option value="si" ${!editing || isQuoteFiscal(editing) ? 'selected' : ''}>Con factura (IVA)</option>
+            <option value="no" ${editing && !isQuoteFiscal(editing) ? 'selected' : ''}>Sin factura</option>
+          </select>
+        </div>
+      </div>
+      <button id="f-custom" type="button" class="text-xs font-medium text-blue-600 hover:text-blue-700">+ Producto que no está en el catálogo</button>`,
     // Fecha, validez, notas y descuento en un desplegable: el carrito cabe
     // en la pantalla y el botón de emitir queda siempre a la vista.
     footerFieldsHtml: `
@@ -376,7 +391,8 @@ function renderBuilder(app, editId, opts = {}) {
     }));
     const fields = {
       date, valid_until: validUntil, contact_id: contactId || '', contact_name: contact ? contact.name : '',
-      concepto, items: JSON.stringify(items), total: Math.round(pos.total() * 100) / 100, kind
+      concepto, items: JSON.stringify(items), total: Math.round(pos.total() * 100) / 100, kind,
+      fiscal: fiscalNow()
     };
 
     if (editing) {
@@ -400,6 +416,11 @@ function renderBuilder(app, editId, opts = {}) {
     pos.refresh();
     pos.repriceAll();
   }, { signal });
+  document.getElementById('f-fiscal').addEventListener('change', () => pos.refresh(), { signal });
+  document.getElementById('f-custom').addEventListener('click', () => customProductModal((p, qty, price) => {
+    products.push(p);
+    pos.addProduct(p, qty, price);
+  }), { signal });
   document.getElementById('f-discount-apply').addEventListener('click', () => {
     const pct = Math.max(0, Math.min(90, Number(document.getElementById('f-discount').value) || 0));
     if (!pos.getCart().length) { pos.flash('Agrega productos antes de aplicar el descuento.'); return; }
@@ -409,6 +430,58 @@ function renderBuilder(app, editId, opts = {}) {
   pos.refresh();
 
   return () => destroy.abort();
+}
+
+// Producto que todavía no está en el catálogo (se negocia antes de tenerlo):
+// se crea en el catálogo con un código provisional (PROV-0001…), que se
+// cambia por el código BRG en Productos cuando se vaya a importar. (Un
+// producto sin código se considera basura y se borra, por eso el provisional.)
+const nextProvisionalCode = () => {
+  const n = Store.getAll('products').map(p => String(p.sku_briggs || '').match(/^PROV-(\d+)$/i)).filter(Boolean).map(m => Number(m[1]));
+  return `PROV-${String((n.length ? Math.max(...n) : 0) + 1).padStart(4, '0')}`;
+};
+function customProductModal(onDone) {
+  const cats = [...new Set(Store.getAll('products').map(p => String(p.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const wrap = document.createElement('div');
+  wrap.className = 'fixed inset-0 z-50 bg-black/30 flex items-start sm:items-center justify-center p-3';
+  wrap.innerHTML = `
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-4 space-y-3">
+      <div class="flex justify-between items-center">
+        <h2 class="text-sm font-semibold text-slate-900">Producto fuera del catálogo</h2>
+        <button data-close class="text-slate-400 hover:text-slate-700 text-lg leading-none">✕</button>
+      </div>
+      <p class="text-xs text-slate-400">Queda en el catálogo con un código provisional (PROV-…). Cámbialo por el código BRG en Productos cuando lo vayas a importar.</p>
+      <div><label class="${label}">Nombre del producto *</label><input id="cp-name" type="text" class="${input}" placeholder="Ej.: Grifo monomando lavaplatos negro"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="${label}">Precio de venta *</label><input id="cp-price" type="number" min="0" step="0.01" class="${input}"></div>
+        <div><label class="${label}">Cantidad</label><input id="cp-qty" type="number" min="1" step="1" value="1" class="${input}"></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="${label}">Categoría</label>
+          <select id="cp-cat" class="${input}"><option value="">— Sin categoría —</option>${cats.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>
+        <div><label class="${label}">IVA</label>
+          <select id="cp-iva" class="${input}"><option value="general">IVA general</option><option value="reducida">IVA reducido</option><option value="exento">Exento</option></select></div>
+      </div>
+      <div id="cp-msg" class="text-xs text-red-600"></div>
+      <div class="flex justify-end gap-2">
+        <button data-close class="px-3 py-2 rounded-lg text-sm border border-slate-200 text-slate-700 hover:bg-slate-50">Cancelar</button>
+        <button id="cp-save" class="px-4 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white">Agregar al presupuesto</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+  const $ = (id) => wrap.querySelector('#' + id);
+  $('cp-name').focus();
+  wrap.addEventListener('click', (e) => { if (e.target === wrap || e.target.closest('[data-close]')) wrap.remove(); });
+  $('cp-save').addEventListener('click', () => {
+    const name = $('cp-name').value.trim();
+    const price = Math.round((Number($('cp-price').value) || 0) * 100) / 100;
+    const qty = Math.max(1, Math.floor(Number($('cp-qty').value) || 1));
+    if (!name) { $('cp-msg').textContent = 'Escribe el nombre del producto.'; return; }
+    if (!(price > 0)) { $('cp-msg').textContent = 'Indica el precio de venta.'; return; }
+    const p = Store.insert('products', { name, sale_price: price, category: $('cp-cat').value, iva_tipo: $('cp-iva').value, sku_briggs: nextProvisionalCode(), stock: 0, avg_cost: 0 });
+    wrap.remove();
+    onDone(p, qty, price);
+  });
 }
 
 export default Quotes;
