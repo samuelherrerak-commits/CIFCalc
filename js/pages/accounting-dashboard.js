@@ -4,7 +4,7 @@ import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell from '../components/accounting-shell.js';
 import { icon } from '../components/icons.js';
 import { CONTAINER_PAYMENTS_ENABLED } from '../features.js';
-import { dispatchStatus } from '../orders.js';
+import { dispatchStatus, orderMoney } from '../orders.js';
 
 // Prefijo del ref_doc → tipo de actividad (igual patrón que recentActivity de LegalYa).
 const DOC_TYPES = {
@@ -52,6 +52,17 @@ const AccountingDashboard = {
       caja: sumBalance(codesFor('Efectivo')),
       banco: sumBalance(codesFor('Banco')),
       porCobrar: sumBalance(codesFor('Clientes')),
+      // Lo que realmente deben los clientes: saldo de sus órdenes de venta
+      // (facturadas o no, con o sin factura).
+      ...(() => {
+        let all = 0, inv = 0;
+        for (const o of Store.getAll('sales_orders')) {
+          if (o.status === 'anulada') continue;
+          const b = Math.max(0, orderMoney(o).balance);
+          all += b; if (o.status === 'facturada') inv += b;
+        }
+        return { porCobrarOrdenes: all, porCobrarFacturado: inv };
+      })(),
       gastosCostos: sumDebit(codesForTipos(['Gasto', 'Costo']))
     };
 
@@ -109,7 +120,7 @@ const AccountingDashboard = {
       dueTasks.length && { href: '#/contabilidad/contactos', icon: 'clock', title: `${dueTasks.length} seguimiento(s) de clientes para hoy o vencidos`, value: 'Ver clientes' },
       CONTAINER_PAYMENTS_ENABLED && payableCount && { href: '#/contabilidad/pagos', icon: 'ship', title: `${payableCount} contenedor(es) por pagar`, value: '$' + fmtNum(payableTotal) },
       CONTAINER_PAYMENTS_ENABLED && withoutEntry && { href: '#/contabilidad/pagos', icon: 'alert', warn: true, title: `${withoutEntry} contenedor(es) completo(s) sin asiento`, value: 'Generar' },
-      stats.porCobrar > 0.01 && { href: '#/contabilidad/por-cobrar', icon: 'inbox', title: 'Clientes te deben', value: '$' + fmtNum(stats.porCobrar) },
+      stats.porCobrarOrdenes > 0.01 && { href: '#/contabilidad/por-cobrar', icon: 'inbox', title: 'Clientes te deben (órdenes de venta)', value: '$' + fmtNum(stats.porCobrarOrdenes) },
       toDispatch && { href: '#/contabilidad/ordenes', icon: 'ship', title: `${toDispatch} orden(es) con mercancía por despachar`, value: 'Ver órdenes' },
       pendingQuotes.length && { href: '#/contabilidad/presupuestos', icon: 'file', title: `${pendingQuotes.length} presupuesto(s) pendiente(s)`, value: '$' + fmtNum(pendingQuotes.reduce((s2, q) => s2 + (Number(q.total) || 0), 0)) },
       approvedQuotes.length && { href: '#/contabilidad/presupuestos', icon: 'check', title: `${approvedQuotes.length} presupuesto(s) aprobado(s) por vender`, value: 'Convertir' },
@@ -158,7 +169,7 @@ const AccountingDashboard = {
         ${kpi('#/contabilidad/reportes/ventas', `Ventas de ${monthName}`, monthSales, `${monthSaleDocs} factura${monthSaleDocs === 1 ? '' : 's'}`)}
         ${kpi('#/contabilidad/reportes/gastos', `Gastos de ${monthName}`, monthSpend, 'Costos y gastos')}
         ${kpi('#/contabilidad/mayor', 'Disponible', stats.banco + stats.caja, `Banco $${fmtNum(stats.banco)} · Caja $${fmtNum(stats.caja)}`)}
-        ${kpi('#/contabilidad/por-cobrar', 'Te deben', stats.porCobrar, 'Cuentas por cobrar')}
+        ${kpi('#/contabilidad/por-cobrar', 'Te deben', stats.porCobrarOrdenes, `$${fmtNum(stats.porCobrarFacturado)} ya facturado`)}
         ${kpi('#/contabilidad/por-pagar', 'Debes', oweTotal, oweTaxes > 0.005 ? `Incluye IVA $${fmtNum(oweTaxes)}` : 'Cuentas por pagar', 'col-span-2 lg:col-span-1')}
       </div>
 

@@ -1,4 +1,5 @@
 import Store from './store.js';
+import { orderMoney } from './orders.js';
 import { inferirTipo } from './accounting.js';
 
 // Filas planas para el CRM y los Reportes, armadas desde el diario
@@ -14,7 +15,9 @@ const SOURCE_LABEL = {
 
 export const isSaleItemLine = (m) => m.source === 'sale' && Number(m.cantidad) > 0 && Number(m.precio_venta) > 0 && Number(m.credit) > 0;
 
-export function salesLines() {
+// opts.includeOpenOrders: también las órdenes de venta aún sin facturar (la
+// ficha del cliente las usa para mostrar lo que realmente pidió).
+export function salesLines(opts = {}) {
   const movements = Store.getAll('movements');
   const products = Store.getAll('products');
   const contacts = Store.getAll('contacts');
@@ -67,13 +70,14 @@ export function salesLines() {
   const contactById = new Map(contacts.map(c => [c.id, c]));
   const fromOrders = [];
   for (const o of Store.getAll('sales_orders')) {
-    if (o.status !== 'facturada') continue;
+    const invoiced = o.status === 'facturada';
+    if (!invoiced && !(opts.includeOpenOrders && o.status !== 'anulada')) continue;
     let items = [];
     try { items = JSON.parse(o.items || '[]'); } catch { items = []; }
     const pays = Store.getAll('order_payments').filter(p => p.order_id === o.id);
     const cash = pays.find(p => p.ref_doc === o.invoice_ref);
-    const payment = cash ? (cash.method === 'efectivo' ? 'Efectivo' : 'Banco') : (pays.some(p => p.kind === 'anticipo') ? 'Anticipo + crédito' : 'Crédito');
-    const date = String(o.invoice_date || o.date || '').slice(0, 10);
+    const payment = !invoiced ? 'Orden abierta' : cash ? (cash.method === 'efectivo' ? 'Efectivo' : 'Banco') : (pays.some(p => p.kind === 'anticipo') ? 'Anticipo + crédito' : 'Crédito');
+    const date = String((invoiced && o.invoice_date) || o.date || '').slice(0, 10);
     const contact = contactById.get(o.contact_id) || contactByName.get(String(o.contact_name || '').trim()) || null;
     for (const it of items) {
       const product = byId.get(it.productId) || null;
@@ -85,7 +89,7 @@ export function salesLines() {
       const unitPrice = revenue / qty;
       const listPrice = Number(it.listPrice) > 0 ? Number(it.listPrice) : unitPrice;
       fromOrders.push({
-        refDoc: o.invoice_ref, orderId: o.id, fromOrder: true, date, month: date.slice(0, 7),
+        refDoc: invoiced ? o.invoice_ref : o.order_number, orderId: o.id, orderNumber: o.order_number, invoiced, fromOrder: true, date, month: date.slice(0, 7),
         entidad: o.contact_name || 'Sin cliente', contactId: contact ? contact.id : '',
         productId: product ? product.id : (it.productId || ''), productName: product ? product.name : (it.name || 'Producto'),
         sku: product ? product.sku_briggs : (it.sku || ''),
@@ -168,6 +172,26 @@ export function customerStats(lines = salesLines()) {
     map.set(key, s);
   }
   for (const s of map.values()) { s.orders = s.refs.size; s.avgTicket = s.orders ? s.revenue / s.orders : 0; }
+  return map;
+}
+
+// Lo que realmente debe cada cliente, según sus órdenes de venta (facturadas o
+// no, con o sin factura): total − anticipos − cobros − retención de IVA.
+// Clave: id del contacto y también 'name:<nombre>'.
+export function orderBalances() {
+  const map = new Map();
+  for (const o of Store.getAll('sales_orders')) {
+    if (o.status === 'anulada') continue;
+    const m = orderMoney(o);
+    const add = (k) => {
+      const e = map.get(k) || { orders: 0, total: 0, paid: 0, balance: 0, invoicedBalance: 0 };
+      e.orders++; e.total += m.total; e.paid += m.paid; e.balance += Math.max(0, m.balance);
+      if (o.status === 'facturada') e.invoicedBalance += Math.max(0, m.balance);
+      map.set(k, e);
+    };
+    if (o.contact_id) add(o.contact_id);
+    add('name:' + String(o.contact_name || '').trim());
+  }
   return map;
 }
 

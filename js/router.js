@@ -26,6 +26,27 @@ import FinancialStatements from './pages/financial-statements.js';
 import Fiscal from './pages/fiscal.js';
 import Orders from './pages/orders.js';
 import { POS_ENABLED, PROMOTIONS_ENABLED, CONTAINER_PAYMENTS_ENABLED } from './features.js';
+import Users from './pages/users.js';
+import Auth from './auth.js';
+import { ACCOUNTING_SECTIONS } from './components/accounting-tabs.js';
+
+// Permiso que necesita cada pantalla (los módulos que se tildan en Usuarios).
+const PERM = {
+  dashboard: 'containers', calculator: 'containers', products: 'products',
+  accountingDashboard: 'dashboard', accounts: 'accounts', income: 'income', costs: 'costs', sales: 'sales',
+  quotes: 'quotes', expenses: 'expenses', payments: 'payments', costAnalysis: 'cost-analysis',
+  receivables: 'receivables', payables: 'payables', inventory: 'inventory', catalog: 'catalog',
+  contacts: 'contacts', promotions: 'promotions', reports: 'reports', financials: 'financials',
+  fiscal: 'iva', orders: 'orders', journal: 'journal', ledger: 'ledger', users: 'users'
+};
+
+// Primera pantalla a la que el usuario sí tiene acceso.
+export function firstAllowedPath() {
+  if (Auth.can('containers')) return '#/';
+  if (Auth.can('products')) return '#/productos';
+  for (const s of ACCOUNTING_SECTIONS) for (const it of s.items) if (Auth.can(it.key)) return it.path;
+  return null;
+}
 
 const routes = [
   { pattern: /^#\/?$/, handler: 'dashboard', key: 'dashboard' },
@@ -57,7 +78,8 @@ const routes = [
   { pattern: /^#\/contabilidad\/fiscal\/([^/]+)$/, handler: 'fiscal', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/reportes\/([^/]+)$/, handler: 'reports', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/diario\/?$/, handler: 'journal', key: 'contabilidad' },
-  { pattern: /^#\/contabilidad\/mayor\/?$/, handler: 'ledger', key: 'contabilidad' }
+  { pattern: /^#\/contabilidad\/mayor\/?$/, handler: 'ledger', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/usuarios\/?$/, handler: 'users', key: 'contabilidad' }
 ];
 
 const pages = {
@@ -85,7 +107,8 @@ const pages = {
   reports: Reports,
   financials: FinancialStatements,
   fiscal: Fiscal,
-  orders: Orders
+  orders: Orders,
+  users: Users
 };
 
 let currentCleanup = null;
@@ -110,6 +133,14 @@ async function resolve() {
   }
 
   const { handler, key, params } = parseHash();
+  // Sin permiso para esta pantalla: a la primera que sí pueda abrir.
+  if (!Auth.can(PERM[handler])) {
+    const to = firstAllowedPath();
+    if (to && to !== (window.location.hash || '#/')) { location.replace(to); return; }
+    Nav.render('');
+    document.getElementById('app').innerHTML = '<div class="max-w-md mx-auto mt-20 text-center text-slate-500"><p class="font-semibold text-slate-800">Sin módulos asignados</p><p class="text-sm mt-1">Pide a un administrador que te dé acceso.</p></div>';
+    return;
+  }
   Nav.render(key);
   const app = document.getElementById('app');
   // Contabilidad ocupa todo el ancho (menú lateral pegado a la izquierda);

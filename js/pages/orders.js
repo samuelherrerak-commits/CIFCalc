@@ -20,6 +20,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (iso) => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : ''; };
 const isFiscal = (o) => o.fiscal === true || String(o.fiscal) === 'true';
 let listFilter = 'abierta';
+let fiscalFilter = 'todas';
 let listQuery = '';
 
 function badge(status) {
@@ -124,7 +125,7 @@ function printOrderStatus(order) {
 let lastEvent = null;
 
 // ---------- Modales de acción ----------
-function paymentModal(order, onDone) {
+export function paymentModal(order, onDone) {
   const m = orderMoney(order);
   const kind = order.status === 'facturada' ? 'cobro' : 'anticipo';
   const banks = Store.getAll('accounts').filter(a => a.tipo_especifico === 'Banco' && a.is_active !== false);
@@ -254,18 +255,22 @@ function invoiceModal(order, onDone) {
 }
 
 // ---------- Vistas ----------
+
 function renderList(app) {
-  const orders = Store.getAll('sales_orders');
+  // Con factura (IVA) / sin factura: se controlan por separado.
+  const orders = Store.getAll('sales_orders')
+    .filter(o => fiscalFilter === 'todas' || (fiscalFilter === 'fiscal') === isFiscal(o));
   const enriched = orders.map(o => ({ o, m: orderMoney(o), ds: dispatchStatus(o) }));
   const open = enriched.filter(x => x.o.status === 'abierta');
-  const receivable = enriched.filter(x => x.o.status === 'facturada' && x.m.balance > 0.005);
+  const receivable = enriched.filter(x => x.o.status !== 'anulada' && x.m.balance > 0.005);
+  const invoicedDue = receivable.filter(x => x.o.status === 'facturada');
   const tile = (k, v, sub, filter) => `
     <button data-filter="${filter}" class="text-left bg-white rounded-xl border p-4 shadow-sm transition ${listFilter === filter ? 'border-blue-500 ring-1 ring-blue-500' : 'border-slate-200/70 hover:border-slate-300'}">
       <p class="text-xs text-slate-500">${k}</p><p class="text-xl font-semibold text-slate-900 tabular-nums mt-0.5">${v}</p><p class="text-[11px] text-slate-400 mt-0.5">${sub}</p>
     </button>`;
   const q = listQuery.trim().toLowerCase();
   const rows = enriched
-    .filter(x => listFilter === 'todas' || (listFilter === 'por-cobrar' ? (x.o.status === 'facturada' && x.m.balance > 0.005) : x.o.status === listFilter))
+    .filter(x => listFilter === 'todas' || (listFilter === 'por-cobrar' ? (x.o.status !== 'anulada' && x.m.balance > 0.005) : x.o.status === listFilter))
     .filter(x => !q || [x.o.order_number, x.o.contact_name, x.o.invoice_ref, x.o.invoice_number].some(v => String(v || '').toLowerCase().includes(q)))
     .sort((a, b) => String(b.o.date).localeCompare(String(a.o.date)) || String(b.o.order_number).localeCompare(String(a.o.order_number)));
 
@@ -280,7 +285,7 @@ function renderList(app) {
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
       ${tile('Abiertas', fmtInt(open.length), `$${fmtNum(open.reduce((s, x) => s + x.m.total, 0))} en pedidos`, 'abierta')}
       ${tile('Anticipos recibidos', '$' + fmtNum(open.reduce((s, x) => s + x.m.advances, 0)), 'de órdenes sin facturar', 'abierta')}
-      ${tile('Facturadas por cobrar', fmtInt(receivable.length), `$${fmtNum(receivable.reduce((s, x) => s + x.m.balance, 0))} pendiente`, 'por-cobrar')}
+      ${tile('Por cobrar', '$' + fmtNum(receivable.reduce((s, x) => s + x.m.balance, 0)), `${fmtInt(receivable.length)} orden(es) · $${fmtNum(invoicedDue.reduce((s, x) => s + x.m.balance, 0))} ya facturado`, 'por-cobrar')}
       ${tile('Todas', fmtInt(orders.length), 'histórico de órdenes', 'todas')}
     </div>
     <div class="${card} !p-0 overflow-hidden">
@@ -288,6 +293,9 @@ function renderList(app) {
         <input id="o-search" type="text" value="${esc(listQuery)}" placeholder="Buscar por número, cliente o factura" class="${input} max-w-sm">
         <div class="flex gap-0.5 p-0.5 rounded-lg bg-slate-100 text-xs">
           ${[['abierta', 'Abiertas'], ['por-cobrar', 'Por cobrar'], ['facturada', 'Facturadas'], ['todas', 'Todas']].map(([k, t]) => `<button data-filter="${k}" class="px-3 py-1.5 rounded-md ${listFilter === k ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-slate-500'}">${t}</button>`).join('')}
+        </div>
+        <div class="flex gap-0.5 p-0.5 rounded-lg bg-slate-100 text-xs">
+          ${[['todas', 'Con y sin factura'], ['fiscal', 'Con factura'], ['no-fiscal', 'Sin factura']].map(([k, t]) => `<button data-fiscal="${k}" class="px-3 py-1.5 rounded-md ${fiscalFilter === k ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-slate-500'}">${t}</button>`).join('')}
         </div>
       </div>
       <div class="overflow-x-auto">
@@ -298,7 +306,7 @@ function renderList(app) {
         </tr></thead>
         <tbody>${rows.length === 0 ? '<tr><td colspan="7" class="px-3 py-10 text-center text-slate-400">No hay órdenes en este filtro. Convierte un presupuesto aprobado en orden de venta.</td></tr>' : rows.map(({ o, m, ds }) => `
           <tr data-open="${esc(o.id)}" class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer">
-            <td class="px-3 py-2.5"><div class="font-medium text-slate-900">${esc(o.order_number)}</div><div class="text-[11px] text-slate-400">${fmtDate(o.date)}${o.invoice_ref ? ' · ' + esc(o.invoice_ref) : ''}</div></td>
+            <td class="px-3 py-2.5"><div class="font-medium text-slate-900">${esc(o.order_number)}${isFiscal(o) ? '' : ' <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-slate-600 bg-slate-100">Sin factura</span>'}</div><div class="text-[11px] text-slate-400">${fmtDate(o.date)}${o.invoice_ref ? ' · ' + esc(o.invoice_ref) : ''}</div></td>
             <td class="px-3 py-2.5 text-slate-700">${esc(o.contact_name) || '<span class="text-slate-400">Sin cliente</span>'}</td>
             <td class="px-3 py-2.5 text-right tabular-nums">$${fmtNum(m.total)}</td>
             <td class="px-3 py-2.5 text-right tabular-nums text-slate-500">$${fmtNum(m.paid)}</td>
@@ -311,6 +319,7 @@ function renderList(app) {
     </div>`;
   app.innerHTML = AccountingShell.wrap(AccountingTabs.render('orders'), body);
   app.querySelectorAll('[data-filter]').forEach(b => b.addEventListener('click', () => { listFilter = b.dataset.filter; renderList(app); }));
+  app.querySelectorAll('[data-fiscal]').forEach(b => b.addEventListener('click', () => { fiscalFilter = b.dataset.fiscal; renderList(app); }));
   app.querySelectorAll('[data-open]').forEach(r => r.addEventListener('click', () => { location.hash = `#/contabilidad/ordenes/${r.dataset.open}`; }));
   const search = document.getElementById('o-search');
   search.addEventListener('input', () => { listQuery = search.value; const pos = search.selectionStart; renderList(app); const s2 = document.getElementById('o-search'); s2.focus(); s2.setSelectionRange(pos, pos); });

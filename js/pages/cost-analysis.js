@@ -9,8 +9,11 @@ import AccountingShell, { card } from '../components/accounting-shell.js';
 // rubro y por producto.
 const STATUS = { draft: 'Borrador', in_transit: 'En proceso', closed: 'Completo' };
 const pct = (n) => `${(n * 100).toFixed(1).replace(/\.0$/, '')}%`;
-const diffCell = (est, real) => {
+// En un contenedor en proceso la diferencia solo se muestra si ya se pasó
+// del estimado; si no, falta por pagar ("en curso").
+const diffCell = (est, real, open = false) => {
   if (!(real > 0)) return '<span class="text-slate-300">—</span>';
+  if (open && real <= est + 0.005) return '<span class="text-slate-400">en curso</span>';
   const d = real - est;
   if (Math.abs(d) < 0.005) return '<span class="text-slate-500">$0.00</span>';
   return `<span class="${d > 0 ? 'text-red-600' : 'text-emerald-700'}">${d > 0 ? '+' : '−'}$${fmtNum(Math.abs(d))}</span>`;
@@ -66,13 +69,13 @@ const CostAnalysis = {
                     <td class="py-1.5 text-slate-700">${esc(k.label)}</td>
                     <td class="py-1.5 text-right tabular-nums text-slate-500">$${fmtNum(k.est)}</td>
                     <td class="py-1.5 text-right tabular-nums ${k.real > 0 ? 'text-slate-900' : 'text-slate-300'}">${k.real > 0 ? '$' + fmtNum(k.real) : 'pendiente'}</td>
-                    <td class="py-1.5 text-right tabular-nums">${diffCell(k.est, k.real)}</td>
+                    <td class="py-1.5 text-right tabular-nums">${diffCell(k.est, k.real, a.open)}</td>
                   </tr>`).join('')}
                   <tr class="border-t border-slate-300 font-semibold">
                     <td class="py-1.5">Total</td>
                     <td class="py-1.5 text-right tabular-nums">$${fmtNum(a.estTotal)}</td>
                     <td class="py-1.5 text-right tabular-nums">$${fmtNum(a.realTotal)}</td>
-                    <td class="py-1.5 text-right tabular-nums">${diffCell(a.cats.filter(k => k.real > 0).reduce((s, k) => s + k.est, 0), a.realTotal)}</td>
+                    <td class="py-1.5 text-right tabular-nums">${diffCell(a.cats.filter(k => k.real > 0).reduce((s, k) => s + k.est, 0), a.realTotal, a.open)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -94,10 +97,10 @@ const CostAnalysis = {
           </div>
 
           <div>
-            <h3 class="text-xs font-semibold text-slate-500 mb-1">Costo unitario por producto <span class="font-normal text-slate-400">(ponderado; lo pendiente se toma del estimado)</span></h3>
+            <h3 class="text-xs font-semibold text-slate-500 mb-1">Costo unitario por producto <span class="font-normal text-slate-400">(ponderado; ${a.open ? 'en proceso: lo que falta por pagar se toma del estimado' : 'lo pendiente se toma del estimado'})</span></h3>
             <div class="overflow-x-auto">
             <table class="w-full text-left text-xs">
-              <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="py-1.5">Producto</th><th class="py-1.5 text-right">Cant.</th><th class="py-1.5 text-right">Estimado c/u</th><th class="py-1.5 text-right">Real c/u</th><th class="py-1.5 text-right">Variación</th></tr></thead>
+              <thead><tr class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide"><th class="py-1.5">Producto</th><th class="py-1.5 text-right">Cant.</th><th class="py-1.5 text-right">Estimado c/u</th><th class="py-1.5 text-right">${a.open ? 'Con lo que va c/u' : 'Real c/u'}</th><th class="py-1.5 text-right">Variación</th></tr></thead>
               <tbody>${a.products.map(p => {
                 const v = p.estUnit > 0 ? (p.unit - p.estUnit) / p.estUnit : 0;
                 return `
@@ -132,7 +135,7 @@ const CostAnalysis = {
                 <td class="px-4 py-2"><div class="text-slate-800">${esc(a.container.bl_number || 'Sin BL')}</div><div class="text-[11px] text-slate-400">${STATUS[a.container.status] || esc(a.container.status)}${a.container.operation_date ? ' · ' + esc(String(a.container.operation_date).slice(0, 10)) : ''}</div></td>
                 <td class="px-4 py-2 text-right tabular-nums text-slate-500">$${fmtNum(a.estTotal)}</td>
                 <td class="px-4 py-2 text-right tabular-nums ${a.hasReal ? 'text-slate-900' : 'text-slate-300'}">${a.hasReal ? '$' + fmtNum(a.realTotal) : '—'}</td>
-                <td class="px-4 py-2 text-right tabular-nums">${diffCell(a.cats.filter(k => k.real > 0).reduce((s, k) => s + k.est, 0), a.realTotal)}</td>
+                <td class="px-4 py-2 text-right tabular-nums">${diffCell(a.cats.filter(k => k.real > 0).reduce((s, k) => s + k.est, 0), a.realTotal, a.open)}</td>
                 <td class="px-4 py-2"><div class="flex items-center gap-2"><div class="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full bg-blue-500" style="width:${Math.min(100, a.coverage * 100).toFixed(0)}%"></div></div><span class="text-[11px] text-slate-500 w-10 text-right">${pct(a.coverage)}</span></div></td>
               </tr>`).join('') : '<tr><td colspan="5" class="px-4 py-6 text-center text-slate-400">No hay contenedores en proceso o completos.</td></tr>'}</tbody>
           </table>

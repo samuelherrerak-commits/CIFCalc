@@ -1,4 +1,7 @@
-import { SHEETS_URL, SHEETS_TOKEN } from './sheets-config.js';
+import { SHEETS_URL } from './sheets-config.js';
+
+// Sesión del usuario (ver auth.js). Se lee directo para evitar dependencias circulares.
+const sessionToken = () => { try { return (JSON.parse(localStorage.getItem('cif_session') || 'null') || {}).token || ''; } catch { return ''; } };
 import { isSandbox } from './sandbox.js';
 
 // ============================================
@@ -37,11 +40,12 @@ const BOOL_FIELDS = {
   crm_activities: ['done'],
   promotions: ['active'],
   sales_orders: ['fiscal'],
+  quotes: ['fiscal'],
   accounting_settings: ['iva_enabled', 'prices_include_iva']
 };
 // Valor cuando la celda viene vacía (p. ej. una columna recién agregada a la
 // hoja): una cuenta sin marca se considera activa.
-const BOOL_DEFAULTS = { accounts: { is_active: true }, accounting_settings: { iva_enabled: true } };
+const BOOL_DEFAULTS = { accounts: { is_active: true }, accounting_settings: { iva_enabled: true }, quotes: { fiscal: true } };
 
 // Sheets puede devolver TRUE/FALSE (si la celda no quedó como texto) o
 // 'true'/'false'; se aceptan ambos.
@@ -69,11 +73,14 @@ function normalizeRow(table, row) {
   return out;
 }
 
-async function request(method, query, body) {
-  // Modo prueba: nunca se toca la base de datos real.
-  if (isSandbox()) throw new Error('Modo prueba: no se lee ni escribe en Google Sheets');
+async function request(method, query, body, { auth = false } = {}) {
+  // Modo prueba: nunca se toca la base de datos real (el inicio de sesión sí).
+  if (isSandbox() && !auth) throw new Error('Modo prueba: no se lee ni escribe en Google Sheets');
   if (!SHEETS_URL) throw new Error('SHEETS_URL no configurada');
   const base = SHEETS_URL.endsWith('/') ? SHEETS_URL.slice(0, -1) : SHEETS_URL;
+  const st = sessionToken();
+  if (method === 'GET' && st) query = { ...(query || {}), st };
+  if (body && st && body.st === undefined) body = { ...body, st };
   const params = new URLSearchParams(query || {});
   const target = `${base}?${params.toString()}`;
 
@@ -88,13 +95,17 @@ async function request(method, query, body) {
   const json = await res.json().catch(() => null);
   if (!json || json.ok !== true) {
     const msg = json && json.error ? json.error : `respuesta HTTP ${res.status}`;
-    throw new Error(msg);
+    // Sesión vencida o sin sesión: la app vuelve a pedir usuario y contraseña.
+    if (msg === 'unauthorized' && !(body && body.action === 'login')) window.dispatchEvent(new CustomEvent('cif-auth-required'));
+    const err = new Error(msg);
+    err.code = json && json.code;
+    throw err;
   }
   return json;
 }
 
 export async function select(table) {
-  const json = await request('GET', { table, pt: SHEETS_TOKEN });
+  const json = await request('GET', { table });
   return (json.data || []).map(r => normalizeRow(table, r));
 }
 
@@ -102,16 +113,16 @@ export async function upsert(table, rows) {
   const arr = Array.isArray(rows) ? rows : [rows];
   for (let i = 0; i < arr.length; i += MAX_SEARCH) {
     const chunk = arr.slice(i, i + MAX_SEARCH);
-    await request('POST', null, { action: 'upsert', table, rows: chunk, pt: SHEETS_TOKEN });
+    await request('POST', null, { action: 'upsert', table, rows: chunk });
   }
 }
 
 export async function remove(table, id) {
-  await request('POST', null, { action: 'delete', table, id, pt: SHEETS_TOKEN });
+  await request('POST', null, { action: 'delete', table, id });
 }
 
 export async function removeWhere(table, column, value) {
-  await request('POST', null, { action: 'deleteWhere', table, column, value, pt: SHEETS_TOKEN });
+  await request('POST', null, { action: 'deleteWhere', table, column, value });
 }
 
 // Sube la foto de un producto ya existente (por id) a Google Drive vía el Apps Script
@@ -120,7 +131,11 @@ export async function removeWhere(table, column, value) {
 // Devuelve { id, updated_at, foto_url, foto_file_id }.
 export async function uploadFoto(id, filename, mimeType, dataBase64, table = 'products') {
   const json = await request('POST', null, {
-    action: 'uploadFoto', table, id, filename, mimeType, data: dataBase64, pt: SHEETS_TOKEN
+    action: 'uploadFoto', table, id, filename, mimeType, data: dataBase64
   });
   return { id: json.id, updated_at: json.updated_at, foto_url: json.foto_url, foto_file_id: json.foto_file_id };
+}
+// Acciones de usuarios y sesión (login, logout, me, changePassword, listUsers, saveUser).
+export async function authCall(action, payload = {}) {
+  return request('POST', null, { action, ...payload }, { auth: true });
 }

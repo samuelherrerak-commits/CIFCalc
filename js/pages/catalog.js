@@ -63,7 +63,7 @@ const Catalog = {
               : '<div class="w-10 h-10 rounded-md bg-slate-50"></div>'}</td>
             <td class="p-2">
               <div class="text-sm text-slate-800">${esc(p.name) || '<span class="text-slate-400">Sin nombre</span>'}</div>
-              <div class="text-[11px] font-mono text-slate-400">${esc(p.sku_briggs)}</div>
+              <div class="text-[11px] font-mono text-slate-400">${esc(p.sku_briggs)}${/^PROV-/i.test(p.sku_briggs || '') ? ' <span class="font-sans text-amber-600">· código provisional</span>' : ''}</div>
             </td>
             <td class="p-2 text-slate-500"><div>${esc(p.category)}</div><div class="text-[11px] text-slate-400">${[p.collection, p.color].filter(Boolean).map(esc).join(' · ')}</div></td>
             <td class="p-2 text-right">

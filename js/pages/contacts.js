@@ -1,6 +1,7 @@
 import Store from '../store.js';
 import { esc, fmtNum, fmtInt } from '../utils.js';
-import { salesLines, customerStats, receivableByEntidad, daysBetween } from '../analytics.js';
+import { salesLines, customerStats, orderBalances, daysBetween } from '../analytics.js';
+import { orderMoney } from '../orders.js';
 import { printSalesDocument } from '../components/sales-document.js';
 import { saleDocumentFromJournal } from './sales.js';
 import { quoteDocument, whatsappQuoteLink } from './quotes.js';
@@ -112,8 +113,10 @@ let listState = { query: '', type: '', stage: '', sort: 'revenue' };
 function renderList(app) {
   const destroy = new AbortController();
   const { signal } = destroy;
-  const stats = customerStats();
-  const receivables = receivableByEntidad();
+  // Todo según las órdenes de venta (facturadas o no): lo que pidió y lo que debe.
+  const stats = customerStats(salesLines({ includeOpenOrders: true }));
+  const balances = orderBalances();
+  const owedOf = (c) => ((balances.get(c.id) || balances.get('name:' + String(c.name || '').trim()) || {}).balance) || 0;
   const statFor = (c) => stats.get(c.id) || stats.get('name:' + c.name) || null;
   const t = today();
 
@@ -124,7 +127,7 @@ function renderList(app) {
       .filter(c => !listState.type || c.type === listState.type || (listState.type === 'cliente' && c.type === 'ambos'))
       .filter(c => !listState.stage || (c.stage || 'activo') === listState.stage)
       .filter(c => !q || [c.name, c.rif, c.email, c.phone, c.tags].some(v => String(v || '').toLowerCase().includes(q)))
-      .map(c => ({ c, s: statFor(c), owed: receivables.get(String(c.name || '').trim()) || 0 }));
+      .map(c => ({ c, s: statFor(c), owed: owedOf(c) }));
     const sorters = {
       revenue: (a, b) => (b.s ? b.s.revenue : 0) - (a.s ? a.s.revenue : 0),
       last: (a, b) => String(b.s ? b.s.last : '').localeCompare(String(a.s ? a.s.last : '')),
@@ -237,9 +240,10 @@ function renderProfile(app, contactId) {
   if (!contact) { location.hash = '#/contabilidad/contactos'; return; }
 
   const name = String(contact.name || '').trim();
-  const lines = salesLines().filter(l => l.contactId === contact.id || (!l.contactId && l.entidad.trim() === name));
+  const lines = salesLines({ includeOpenOrders: true }).filter(l => l.contactId === contact.id || (!l.contactId && l.entidad.trim() === name));
   const s = customerStats(lines).values().next().value || { revenue: 0, margin: 0, orders: 0, avgTicket: 0, last: '', first: '', qty: 0 };
-  const owed = receivableByEntidad().get(name) || 0;
+  const bal = orderBalances();
+  const owed = ((bal.get(contact.id) || bal.get('name:' + name) || {}).balance) || 0;
   const orderDates = [...new Set(lines.map(l => l.date))].sort();
   const freq = orderDates.length > 1 ? Math.round(daysBetween(orderDates[0], orderDates[orderDates.length - 1]) / (orderDates.length - 1)) : null;
   const st = stageOf(contact);
@@ -284,20 +288,21 @@ function renderProfile(app, contactId) {
   const comprasHtml = () => {
     const byRef = new Map();
     for (const l of lines) {
-      const r = byRef.get(l.refDoc) || { refDoc: l.refDoc, date: l.date, payment: l.payment, items: 0, qty: 0, total: 0, margin: 0 };
+      const r = byRef.get(l.refDoc) || { refDoc: l.refDoc, orderId: l.orderId || '', orderNumber: l.orderNumber || '', date: l.date, payment: l.payment, items: 0, qty: 0, total: 0, margin: 0 };
       r.items++; r.qty += l.qty; r.total += l.revenue; r.margin += l.margin; byRef.set(l.refDoc, r);
     }
     const docs = [...byRef.values()].sort((a, b) => b.date.localeCompare(a.date));
     return docs.length === 0
       ? '<p class="text-sm text-slate-400 py-8 text-center">Este cliente todavía no tiene compras registradas.</p>'
       : `<table class="w-full text-xs"><thead><tr class="text-[10px] uppercase tracking-wide text-slate-400 text-left">
-          <th class="p-2">Fecha</th><th class="p-2">Venta</th><th class="p-2">Pago</th><th class="p-2 text-right">Productos</th><th class="p-2 text-right">Unid.</th><th class="p-2 text-right">Total</th><th class="p-2 text-right">Margen</th><th class="p-2"></th></tr></thead>
+          <th class="p-2">Fecha</th><th class="p-2">Venta</th><th class="p-2">Pago</th><th class="p-2 text-right">Productos</th><th class="p-2 text-right">Unid.</th><th class="p-2 text-right">Total sin IVA</th><th class="p-2 text-right">Margen</th><th class="p-2 text-right">Saldo</th><th class="p-2"></th></tr></thead>
         <tbody>${docs.map(d => `<tr class="border-t border-slate-100">
-          <td class="p-2">${esc(d.date)}</td><td class="p-2 font-mono">${esc(d.refDoc)}</td><td class="p-2">${esc(d.payment)}</td>
+          <td class="p-2">${esc(d.date)}</td><td class="p-2 font-mono">${esc(d.orderNumber || d.refDoc)}${d.orderNumber && d.refDoc !== d.orderNumber ? ` <span class="text-slate-400">· ${esc(d.refDoc)}</span>` : ''}</td><td class="p-2">${esc(d.payment)}</td>
           <td class="p-2 text-right">${d.items}</td><td class="p-2 text-right">${fmtInt(d.qty)}</td>
           <td class="p-2 text-right font-bold">$${fmtNum(d.total)}</td>
           <td class="p-2 text-right ${d.margin >= 0 ? 'text-emerald-700' : 'text-red-600'}">$${fmtNum(d.margin)}</td>
-          <td class="p-2 text-right"><button data-print-sale="${esc(d.refDoc)}" class="text-slate-500 hover:text-blue-600">Imprimir</button></td></tr>`).join('')}</tbody></table>`;
+          <td class="p-2 text-right">${(() => { const o = d.orderId && Store.getById('sales_orders', d.orderId); const b = o ? Math.max(0, orderMoney(o).balance) : 0; return o ? `<span class="${b > 0.005 ? 'text-slate-900 font-semibold' : 'text-emerald-600'}">$${fmtNum(b)}</span>` : '—'; })()}</td>
+          <td class="p-2 text-right">${d.orderId ? `<a href="#/contabilidad/ordenes/${esc(d.orderId)}" class="text-slate-500 hover:text-blue-600">Ver orden</a>` : `<button data-print-sale="${esc(d.refDoc)}" class="text-slate-500 hover:text-blue-600">Imprimir</button>`}</td></tr>`).join('')}</tbody></table>`;
   };
 
   const productosHtml = () => `

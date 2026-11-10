@@ -2,6 +2,7 @@ import Store from '../store.js';
 import { ensureTodayRates } from '../rates.js';
 import { icon } from './icons.js';
 import { POS_ENABLED, PROMOTIONS_ENABLED, CONTAINER_PAYMENTS_ENABLED } from '../features.js';
+import Auth from '../auth.js';
 
 // Navegación del módulo de Contabilidad, organizada por flujo de trabajo
 // como los ERP modernos (Odoo, Fina): Ventas (todo lo del cliente, hasta lo
@@ -23,12 +24,14 @@ export const ACCOUNTING_SECTIONS = [
     { key: 'income', path: '#/contabilidad/ingresos', label: 'Otros ingresos', icon: 'plus' },
     { key: 'promotions', path: '#/contabilidad/promociones', label: 'Promociones', icon: 'gift', off: !PROMOTIONS_ENABLED }
   ] },
-  { title: 'Gastos y compras', items: [
+  { title: 'Gastos', items: [
     { key: 'expenses', path: '#/contabilidad/gastos', label: 'Gastos', icon: 'wallet' },
-    { key: 'costs', path: '#/contabilidad/costos', label: 'Costos', icon: 'tag' },
-    { key: 'cost-analysis', path: '#/contabilidad/analisis-costos', label: 'Análisis de costos', icon: 'chart' },
-    { key: 'payments', path: '#/contabilidad/pagos', label: 'Contenedores por pagar', icon: 'ship', off: !CONTAINER_PAYMENTS_ENABLED },
     { key: 'payables', path: '#/contabilidad/por-pagar', label: 'Proveedores por pagar', icon: 'receipt' }
+  ] },
+  { title: 'Costos', items: [
+    { key: 'costs', path: '#/contabilidad/costos', label: 'Costos de importación', short: 'Costos', icon: 'tag' },
+    { key: 'cost-analysis', path: '#/contabilidad/analisis-costos', label: 'Análisis de costos', icon: 'chart' },
+    { key: 'payments', path: '#/contabilidad/pagos', label: 'Contenedores por pagar', icon: 'ship', off: !CONTAINER_PAYMENTS_ENABLED }
   ] },
   { title: 'Inventario', items: [
     { key: 'catalog', path: '#/contabilidad/catalogo', label: 'Catálogo', icon: 'tag' },
@@ -43,8 +46,16 @@ export const ACCOUNTING_SECTIONS = [
     { key: 'ledger', path: '#/contabilidad/mayor', label: 'Libro mayor', icon: 'table' },
     { key: 'financials', path: '#/contabilidad/estados', label: 'Estados financieros', icon: 'landmark' },
     { key: 'reports', path: '#/contabilidad/reportes', label: 'Reportes', icon: 'chart' }
+  ] },
+  { title: 'Administración', items: [
+    { key: 'users', path: '#/contabilidad/usuarios', label: 'Usuarios', icon: 'users' }
   ] }
 ];
+
+// Solo lo que el usuario puede abrir (los módulos tildados en Usuarios).
+const visibleSections = () => ACCOUNTING_SECTIONS
+  .map(s => ({ ...s, items: s.items.filter(it => Auth.can(it.key)) }))
+  .filter(s => s.items.length);
 
 const sectionTitle = (s, extra = '') => s.title
   ? `<p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 ${extra}">${s.title}</p>`
@@ -135,13 +146,13 @@ const AccountingTabs = {
         <div class="hidden xl:flex items-center gap-2.5 px-4 pt-4 pb-3 shrink-0">
           <span class="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-300 flex items-center justify-center">${icon('book', 'w-4 h-4')}</span>
           <div class="min-w-0">
-            <p class="text-sm font-semibold text-white leading-tight">Contabilidad</p>
+            <p class="text-sm font-semibold text-white leading-tight">Gestión financiera</p>
             <p class="text-[11px] text-slate-400 truncate">${biz ? biz.replace(/[<>&"]/g, '') : 'Maestro de Costo'}</p>
           </div>
         </div>
         ${modeSwitch(pinned)}
         <nav class="flex-1 min-h-0 overflow-y-auto dark-scroll px-2 xl:px-3 pt-3 xl:pt-1 pb-2 space-y-4 xl:space-y-2">
-          ${ACCOUNTING_SECTIONS.map((s, i) => { const open = isOpen(s, active); return `
+          ${visibleSections().map((s, i) => { const open = isOpen(s, active); return `
             <div>
               ${s.title ? `<button data-nav-sec="${s.title}" class="hidden xl:flex w-full items-center justify-between px-2.5 py-1 mb-0.5 rounded text-[10px] font-semibold uppercase tracking-wider text-blue-200/50 hover:text-blue-100">
                 <span>${s.title}</span><svg class="w-3 h-3 transition ${open ? 'rotate-90' : ''}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg>
@@ -175,7 +186,7 @@ const AccountingTabs = {
 
     const mobileBar = `
       <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 flex">
-        ${MOBILE_KEYS.map(k => ALL_ITEMS.find(i => i.key === k)).map(it => `
+        ${MOBILE_KEYS.filter(k => Auth.can(k)).map(k => ALL_ITEMS.find(i => i.key === k)).map(it => `
           <a href="${it.path}" class="flex-1 flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium ${it.key === active ? 'text-blue-600' : 'text-slate-400'}">
             ${icon(it.icon, 'w-5 h-5')}${it.short || it.label}
           </a>`).join('')}
@@ -186,10 +197,10 @@ const AccountingTabs = {
       <div id="acc-more" class="hidden md:hidden fixed inset-0 z-50 bg-black/30" data-acc-more-close>
         <div class="absolute bottom-0 inset-x-0 bg-white rounded-t-2xl p-4 max-h-[80vh] overflow-y-auto space-y-4">
           <div class="flex justify-between items-center">
-            <p class="font-semibold text-slate-900">Contabilidad</p>
+            <p class="font-semibold text-slate-900">Gestión financiera</p>
             <button data-acc-more-close class="text-slate-400 text-xl leading-none">✕</button>
           </div>
-          ${ACCOUNTING_SECTIONS.map(s => `
+          ${visibleSections().map(s => `
             <div>
               ${sectionTitle(s, 'mb-1.5')}
               <div class="grid grid-cols-3 gap-1.5">

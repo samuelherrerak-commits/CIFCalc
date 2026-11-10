@@ -58,10 +58,13 @@ export function realCostLines(movements, accounts, { date } = {}) {
 // Análisis de un contenedor: estimado vs registrado por rubro y por producto.
 export function analyzeContainer(container, items, lines = []) {
   const { calculated } = computeContainer(container, items);
+  // Mientras el contenedor no se completa, un rubro pagado en parte (p. ej.
+  // el anticipo del FOB) no reemplaza al estimado: se usa el mayor de los dos.
+  const open = container.status !== 'closed';
   const cats = COST_CATEGORIES.map(k => {
     const est = calculated.reduce((s, c) => s + (Number(k.est(c)) || 0), 0);
     const real = lines.filter(m => categoryForCode(m.codigo_cuenta) === k.key).reduce((s, m) => s + (Number(m.debit) || 0), 0);
-    return { key: k.key, label: k.label, code: k.code, estFn: k.est, est: r2(est), real: r2(real), used: real > 0 ? r2(real) : r2(est), hasReal: real > 0 };
+    return { key: k.key, label: k.label, code: k.code, estFn: k.est, est: r2(est), real: r2(real), used: open ? r2(Math.max(real, est)) : (real > 0 ? r2(real) : r2(est)), hasReal: real > 0 };
   });
   const estTotal = r2(cats.reduce((s, k) => s + k.est, 0));
   const realTotal = r2(cats.reduce((s, k) => s + k.real, 0));
@@ -84,7 +87,7 @@ export function analyzeContainer(container, items, lines = []) {
     };
   });
   return {
-    container, cats, estTotal, realTotal, usedTotal,
+    container, open, cats, estTotal, realTotal, usedTotal,
     diff: r2(realTotal - estTotal), coverage: estTotal > 0 ? realTotal / estTotal : 0,
     hasReal: realTotal > 0, products, lines
   };
