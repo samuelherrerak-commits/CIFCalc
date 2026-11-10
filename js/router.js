@@ -78,7 +78,7 @@ const routes = [
   { pattern: /^#\/contabilidad\/fiscal\/([^/]+)$/, handler: 'fiscal', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/reportes\/([^/]+)$/, handler: 'reports', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/diario\/?$/, handler: 'journal', key: 'contabilidad' },
-  { pattern: /^#\/contabilidad\/mayor\/?$/, handler: 'ledger', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/mayor\/?(?:\?.*)?$/, handler: 'ledger', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/usuarios\/?$/, handler: 'users', key: 'contabilidad' }
 ];
 

@@ -1,6 +1,7 @@
 import Store from './store.js';
 import { inferirTipo } from './accounting.js';
 import { analyzeContainer, realCostLines } from './container-costs.js';
+import { accountBalances, isOverdrawn } from './overdrawn.js';
 import { stockOuts } from './analytics.js';
 
 // Estados financieros (VEN-NIF PYME, basada en la NIIF para las PYMES):
@@ -314,6 +315,9 @@ export function buildStatements(p) {
   const info = accountsInfo();
   return {
     issues: dataIssues(movements, p.to),
+    // Cuentas con saldo contrario a su naturaleza o con un tipo que no
+    // corresponde a su código, al cierre del período.
+    overdrawn: accountBalances(movements, Store.getAll('accounts'), p.to).filter(r => isOverdrawn(r) || r.misclassified),
     p,
     bs: balanceSheet(movements, info, p.to, p.from),
     bsPrev: balanceSheet(movements, info, p.pTo, p.pFrom),
