@@ -3,7 +3,7 @@ import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
 import { isSandbox, setSandboxFlag, storageKey } from './sandbox.js';
 import { computeContainer } from './utils.js';
-import { PROMOTIONS_ENABLED, CONTAINER_JOURNAL_ENABLED, STOCK_FROM_CONTAINERS } from './features.js';
+import { PROMOTIONS_ENABLED, CONTAINER_JOURNAL_ENABLED, STOCK_FROM_CONTAINERS, SUPABASE_ENABLED } from './features.js';
 import { analyzeContainer, realCostLines } from './container-costs.js';
 import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping, CHART_OF_ACCOUNTS, inferirTipo, naturalezaForTipo, DEFAULT_CLOSING_MAPPING_CODES } from './accounting.js';
 
@@ -13,7 +13,7 @@ import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete,
 const SANDBOX = isSandbox(); // fijo durante la vida de la página: cambiar de modo recarga
 let sb = null;
 try {
-  if (!SANDBOX && SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
+  if (SUPABASE_ENABLED && !SANDBOX && SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase) {
     sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
 } catch (e) {
