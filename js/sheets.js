@@ -25,7 +25,8 @@ const NUMERIC_FIELDS = {
     'units_per_box', 'box_volume', 'weight_kg', 'fob_unit', 'tariff_rate', 'stock', 'avg_cost', 'sale_price'
   ],
   movements: ['debit', 'credit', 'costo_unitario', 'precio_lista', 'tasa_bcv'],
-  sales_orders: ['subtotal', 'tax', 'total'],
+  sales_orders: ['subtotal', 'tax', 'total', 'fx_bcv', 'fx_usdt', 'fx_factor'],
+  quotes: ['total', 'fx_bcv', 'fx_usdt', 'fx_factor'],
   order_payments: ['amount'],
   contacts: ['discount_pct', 'iva_retention_pct'],
   fiscal_docs: ['total', 'exempt', 'base_general', 'tax_general', 'base_reducida', 'tax_reducida', 'withheld', 'tasa_bcv'],

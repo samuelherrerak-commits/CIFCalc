@@ -354,6 +354,15 @@ export function mountPOS(root, opts) {
       changed();
     },
     refresh: () => { renderCategories(); changed(); },
+    // Multiplica los precios de todas las líneas (cambio de forma de pago:
+    // divisas ↔ bolívares a tasa BCV). Respeta el % de descuento de cada línea.
+    scalePrices: (ratio) => {
+      for (const l of cart) {
+        l.listPrice = r2((Number(l.listPrice) || 0) * ratio);
+        l.unitPrice = Number(l.discountPct) > 0 ? netOf(l.listPrice, l.discountPct) : r2((Number(l.unitPrice) || 0) * ratio);
+      }
+      changed();
+    },
     // Agrega al carrito un producto recién creado (fuera del catálogo).
     addProduct: (product, qty = 1, price = null) => {
       renderCategories();

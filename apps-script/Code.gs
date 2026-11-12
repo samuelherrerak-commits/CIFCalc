@@ -180,7 +180,10 @@ const SCHEMAS = {
     // 'presupuesto' u 'oferta' (oferta personalizada desde el CRM).
     'kind',
     // Con factura (IVA) o sin factura: pasa a la orden de venta al convertir.
-    'fiscal'
+    'fiscal',
+    // Forma de pago: 'divisas' (USD efectivo / USDT) o 'bs' (bolívares a tasa
+    // BCV). En 'bs' los precios van en $ a tasa BCV = precio × (USDT ÷ BCV).
+    'payment_currency', 'fx_bcv', 'fx_usdt', 'fx_factor'
   ],
   // Mapeo contable del cierre de contenedores (una sola fila, id = 'default').
   // Cada columna guarda el id de la cuenta a la que va ese concepto; si una
@@ -220,7 +223,10 @@ const SCHEMAS = {
     'id', 'order_number', 'date', 'quote_id', 'contact_id', 'contact_name',
     'items', 'subtotal', 'tax', 'total', 'fiscal', 'status', 'notes',
     'invoice_ref', 'invoice_number', 'control_number', 'invoice_date',
-    'created_at', 'updated_at'
+    'created_at', 'updated_at',
+    // Forma de pago: 'divisas' (USD efectivo / USDT) o 'bs' (bolívares a tasa
+    // BCV). En 'bs' los precios van en $ a tasa BCV = precio × (USDT ÷ BCV).
+    'payment_currency', 'fx_bcv', 'fx_usdt', 'fx_factor'
   ],
   // Anticipos (antes de facturar) y cobros (después) de una orden, con la
   // foto del comprobante en Drive (foto_url / foto_file_id).
