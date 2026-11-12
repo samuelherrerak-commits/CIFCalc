@@ -18,6 +18,19 @@ function quoteTax(lines, fiscal = true) {
   return { rows: taxSummaryRows(t, fs), total: t.total };
 }
 export const isQuoteFiscal = (q) => !(q.fiscal === false || String(q.fiscal) === 'false');
+export const isBs = (doc) => doc && doc.payment_currency === 'bs';
+const fmtRate = (n) => Number(n || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Pago en bolívares: los precios en divisas se llevan a $ a tasa BCV con la
+// tasa paralela (USDT), para no perder con la brecha cambiaria:
+//   precio $BCV = precio en divisas × (USDT ÷ BCV);  Bs = precio $BCV × BCV.
+export function fxFor(date) {
+  const r = Store.ratesFor(date);
+  const bcv = r ? Number(r.usd_bcv) || 0 : 0, usdt = r ? Number(r.usdt) || 0 : 0;
+  return { bcv, usdt, factor: bcv > 0 && usdt > 0 ? Math.round((usdt / bcv) * 1e6) / 1e6 : 0, date: r ? r.date : '' };
+}
+export const paymentLabel = (doc) => isBs(doc)
+  ? `Bolívares a tasa BCV ${fmtRate(doc.fx_bcv)} (precios ajustados por tasa USDT ${fmtRate(doc.fx_usdt)}, factor ×${Number(doc.fx_factor || 0).toFixed(4)}) · Total Bs ${fmtRate(Number(doc.total || 0) * Number(doc.fx_bcv || 0))}`
+  : 'Divisas (USD en efectivo o USDT)';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { input, label } from '../components/accounting-shell.js';
 
@@ -40,6 +53,7 @@ const FILTERS = [['pendiente', 'Pendientes'], ['aprobado', 'Aprobados'], ['conve
 let homeFilter = 'pendiente';
 let lastEmittedId = null;
 let draftCart = []; // carrito del presupuesto nuevo, sobrevive al cambiar de pestaña
+let draftFx = null; // forma de pago del borrador (sus precios ya están convertidos)
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -52,7 +66,7 @@ export function quoteDocument(q) {
       ? { name: contact.name, rif: contact.rif, address: contact.address, phone: contact.phone, email: contact.email }
       : { name: q.contact_name },
     items: Store.getQuoteItems(q).map(it => ({ name: it.name, sku: it.sku_briggs, qty: it.qty, unit: 'unidad', unitPrice: it.unitPrice, listPrice: it.listPrice, discountPct: it.discountPct })),
-    notes: q.concepto,
+    notes: [q.concepto, `Forma de pago: ${paymentLabel(q)}`].filter(Boolean).join(' · '),
     terms: Store.getBusinessProfile().terms,
     fiscal: (() => {
       const items = Store.getQuoteItems(q);
@@ -167,6 +181,7 @@ function renderHome(app) {
                 <span class="font-mono font-bold text-slate-800">${esc(x.quote_number)}</span>
                 ${x.kind === 'oferta' ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-violet-700 bg-violet-100">Oferta</span>' : ''}
                 ${isQuoteFiscal(x) ? '' : '<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold text-slate-600 bg-slate-100">Sin factura</span>'}
+                ${isBs(x) ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold text-blue-700 bg-blue-50" title="${esc(paymentLabel(x))}">Pago en Bs · Bs ${fmtRate(Number(x.total) * Number(x.fx_bcv))}</span>` : ''}
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-${st.color}-700 bg-${st.color}-100">${st.label}</span>
                 ${isExpired(x) ? '<span class="px-2 py-0.5 rounded-full text-[10px] font-bold text-red-700 bg-red-100">Vencido</span>' : ''}
                 ${x.converted_ref ? `<span class="text-[10px] font-mono text-emerald-700">→ ${esc(x.converted_ref)}</span>` : ''}
@@ -210,6 +225,7 @@ function renderHome(app) {
       });
       const contact = q.contact_id ? Store.getById('contacts', q.contact_id) : null;
       const order = createOrder({ date: new Date().toISOString().slice(0, 10), contact: contact || (q.contact_name ? { id: '', name: q.contact_name } : null), items, fiscal: isQuoteFiscal(q), notes: q.concepto || '', quoteId: q.id });
+      Store.update('sales_orders', { id: order.id, payment_currency: q.payment_currency || 'divisas', fx_bcv: Number(q.fx_bcv) || 0, fx_usdt: Number(q.fx_usdt) || 0, fx_factor: Number(q.fx_factor) || 0 });
       Store.update('quotes', { id, status: 'convertido', converted_ref: order.order_number });
       location.hash = `#/contabilidad/ordenes/${order.id}`;
     });
@@ -309,6 +325,12 @@ function renderBuilder(app, editId, opts = {}) {
   `;
   app.innerHTML = AccountingShell.wrap(AccountingTabs.render('quotes'), body);
 
+  // Forma de pago: 'divisas' o 'bs'. fxApplied = factor con el que están los
+  // precios del carrito ahora (1 en divisas).
+  const fromDraft = !editing && !opts.cliente && draftFx;
+  let payMode = fromDraft ? draftFx.payMode : (editing && isBs(editing) ? 'bs' : 'divisas');
+  let fxApplied = fromDraft ? draftFx.fxApplied : (payMode === 'bs' ? (Number(editing.fx_factor) || 1) : 1);
+  let fxUsed = fromDraft ? draftFx.fxUsed : (payMode === 'bs' ? { bcv: Number(editing.fx_bcv), usdt: Number(editing.fx_usdt), factor: Number(editing.fx_factor) } : null);
   const fiscalNow = () => ((document.getElementById('f-fiscal') || {}).value || (editing && !isQuoteFiscal(editing) ? 'no' : 'si')) !== 'no';
   const pos = mountPOS(document.getElementById('pos-root'), {
     products: () => products,
@@ -317,7 +339,13 @@ function renderBuilder(app, editId, opts = {}) {
     title: isOffer ? 'Oferta' : 'Presupuesto',
     actionLabel: editing ? 'Guardar cambios' : (isOffer ? 'Emitir oferta' : 'Emitir presupuesto'),
     suggestedIds: suggested,
-    priceFor: (p) => Store.priceFor(p, currentContact()),
+    // En bolívares, los precios de lista se multiplican por el factor USDT/BCV.
+    priceFor: (p) => {
+      const pr = Store.priceFor(p, currentContact());
+      if (fxApplied === 1) return pr;
+      const k = fxApplied;
+      return { ...pr, listPrice: Math.round(pr.listPrice * k * 100) / 100, unitPrice: Math.round(pr.unitPrice * k * 100) / 100 };
+    },
     summary: (cart) => quoteTax(cart, fiscalNow()),
     headerFieldsHtml: `
       <div class="grid grid-cols-[minmax(0,1fr)_9.5rem] gap-2">
@@ -332,6 +360,14 @@ function renderBuilder(app, editId, opts = {}) {
             <option value="no" ${editing && !isQuoteFiscal(editing) ? 'selected' : ''}>Sin factura</option>
           </select>
         </div>
+      </div>
+      <div>
+        <label class="${label}">Forma de pago</label>
+        <div class="grid grid-cols-2 gap-1 p-1 rounded-lg bg-slate-100">
+          <button type="button" data-pay="divisas" class="py-1.5 rounded-md text-xs">Divisas (USD / USDT)</button>
+          <button type="button" data-pay="bs" class="py-1.5 rounded-md text-xs">Bolívares (tasa BCV)</button>
+        </div>
+        <p id="f-fx" class="text-[11px] text-slate-500 mt-1"></p>
       </div>
       <button id="f-custom" type="button" class="text-xs font-medium text-blue-600 hover:text-blue-700">+ Producto que no está en el catálogo</button>`,
     // Fecha, validez, notas y descuento en un desplegable: el carrito cabe
@@ -366,7 +402,11 @@ function renderBuilder(app, editId, opts = {}) {
         </div>
       </details>`,
     onCartChange: (cart) => {
-      if (!editing && !opts.cliente) draftCart = cart.map(l => ({ productId: l.product.id, qty: l.qty, unitPrice: l.unitPrice, listPrice: l.listPrice, discountPct: l.discountPct }));
+      setTimeout(renderFx, 0);
+      if (!editing && !opts.cliente) {
+        draftCart = cart.map(l => ({ productId: l.product.id, qty: l.qty, unitPrice: l.unitPrice, listPrice: l.listPrice, discountPct: l.discountPct }));
+        draftFx = { payMode, fxApplied, fxUsed };
+      }
     }
   });
 
@@ -392,7 +432,11 @@ function renderBuilder(app, editId, opts = {}) {
     const fields = {
       date, valid_until: validUntil, contact_id: contactId || '', contact_name: contact ? contact.name : '',
       concepto, items: JSON.stringify(items), total: Math.round(pos.total() * 100) / 100, kind,
-      fiscal: fiscalNow()
+      fiscal: fiscalNow(),
+      payment_currency: payMode,
+      fx_bcv: payMode === 'bs' && fxUsed ? fxUsed.bcv : 0,
+      fx_usdt: payMode === 'bs' && fxUsed ? fxUsed.usdt : 0,
+      fx_factor: payMode === 'bs' && fxUsed ? fxUsed.factor : 0
     };
 
     if (editing) {
@@ -401,6 +445,7 @@ function renderBuilder(app, editId, opts = {}) {
     } else {
       lastEmittedId = Store.insert('quotes', Store.newQuote(fields)).id;
       draftCart = [];
+      draftFx = null;
     }
     homeFilter = 'pendiente';
     location.hash = '#/contabilidad/presupuestos';
@@ -417,9 +462,37 @@ function renderBuilder(app, editId, opts = {}) {
     pos.repriceAll();
   }, { signal });
   document.getElementById('f-fiscal').addEventListener('change', () => pos.refresh(), { signal });
+  // Botón de forma de pago.
+  function renderFx() {
+    document.querySelectorAll('[data-pay]').forEach(b => {
+      const on = b.dataset.pay === payMode;
+      b.className = 'py-1.5 rounded-md text-xs ' + (on ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-slate-500 hover:text-slate-800');
+    });
+    const el = document.getElementById('f-fx');
+    if (!el) return;
+    if (payMode !== 'bs' || !fxUsed) { el.textContent = 'Precios en divisas: se cobran en USD en efectivo o USDT.'; return; }
+    el.innerHTML = `USDT ${fmtRate(fxUsed.usdt)} ÷ BCV ${fmtRate(fxUsed.bcv)} = <strong>×${fxUsed.factor.toFixed(4)}</strong> · precios en $ a tasa BCV · <strong>Total Bs ${fmtRate(pos.total() * fxUsed.bcv)}</strong>`;
+  }
+  document.querySelectorAll('[data-pay]').forEach(b => b.addEventListener('click', () => {
+    const mode = b.dataset.pay;
+    if (mode === payMode) return;
+    if (mode === 'bs') {
+      const fx = fxFor(document.getElementById('f-date').value || today());
+      if (!(fx.factor > 0)) { pos.flash('No hay tasa BCV y USDT guardadas para esa fecha. Revísalas en IVA → Tasas BCV.'); return; }
+      pos.scalePrices(fx.factor / fxApplied);
+      fxApplied = fx.factor; fxUsed = fx;
+    } else {
+      pos.scalePrices(1 / fxApplied);
+      fxApplied = 1; fxUsed = null;
+    }
+    payMode = mode;
+    if (!editing && !opts.cliente) draftFx = { payMode, fxApplied, fxUsed };
+    renderFx();
+  }, { signal }));
+  renderFx();
   document.getElementById('f-custom').addEventListener('click', () => customProductModal((p, qty, price) => {
     products.push(p);
-    pos.addProduct(p, qty, price);
+    pos.addProduct(p, qty, Math.round(price * fxApplied * 100) / 100);
   }), { signal });
   document.getElementById('f-discount-apply').addEventListener('click', () => {
     const pct = Math.max(0, Math.min(90, Number(document.getElementById('f-discount').value) || 0));

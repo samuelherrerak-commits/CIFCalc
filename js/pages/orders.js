@@ -21,6 +21,11 @@ const fmtDate = (iso) => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(
 const isFiscal = (o) => o.fiscal === true || String(o.fiscal) === 'true';
 let listFilter = 'abierta';
 let fiscalFilter = 'todas';
+const fmtRate = (n) => Number(n || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Venta pagada en bolívares: precios en $ a tasa BCV ajustados con la tasa USDT.
+const bsChip = (o, total) => o.payment_currency === 'bs'
+  ? `<span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-blue-700 bg-blue-50" title="USDT ${fmtRate(o.fx_usdt)} ÷ BCV ${fmtRate(o.fx_bcv)} = ×${Number(o.fx_factor || 0).toFixed(4)}">Pago en Bs${total ? ' · Bs ' + fmtRate(total * Number(o.fx_bcv || 0)) : ''}</span>`
+  : '';
 let listQuery = '';
 
 function badge(status) {
@@ -306,7 +311,7 @@ function renderList(app) {
         </tr></thead>
         <tbody>${rows.length === 0 ? '<tr><td colspan="7" class="px-3 py-10 text-center text-slate-400">No hay órdenes en este filtro. Convierte un presupuesto aprobado en orden de venta.</td></tr>' : rows.map(({ o, m, ds }) => `
           <tr data-open="${esc(o.id)}" class="border-t border-slate-100 hover:bg-slate-50 cursor-pointer">
-            <td class="px-3 py-2.5"><div class="font-medium text-slate-900">${esc(o.order_number)}${isFiscal(o) ? '' : ' <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-slate-600 bg-slate-100">Sin factura</span>'}</div><div class="text-[11px] text-slate-400">${fmtDate(o.date)}${o.invoice_ref ? ' · ' + esc(o.invoice_ref) : ''}</div></td>
+            <td class="px-3 py-2.5"><div class="font-medium text-slate-900">${esc(o.order_number)}${isFiscal(o) ? '' : ' <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-slate-600 bg-slate-100">Sin factura</span>'}${bsChip(o)}</div><div class="text-[11px] text-slate-400">${fmtDate(o.date)}${o.invoice_ref ? ' · ' + esc(o.invoice_ref) : ''}</div></td>
             <td class="px-3 py-2.5 text-slate-700">${esc(o.contact_name) || '<span class="text-slate-400">Sin cliente</span>'}</td>
             <td class="px-3 py-2.5 text-right tabular-nums">$${fmtNum(m.total)}</td>
             <td class="px-3 py-2.5 text-right tabular-nums text-slate-500">$${fmtNum(m.paid)}</td>
@@ -350,7 +355,8 @@ function renderDetail(app, id) {
       <div class="flex items-start gap-3">
         <a href="#/contabilidad/ordenes" class="mt-1 w-8 h-8 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 flex items-center justify-center text-slate-500">←</a>
         <div>
-          <div class="flex items-center gap-2"><h1 class="text-xl font-semibold text-slate-900">${esc(order.order_number)}</h1>${badge(order.status)}</div>
+          <div class="flex items-center gap-2"><h1 class="text-xl font-semibold text-slate-900">${esc(order.order_number)}</h1>${badge(order.status)}${bsChip(order, m.total)}</div>
+          ${order.payment_currency === 'bs' ? `<p class="text-[11px] text-slate-500">Pago en bolívares: precios en $ a tasa BCV ${fmtRate(order.fx_bcv)}, ajustados por tasa USDT ${fmtRate(order.fx_usdt)} (×${Number(order.fx_factor || 0).toFixed(4)}).</p>` : ''}
           <p class="text-sm text-slate-600">${esc(order.contact_name) || 'Sin cliente'} · ${fmtDate(order.date)}${order.invoice_ref ? ` · Factura <span class="font-mono">${esc(order.invoice_ref)}</span>${order.invoice_number ? ' (N.º ' + esc(order.invoice_number) + ')' : ''}` : ''}</p>
         </div>
       </div>
