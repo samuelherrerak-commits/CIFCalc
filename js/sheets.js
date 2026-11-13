@@ -136,6 +136,12 @@ export async function uploadFoto(id, filename, mimeType, dataBase64, table = 'pr
   });
   return { id: json.id, updated_at: json.updated_at, foto_url: json.foto_url, foto_file_id: json.foto_file_id };
 }
+// Factura digital (einvoiceInfo, einvoiceEmit). Va al Apps Script aun en modo
+// prueba, marcada como prueba: ahí solo contesta el simulador y no se registra.
+export async function einvoiceCall(action, payload = {}) {
+  return request('POST', null, { action, ...payload, sandbox: isSandbox() }, { auth: true });
+}
+
 // Acciones de usuarios y sesión (login, logout, me, changePassword, listUsers, saveUser).
 export async function authCall(action, payload = {}) {
   return request('POST', null, { action, ...payload }, { auth: true });

@@ -6,6 +6,7 @@ import {
   dispatchStatus, registerPayment, registerDispatch, invoiceOrder, attachProof, orderDocument
 } from '../orders.js';
 import { printSalesDocument } from '../components/sales-document.js';
+import { einvoiceInfo, emitEinvoice } from '../einvoice.js';
 import { printPage } from '../components/print-page.js';
 import { icon } from '../components/icons.js';
 import AccountingTabs from '../components/accounting-tabs.js';
@@ -237,10 +238,19 @@ function invoiceModal(order, onDone) {
   const ds = dispatchStatus(order);
   const md = modal(`${fiscal ? 'Facturar' : 'Emitir nota de entrega'} · ${esc(order.order_number)}`, `
     ${!ds.complete ? `<p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg p-2">Quedan ${fmtInt(ds.pending)} unidades por despachar. Puedes facturar ahora y despachar después.</p>` : ''}
+    ${fiscal ? `
+    <div class="flex gap-1 bg-slate-100 rounded-lg p-1 text-xs">
+      <button type="button" data-imode="digital" class="flex-1 px-3 py-1.5 rounded-md">Factura digital</button>
+      <button type="button" data-imode="manual" class="flex-1 px-3 py-1.5 rounded-md">Número manual</button>
+    </div>
+    <div id="i-digital" class="rounded-lg border border-slate-200 p-3 text-xs text-slate-600 space-y-1">
+      <p>La imprenta digital asigna el <strong>número de factura</strong> y el <strong>número de control</strong>. Se emite con fecha de hoy.</p>
+      <p id="i-provider" class="text-slate-400">Consultando la imprenta…</p>
+    </div>` : ''}
     <div class="grid grid-cols-2 gap-3">
       <div><label class="${label}">Fecha *</label><input id="i-date" type="date" value="${today()}" class="${input}"></div>
-      ${fiscal ? `<div><label class="${label}">N.º factura fiscal</label><input id="i-number" type="text" class="${input}"></div>
-      <div><label class="${label}">N.º de control</label><input id="i-control" type="text" placeholder="00-000000" class="${input}"></div>` : ''}
+      ${fiscal ? `<div data-manual><label class="${label}">N.º factura fiscal</label><input id="i-number" type="text" class="${input}"></div>
+      <div data-manual><label class="${label}">N.º de control</label><input id="i-control" type="text" placeholder="00-000000" class="${input}"></div>` : ''}
     </div>
     <div class="rounded-xl bg-slate-50 p-3 text-sm space-y-1">
       <div class="flex justify-between"><span class="text-slate-500">Total ${fiscal ? 'con IVA' : ''}</span><span class="tabular-nums">$${fmtNum(m.total)}</span></div>
@@ -250,9 +260,52 @@ function invoiceModal(order, onDone) {
       ${m.advances > due ? `<p class="text-xs text-amber-700">El cliente pagó $${fmtNum(m.advances - due)} de más: queda como saldo a su favor en Anticipos de clientes.</p>` : ''}
     </div>
     <p class="text-[11px] text-slate-400">Asiento: Debe Anticipos de clientes${m.withheld > 0 ? ' + IVA retenido' : ''} + Cuentas por cobrar / Haber Ingresos por ventas${fiscal ? ' + IVA débito fiscal' : ''}.</p>`, { saveLabel: fiscal ? 'Facturar' : 'Emitir nota' });
-  md.$('m-save').addEventListener('click', () => {
+  let mode = fiscal ? 'digital' : 'manual';
+  const setMode = (m) => {
+    mode = m;
+    md.el.querySelectorAll('[data-imode]').forEach(b => { b.className = `flex-1 px-3 py-1.5 rounded-md ${b.dataset.imode === m ? 'bg-white text-slate-900 font-semibold shadow-sm' : 'text-slate-500'}`; });
+    md.el.querySelectorAll('[data-manual]').forEach(el => el.classList.toggle('hidden', m === 'digital'));
+    if (md.$('i-digital')) md.$('i-digital').classList.toggle('hidden', m !== 'digital');
+    const d = md.$('i-date');
+    if (m === 'digital') d.value = today();
+    d.disabled = m === 'digital';
+    md.$('m-save').textContent = m === 'digital' ? 'Emitir factura digital' : (fiscal ? 'Facturar' : 'Emitir nota');
+  };
+  md.el.querySelectorAll('[data-imode]').forEach(b => b.addEventListener('click', () => setMode(b.dataset.imode)));
+  if (fiscal) {
+    setMode('digital');
+    einvoiceInfo().then(info => {
+      const el = md.$('i-provider');
+      if (!el) return;
+      if (info.missing && info.missing.length) { el.className = 'text-red-600'; el.textContent = 'Falta configurar Cachicamo en el Apps Script: ' + info.missing.join(', '); return; }
+      el.className = info.simulated ? 'text-amber-700 font-medium' : 'text-emerald-700 font-medium';
+      el.textContent = info.simulated
+        ? 'Simulador de Cachicamo: los números son de prueba y la factura no tiene validez fiscal.'
+        : 'Conectado a Cachicamo (imprenta digital).';
+    }).catch(err => {
+      const el = md.$('i-provider');
+      if (el) { el.className = 'text-red-600'; el.textContent = 'No se pudo consultar la imprenta: ' + err.message; }
+    });
+  }
+  md.$('m-save').addEventListener('click', async () => {
     const date = md.$('i-date').value;
     if (!date) return md.msg('La fecha es obligatoria.');
+    if (mode === 'digital') {
+      const btn = md.$('m-save');
+      btn.disabled = true;
+      btn.textContent = 'Emitiendo…';
+      md.msg('');
+      try {
+        const inv = await emitEinvoice(Store.getById('sales_orders', order.id) || order);
+        invoiceOrder(order, { date: inv.issueDate || today(), invoiceNumber: inv.number, controlNumber: inv.control, einvoice: inv });
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Emitir factura digital';
+        return md.msg(err.message);
+      }
+      md.close();
+      return onDone();
+    }
     invoiceOrder(order, { date, invoiceNumber: md.$('i-number') ? md.$('i-number').value.trim() : '', controlNumber: md.$('i-control') ? md.$('i-control').value.trim() : '' });
     md.close();
     onDone();
@@ -357,7 +410,7 @@ function renderDetail(app, id) {
         <div>
           <div class="flex items-center gap-2"><h1 class="text-xl font-semibold text-slate-900">${esc(order.order_number)}</h1>${badge(order.status)}${bsChip(order, m.total)}</div>
           ${order.payment_currency === 'bs' ? `<p class="text-[11px] text-slate-500">Pago en bolívares: precios en $ a tasa BCV ${fmtRate(order.fx_bcv)}, ajustados por tasa USDT ${fmtRate(order.fx_usdt)} (×${Number(order.fx_factor || 0).toFixed(4)}).</p>` : ''}
-          <p class="text-sm text-slate-600">${esc(order.contact_name) || 'Sin cliente'} · ${fmtDate(order.date)}${order.invoice_ref ? ` · Factura <span class="font-mono">${esc(order.invoice_ref)}</span>${order.invoice_number ? ' (N.º ' + esc(order.invoice_number) + ')' : ''}` : ''}</p>
+          <p class="text-sm text-slate-600">${esc(order.contact_name) || 'Sin cliente'} · ${fmtDate(order.date)}${order.invoice_ref ? ` · Factura <span class="font-mono">${esc(order.invoice_ref)}</span>${order.invoice_number ? ' (N.º ' + esc(order.invoice_number) + (order.control_number ? ' · Control ' + esc(order.control_number) : '') + ')' : ''}` : ''}${order.einvoice_uuid ? (order.einvoice_provider === 'simulador' ? ' <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-amber-800 bg-amber-100">Factura digital simulada</span>' : ' <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-emerald-700 bg-emerald-50">Factura digital</span>') : ''}${order.einvoice_pdf_url ? ` · <a href="${esc(order.einvoice_pdf_url)}" target="_blank" rel="noopener" class="text-blue-600 hover:underline">PDF</a>` : ''}</p>
         </div>
       </div>
       <div class="flex flex-wrap gap-2">

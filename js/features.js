@@ -21,3 +21,10 @@ export const CONTAINER_JOURNAL_ENABLED = false;
 // Existencias desde el contenedor: apagado. Completar un contenedor es la
 // compra; la mercancía entra al inventario con la Recepción (Existencias).
 export const STOCK_FROM_CONTAINERS = false;
+
+// Supabase: apagado. La base de datos es Google Sheets (protegida con el
+// inicio de sesión en el Apps Script). Supabase se conectaba con una llave
+// pública que está en el código de la página, así que cualquiera podía leer
+// y escribir ahí sin iniciar sesión. Con esto la app no lee ni escribe nada
+// en Supabase.
+export const SUPABASE_ENABLED = false;
