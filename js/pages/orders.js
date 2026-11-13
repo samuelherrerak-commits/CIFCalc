@@ -6,7 +6,7 @@ import {
   dispatchStatus, registerPayment, registerDispatch, invoiceOrder, attachProof, orderDocument
 } from '../orders.js';
 import { printSalesDocument } from '../components/sales-document.js';
-import { einvoiceInfo, emitEinvoice } from '../einvoice.js';
+import { einvoiceInfo, emitEinvoice, sendEinvoiceEmail, einvoicePdfLink, whatsappText, waLink } from '../einvoice.js';
 import { printPage } from '../components/print-page.js';
 import { icon } from '../components/icons.js';
 import AccountingTabs from '../components/accounting-tabs.js';
@@ -61,6 +61,8 @@ function modal(title, bodyHtml, { saveLabel = 'Guardar', wide = false } = {}) {
 function printOrder(order) {
   printSalesDocument(orderDocument(order), Store.getBusinessProfile());
 }
+
+const contactOf = (order) => (order.contact_id ? Store.getById('contacts', order.contact_id) : null) || {};
 
 const clientOf = (order) => {
   const c = order.contact_id ? Store.getById('contacts', order.contact_id) : null;
@@ -246,6 +248,7 @@ function invoiceModal(order, onDone) {
     <div id="i-digital" class="rounded-lg border border-slate-200 p-3 text-xs text-slate-600 space-y-1">
       <p>La imprenta digital asigna el <strong>número de factura</strong> y el <strong>número de control</strong>. Se emite con fecha de hoy.</p>
       <p id="i-provider" class="text-slate-400">Consultando la imprenta…</p>
+      ${contactOf(order).email ? `<label class="flex items-center gap-2 pt-1 text-slate-700"><input id="i-email" type="checkbox" checked class="w-4 h-4 accent-blue-600"> Enviarla por correo a <strong>${esc(contactOf(order).email)}</strong></label>` : '<p class="pt-1 text-slate-400">El cliente no tiene correo registrado: no se enviará por correo.</p>'}
     </div>` : ''}
     <div class="grid grid-cols-2 gap-3">
       <div><label class="${label}">Fecha *</label><input id="i-date" type="date" value="${today()}" class="${input}"></div>
@@ -298,6 +301,11 @@ function invoiceModal(order, onDone) {
       try {
         const inv = await emitEinvoice(Store.getById('sales_orders', order.id) || order);
         invoiceOrder(order, { date: inv.issueDate || today(), invoiceNumber: inv.number, controlNumber: inv.control, einvoice: inv });
+        const mailTo = md.$('i-email') && md.$('i-email').checked ? contactOf(order).email : '';
+        if (mailTo && !inv.emailedTo) {
+          btn.textContent = 'Enviando correo…';
+          try { await sendEinvoiceEmail(order, mailTo); } catch (e) { alert(`La factura se emitió, pero no se pudo enviar el correo: ${e.message}\nPuedes reenviarla con el botón "Enviar por correo".`); }
+        }
       } catch (err) {
         btn.disabled = false;
         btn.textContent = 'Emitir factura digital';
@@ -417,6 +425,7 @@ function renderDetail(app, id) {
         <button id="a-print" class="${btnSecondary}">Imprimir</button>
         ${order.status !== 'anulada' ? `<button id="a-pay" class="${btnSecondary}">${open ? 'Registrar anticipo' : 'Registrar cobro'}</button>` : ''}
         ${order.status !== 'anulada' && !ds.complete ? `<button id="a-dispatch" class="${btnSecondary}">Registrar despacho</button>` : ''}
+        ${order.einvoice_uuid ? `<button id="a-mail" class="${btnSecondary}">Enviar por correo</button><button id="a-wa" class="${btnSecondary}">WhatsApp</button>` : ''}
         ${open ? `<button id="a-invoice" class="${btnPrimary}">${fiscal ? 'Facturar' : 'Emitir nota de entrega'}</button>` : ''}
       </div>
     </div>
@@ -549,6 +558,26 @@ function renderDetail(app, id) {
     if (document.getElementById('a-dispatch')) dispatchModal(Store.getById('sales_orders', id), refresh);
   }
   on('a-invoice', () => invoiceModal(Store.getById('sales_orders', id), refresh));
+  on('a-mail', async () => {
+    const o = Store.getById('sales_orders', id);
+    const to = prompt('Enviar la factura por correo a:', contactOf(o).email || '');
+    if (!to) return;
+    try { await sendEinvoiceEmail(o, to.trim()); alert(`Factura enviada a ${to.trim()}.`); } catch (e) { alert('No se pudo enviar: ' + e.message); }
+  });
+  on('a-wa', async () => {
+    const o = Store.getById('sales_orders', id);
+    const phone = contactOf(o).phone || prompt('Número de WhatsApp del cliente (ej. 0414-1234567):', '');
+    if (!phone) return;
+    const w = window.open('', '_blank'); // se abre ya para que el navegador no lo bloquee
+    try {
+      const url = await einvoicePdfLink(o);
+      const link = waLink(phone, whatsappText(o, url));
+      if (w) w.location.href = link; else location.href = link;
+    } catch (e) {
+      if (w) w.close();
+      alert('No se pudo preparar el WhatsApp: ' + e.message);
+    }
+  });
   const fiscalBox = document.getElementById('a-fiscal');
   if (fiscalBox) fiscalBox.addEventListener('change', () => { Store.update('sales_orders', { id, fiscal: fiscalBox.checked }); refresh(); });
   // Subir comprobante que faltó.
