@@ -1336,50 +1336,53 @@ function einvInvoiceHtml_(row, inv) {
   const retIva = r2_(Number(row.tax) * retPct / 100);
   const sim = row.provider === 'simulador';
   const logoOk = /^(data:image\/|https:\/\/)/.test(String(is.logo || ''));
-  const logo = logoOk ? '<img src="' + einvEsc_(is.logo) + '" style="max-height:62px;max-width:200px">' : '<div style="font-size:22px;font-weight:bold;font-style:italic">' + einvEsc_(is.name) + '</div>';
-  const wm = logoOk ? '<img src="' + einvEsc_(is.logo) + '" style="width:330px;opacity:0.10">' : '';
+  const logo = logoOk ? '<img src="' + einvEsc_(is.logo) + '" style="max-height:92px;max-width:230px">' : '<div style="font-size:22px;font-weight:bold;font-style:italic">' + einvEsc_(is.name) + '</div>';
+  const wm = logoOk && (inv.lines || []).length <= 8 ? '<div class="wm"><img src="' + einvEsc_(is.logo) + '" style="width:420px;opacity:0.08"></div>' : '';
   const kv = function (k, v, cls) { return '<tr><td class="k">' + k + '</td><td' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</td></tr>'; };
   const tot = function (k, v, strong) { return '<tr><td class="k">' + k + '</td><td class="cur">' + cur + '</td><td class="r">' + (strong ? '<b>' + v + '</b>' : v) + '</td></tr>'; };
   const social = [is.phone ? 'WhatsApp ' + einvEsc_(is.phone) : '', is.instagram ? 'Instagram ' + einvEsc_(is.instagram) : '', is.email ? einvEsc_(is.email) : '']
     .filter(String).map(function (t) { return '<span class="pill">' + t + '</span>'; }).join(' ');
   return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
     '@page{size:letter;margin:0}' +
-    'body{font-family:Arial,Helvetica,sans-serif;font-size:8.5px;color:#222;margin:0}' +
-    'table{border-collapse:collapse;font-size:8.5px}td,th{vertical-align:top;padding:1px 3px}' +
-    '.page{width:740px;margin:0 auto;padding:30px 0 0}' +
+    'body{font-family:Arial,Helvetica,sans-serif;font-size:10px;color:#222;margin:0}' +
+    'table{border-collapse:collapse;font-size:10px}td,th{vertical-align:top;padding:1.5px 3px}' +
+    // Página carta completa: arriba encabezado y renglones, abajo totales y pie.
+    '.page{position:relative;width:740px;height:1010px;margin:0 auto;padding-top:26px;overflow:hidden}' +
+    '.bottom{position:absolute;left:0;right:0;bottom:0}' +
+    '.wm{position:absolute;left:0;right:0;top:400px;text-align:center}' +
     '.k{font-weight:bold;white-space:nowrap;padding-right:4px}.r{text-align:right}.c{text-align:center}' +
-    '.red{color:#e00000;font-weight:bold;font-size:11px}' +
+    '.red{color:#e00000;font-weight:bold;font-size:13px}' +
     '.items{width:100%;margin-top:14px}.items th{background:#e6e7e9;font-weight:normal;color:#444;padding:6px 3px;text-align:center}' +
     '.items th.l,.items td.l{text-align:left}.items td{padding:5px 3px}' +
     '.cur{padding:1px 10px;color:#333}' +
-    '.pill{display:inline-block;border:1px solid #1f8fd1;color:#1f8fd1;border-radius:10px;padding:2px 8px;margin:0 3px;font-size:7.5px}' +
-    '.legal{font-size:6.5px;color:#333;text-align:center;line-height:1.35}' +
+    '.pill{display:inline-block;border:1px solid #1f8fd1;color:#1f8fd1;border-radius:10px;padding:2px 9px;margin:0 3px;font-size:8.5px}' +
+    '.legal{font-size:7.5px;color:#333;text-align:center;line-height:1.4}' +
     '.bar{height:7px;background:#0b2a4a;border-top:3px solid #1f8fd1;margin-top:8px}' +
-    '.sim{color:#c2410c;font-weight:bold;font-size:8px;text-align:center;letter-spacing:.5px;padding:3px 0}' +
+    '.sim{position:absolute;left:0;right:0;top:6px;color:#c2410c;font-weight:bold;font-size:9px;text-align:center;letter-spacing:.5px}' +
     '</style></head><body><div class="page">' +
     (sim ? '<div class="sim">EJEMPLO · FACTURA SIMULADA · SIN VALIDEZ FISCAL</div>' : '') +
     // Encabezado: logo a la izquierda, datos del emisor a la derecha.
     '<table style="width:100%"><tr><td style="width:50%;padding-top:4px">' + logo + '</td>' +
-    '<td style="padding-left:10px"><div style="font-size:10.5px;font-weight:bold">' + einvEsc_(is.name) + '</div>' +
-    '<div style="font-size:10px;font-weight:bold">R.I.F.: ' + einvEsc_(is.rif) + '</div>' +
-    '<div style="font-size:7.5px;line-height:1.35">Dirección: ' + einvEsc_(is.address) + '<br>Teléfono: ' + einvEsc_(is.phone) +
+    '<td style="padding-left:10px"><div style="font-size:12.5px;font-weight:bold">' + einvEsc_(is.name) + '</div>' +
+    '<div style="font-size:12px;font-weight:bold">R.I.F.: ' + einvEsc_(is.rif) + '</div>' +
+    '<div style="font-size:8.5px;line-height:1.4;margin-top:2px">Dirección: ' + einvEsc_(is.address) + '<br>Teléfono: ' + einvEsc_(is.phone) +
     (is.email ? ' · ' + einvEsc_(is.email) : '') + (is.instagram ? '<br>' + einvEsc_(is.instagram) : '') + '</div></td></tr></table>' +
     // Cliente a la izquierda, documento a la derecha.
-    '<table style="width:100%;margin-top:26px"><tr><td style="width:60%"><table>' +
+    '<table style="width:100%;margin-top:34px"><tr><td style="width:58%"><table>' +
     kv('Nombre o Razón Social:', einvEsc_(row.customer_name)) + kv('Teléfono:', einvEsc_(c.phone)) +
     kv('Domicilio Fiscal:', einvEsc_(c.address)) + kv('N° Identificación:', einvEsc_(row.customer_rif)) +
     '<tr><td colspan="2" style="height:8px"></td></tr>' +
     kv('Vendedor:', einvEsc_(inv.seller || row.user || '')) + kv('Días de Créditos:', String(Number(inv.credit_days) || 0)) +
     kv('Condiciones de pago:', einvEsc_(inv.conditions || 'CONTADO')) + '</table></td>' +
-    '<td><div style="font-size:10px;font-weight:bold;margin-bottom:2px">FACTURA</div><table>' +
+    '<td><div style="font-size:12px;font-weight:bold;margin-bottom:2px">FACTURA</div><table>' +
     kv('N° de Documento:', einvEsc_(row.invoice_number)) + kv('Fecha de Emisión:', fecha) + kv('Hora de Emisión:', hora) +
     kv('N° de Control:', einvEsc_(row.control_number), 'red') + kv('Fecha de Asignación:', fecha) +
     '<tr><td colspan="2" style="height:8px"></td></tr>' + kv('Orden de venta:', einvEsc_(row.order_number)) + '</table></td></tr></table>' +
     // Renglones.
-    '<table class="items"><tr><th class="l" style="width:11%">Código</th><th style="width:33%">Descripción</th><th>Cantidad</th><th>Precio Unitario</th><th>Alícuota I.V.A</th><th>Total</th></tr>' +
+    '<table class="items" style="margin-top:22px"><tr><th class="l" style="width:11%">Código</th><th style="width:33%">Descripción</th><th>Cantidad</th><th>Precio Unitario</th><th>Alícuota I.V.A</th><th>Total</th></tr>' +
     lines + '</table>' +
-    // Espacio con la marca de agua (logo del emisor, tenue).
-    '<div style="height:' + Math.max(40, 330 - (inv.lines || []).length * 22) + 'px;text-align:center;padding-top:30px;overflow:hidden">' + ((inv.lines || []).length <= 8 ? wm : '') + '</div>' +
+    wm +
+    '<div class="bottom">' +
     // Retenciones y totales.
     '<table style="width:100%"><tr><td style="width:42%"><table style="width:88%">' +
     '<tr><td class="k">Retención I.V.A.' + (retPct ? ' (' + retPct + '%)' : '') + ':</td><td class="r">' + num(retIva) + '</td></tr>' +
@@ -1400,7 +1403,7 @@ function einvInvoiceHtml_(row, inv) {
     '[RAZÓN SOCIAL Y RIF DE LA IMPRENTA DIGITAL] · [DIRECCIÓN DE LA IMPRENTA] · Imprenta Digital autorizada mediante Providencia SENIAT [N.º] de fecha [FECHA].<br>' +
     'Nros. de Control desde el [00-00000001] hasta el [00-00000000] generados digitalmente en fecha [FECHA].' +
     (sim ? '<br><b style="color:#c2410c">Ejemplo generado por CIFCalc con el simulador: no es una factura fiscal.</b>' : '') + '</td></tr></table>' +
-    '<div class="bar"></div></div></body></html>';
+    '<div class="bar"></div></div></div></body></html>';
 }
 
 /** Envía la factura por correo al cliente, con el PDF adjunto. */
