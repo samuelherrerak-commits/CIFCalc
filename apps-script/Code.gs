@@ -1274,7 +1274,10 @@ function einvSandboxRow_(inv) {
     invoice_number: inv.number, control_number: inv.control || '', issue_date: inv.issue_date || '',
     customer_rif: einvDni_(c.rif), customer_name: c.name || '', subtotal: Number(inv.subtotal) || 0, tax: Number(inv.tax) || 0,
     total: Number(inv.total) || 0, rate: 0, pdf_url: '', status: 'emitida',
-    request: JSON.stringify({ customer: { address: c.address || '' }, lines: inv.lines || [] })
+    request: JSON.stringify({
+      customer: { address: c.address || '', phone: c.phone || '' }, lines: inv.lines || [], rate_bcv: Number(inv.rate_bcv) || 0,
+      retention_pct: Number(inv.retention_pct) || 0, conditions: inv.conditions || '', credit_days: Number(inv.credit_days) || 0, seller: inv.seller || ''
+    })
   };
 }
 
@@ -1284,7 +1287,7 @@ function einvFind_(orderId) {
 
 function einvIssuer_() {
   const s = readTable_('accounting_settings').filter(function (r) { return r.id === 'default'; })[0] || {};
-  return { name: s.issuer_name || '', rif: s.issuer_rif || '', address: s.issuer_address || '', phone: s.issuer_phone || '', email: s.issuer_email || '' };
+  return { name: s.issuer_name || '', rif: s.issuer_rif || '', address: s.issuer_address || '', phone: s.issuer_phone || '', email: s.issuer_email || '', logo: s.issuer_logo || '' };
 }
 
 const einvEsc_ = function (s) {
@@ -1298,26 +1301,83 @@ function einvPdfBlob_(row) {
   if (m) return DriveApp.getFileById(m[1]).getBlob().setName('Factura_' + row.invoice_number + '.pdf');
   let inv = {};
   try { inv = JSON.parse(row.request || '{}'); } catch (e) { inv = {}; }
+  return Utilities.newBlob(einvInvoiceHtml_(row, inv), 'text/html', 'factura.html').getAs('application/pdf').setName('Factura_' + row.invoice_number + '.pdf');
+}
+
+/**
+ * Factura simulada con la distribución habitual de una factura de imprenta
+ * digital venezolana (datos del cliente y del documento arriba, renglones,
+ * retenciones a la izquierda y totales en Bs a la derecha). Lleva los datos
+ * de la empresa emisora; el QR y la leyenda de la providencia los pone la
+ * imprenta real.
+ */
+function einvInvoiceHtml_(row, inv) {
   const is = einvIssuer_();
-  const ivaLabel = { G: 'G (16%)', R: 'R (8%)', E: 'E (exento)' };
+  const c = inv.customer || {};
+  const rate = Number(inv.rate_bcv) || 0;
+  const tz = 'America/Caracas';
+  const created = row.created_at ? new Date(row.created_at) : new Date();
+  const fecha = Utilities.formatDate(created, tz, 'dd-MM-yyyy');
+  const hora = Utilities.formatDate(created, tz, 'hh:mm:ss a');
+  const bs = function (n) {
+    const v = (Number(n) || 0) * (rate || 1);
+    const p = v.toFixed(2).split('.');
+    return (rate ? 'Bs. ' : '$ ') + p[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.') + ',' + p[1];
+  };
+  const alic = { G: '(G) 16%', R: '(R) 8%', E: '(E) Exento' };
   const lines = (inv.lines || []).map(function (l) {
-    return '<tr><td>' + einvEsc_(l.sku) + '</td><td>' + einvEsc_(l.name) + '</td><td class="r">' + einvEsc_(l.qty) + '</td><td class="r">' + einvMoney_(l.unit_price) +
-      '</td><td class="c">' + (ivaLabel[l.iva] || '') + '</td><td class="r">' + einvMoney_(Number(l.qty) * Number(l.unit_price)) + '</td></tr>';
+    return '<tr><td>' + einvEsc_(l.sku) + '</td><td>' + einvEsc_(l.name) + '</td><td class="r">' + einvEsc_(l.qty) +
+      '</td><td class="r">' + bs(l.unit_price) + '</td><td class="c">' + (alic[l.iva] || '') + '</td><td class="r">' + bs(Number(l.qty) * Number(l.unit_price)) + '</td></tr>';
   }).join('');
+  const exento = (inv.lines || []).filter(function (l) { return l.iva === 'E'; }).reduce(function (s, l) { return s + Number(l.qty) * Number(l.unit_price); }, 0);
+  const retPct = Number(inv.retention_pct) || 0;
+  const retIva = r2_(Number(row.tax) * retPct / 100);
+  const k = function (t) { return '<b>' + t + ':</b> '; };
   const sim = row.provider === 'simulador';
-  const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
-    'body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;margin:24px}h1{font-size:18px;margin:0}' +
-    'table{width:100%;border-collapse:collapse;margin-top:14px;font-size:11px}th,td{padding:5px;border-bottom:1px solid #e2e8f0;text-align:left}' +
-    '.r{text-align:right}.c{text-align:center}.box{display:flex;justify-content:space-between}.sim{color:#b45309;font-weight:bold;font-size:13px;border:2px solid #b45309;padding:6px;text-align:center;margin:10px 0}' +
+  const logo = /^(data:image\/|https:\/\/)/.test(String(is.logo || '')) ? '<img src="' + einvEsc_(is.logo) + '" style="max-height:48px;max-width:170px"><br>' : '';
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
+    'body{font-family:Arial,Helvetica,sans-serif;font-size:9px;color:#111;margin:22px 26px}' +
+    'table{border-collapse:collapse;width:100%;font-size:9px}td,th{vertical-align:top;padding:2px 4px}' +
+    '.r{text-align:right}.c{text-align:center}.red{color:#d40000;font-weight:bold}' +
+    '.items th{background:#e5e7eb;font-weight:normal;padding:5px 4px;text-align:left}.items th.r{text-align:right}.items th.c{text-align:center}.items td{padding:4px}' +
+    '.sim{border:1.5px solid #b45309;color:#b45309;font-weight:bold;text-align:center;padding:4px;margin-bottom:8px;font-size:10px}' +
+    '.tot td{padding:1px 4px}.foot{border-top:3px solid #0b6fb3;margin-top:18px;padding-top:6px;font-size:7px;color:#444;text-align:center}' +
+    '.qr{width:58px;height:58px;border:1px dashed #999;color:#999;font-size:7px;text-align:center;vertical-align:middle}' +
     '</style></head><body>' +
-    (sim ? '<div class="sim">FACTURA SIMULADA · SIN VALIDEZ FISCAL · SOLO PARA PRUEBAS</div>' : '') +
-    '<table><tr><td style="border:0"><h1>' + einvEsc_(is.name) + '</h1>RIF: ' + einvEsc_(is.rif) + '<br>' + einvEsc_(is.address) + '<br>' + einvEsc_(is.phone) + '</td>' +
-    '<td class="r" style="border:0"><h1>FACTURA</h1>N.º de documento: <b>' + einvEsc_(row.invoice_number) + '</b><br>N.º de control: <b>' + einvEsc_(row.control_number) + '</b><br>Fecha de emisión: ' + einvEsc_(row.issue_date) + '<br>Orden: ' + einvEsc_(row.order_number) + '</td></tr></table>' +
-    '<p><b>Cliente:</b> ' + einvEsc_(row.customer_name) + ' · <b>RIF/C.I.:</b> ' + einvEsc_(row.customer_rif) + '<br>' + einvEsc_((inv.customer || {}).address) + '</p>' +
-    '<table><tr><th>Código</th><th>Descripción</th><th class="r">Cant.</th><th class="r">Precio unit.</th><th class="c">IVA</th><th class="r">Total</th></tr>' + lines + '</table>' +
-    '<table style="width:45%;margin-left:55%"><tr><td>Subtotal</td><td class="r">' + einvMoney_(row.subtotal) + '</td></tr><tr><td>IVA</td><td class="r">' + einvMoney_(row.tax) +
-    '</td></tr><tr><td><b>Total</b></td><td class="r"><b>' + einvMoney_(row.total) + '</b></td></tr></table></body></html>';
-  return Utilities.newBlob(html, 'text/html', 'factura.html').getAs('application/pdf').setName('Factura_' + row.invoice_number + '.pdf');
+    (sim ? '<div class="sim">EJEMPLO · FACTURA SIMULADA · SIN VALIDEZ FISCAL</div>' : '') +
+    '<table><tr><td style="width:50%">' + logo + '<span style="font-size:14px;font-weight:bold">' + einvEsc_(is.name) + '</span></td>' +
+    '<td><b style="font-size:10px">' + einvEsc_(is.name) + '</b><br><b>R.I.F.: ' + einvEsc_(is.rif) + '</b><br>Dirección: ' + einvEsc_(is.address) +
+    '<br>Teléfono: ' + einvEsc_(is.phone) + (is.email ? '<br>' + einvEsc_(is.email) : '') + '</td></tr></table>' +
+    '<table style="margin-top:14px"><tr><td style="width:62%">' +
+    k('Nombre o Razón Social') + einvEsc_(row.customer_name) + '<br>' + k('Teléfono') + einvEsc_(c.phone) + '<br>' +
+    k('Domicilio Fiscal') + einvEsc_(c.address) + '<br>' + k('N° Identificación') + einvEsc_(row.customer_rif) + '<br><br>' +
+    k('Vendedor') + einvEsc_(inv.seller || row.user || '') + '<br>' + k('Días de Créditos') + (Number(inv.credit_days) || 0) + '<br>' +
+    k('Condiciones de pago') + einvEsc_(inv.conditions || 'CONTADO') + '</td>' +
+    '<td><b style="font-size:11px">FACTURA</b><br>' + k('N° de Documento') + einvEsc_(row.invoice_number) + '<br>' + k('Fecha de Emisión') + fecha +
+    '<br>' + k('Hora de Emisión') + hora + '<br>' + k('N° de Control') + '<span class="red">' + einvEsc_(row.control_number) + '</span><br>' +
+    k('Fecha de Asignación') + fecha + '<br><br>' + k('Orden de venta') + einvEsc_(row.order_number) + '</td></tr></table>' +
+    '<table class="items" style="margin-top:12px"><tr><th>Código</th><th>Descripción</th><th class="r">Cantidad</th><th class="r">Precio Unitario</th><th class="c">Alícuota I.V.A</th><th class="r">Total</th></tr>' +
+    lines + '</table>' +
+    '<table style="margin-top:22px"><tr><td style="width:50%"><table class="tot" style="width:75%">' +
+    '<tr><td><b>Retención I.V.A.' + (retPct ? ' (' + retPct + '%)' : '') + ':</b></td><td class="r">' + bs(retIva) + '</td></tr>' +
+    '<tr><td><b>Retención I.S.L.R.:</b></td><td class="r">' + bs(0) + '</td></tr>' +
+    '<tr><td><b>Total a Pagar (menos retenciones):</b></td><td class="r">' + bs(Number(row.total) - retIva) + '</td></tr></table>' +
+    '<p style="margin-top:14px"><b><u>Observaciones:</u></b><br>' +
+    (rate ? 'Tasa BCV del día de emisión: Bs. ' + rate.toFixed(4).replace('.', ',') + ' por USD. Equivalente en divisas: $ ' + Number(row.total).toFixed(2) + '.' : '') + '</p></td>' +
+    '<td><table class="tot">' +
+    '<tr><td><b>Subtotal:</b></td><td class="r">' + bs(row.subtotal) + '</td></tr>' +
+    '<tr><td><b>Descuento:</b></td><td class="r">' + bs(0) + '</td></tr>' +
+    '<tr><td><b>Exento:</b></td><td class="r">' + bs(exento) + '</td></tr>' +
+    '<tr><td><b>Base Imponible:</b></td><td class="r">' + bs(Number(row.subtotal) - exento) + '</td></tr>' +
+    '<tr><td><b>I.V.A.:</b></td><td class="r">' + bs(row.tax) + '</td></tr>' +
+    '<tr><td><b>Total Operación:</b></td><td class="r">' + bs(row.total) + '</td></tr>' +
+    '<tr><td><b>IGTF Percibido 3,00%:</b></td><td class="r">' + bs(0) + '</td></tr>' +
+    '<tr><td><b>Total A Pagar:</b></td><td class="r"><b>' + bs(row.total) + '</b></td></tr></table></td></tr></table>' +
+    '<div class="foot"><table><tr><td class="qr">QR de la<br>imprenta</td><td style="text-align:center;font-size:7px">' +
+    '<b>DOCUMENTO DE EJEMPLO GENERADO POR CIFCALC (SIMULADOR). NO ES UNA FACTURA FISCAL.</b><br>' +
+    'En la factura real, la imprenta digital autorizada por el SENIAT coloca aquí su razón social, RIF, el número de providencia de autorización, ' +
+    'el rango de números de control asignado y el código QR de verificación.</td></tr></table></div>' +
+    '</body></html>';
 }
 
 /** Envía la factura por correo al cliente, con el PDF adjunto. */
