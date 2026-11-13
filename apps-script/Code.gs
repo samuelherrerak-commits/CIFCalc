@@ -1247,6 +1247,24 @@ function einvSavePdf_(cfg, uuid, number) {
 
 // ---------- Envío al cliente (correo y WhatsApp) ----------
 
+/**
+ * Factura del modo prueba de la app: no está en la hoja einvoices (el modo
+ * prueba no registra nada), así que la app manda sus datos. Solo se aceptan
+ * facturas simuladas de prueba (número PRUEBA-…).
+ */
+function einvSandboxRow_(inv) {
+  inv = inv || {};
+  if (!/^PRUEBA-\d+$/.test(String(inv.number || ''))) return null;
+  const c = inv.customer || {};
+  return {
+    id: '', order_id: inv.order_id, order_number: inv.order_number, provider: 'simulador', document_uuid: '',
+    invoice_number: inv.number, control_number: inv.control || '', issue_date: inv.issue_date || '',
+    customer_rif: einvDni_(c.rif), customer_name: c.name || '', subtotal: Number(inv.subtotal) || 0, tax: Number(inv.tax) || 0,
+    total: Number(inv.total) || 0, rate: 0, pdf_url: '', status: 'emitida',
+    request: JSON.stringify({ customer: { address: c.address || '' }, lines: inv.lines || [] })
+  };
+}
+
 function einvFind_(orderId) {
   return readTable_('einvoices').filter(function (r) { return r.order_id === orderId && r.status === 'emitida'; })[0] || null;
 }
@@ -1291,10 +1309,9 @@ function einvPdfBlob_(row) {
 
 /** Envía la factura por correo al cliente, con el PDF adjunto. */
 function einvoiceSend_(body, sandbox) {
-  if (sandbox) return { ok: false, error: 'En modo prueba no se envían correos.', code: 400 };
   const to = String(body.to || '').trim();
   if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(to)) return { ok: false, error: 'El correo del cliente no es válido.', code: 400 };
-  const row = einvFind_(body.order_id);
+  const row = sandbox ? einvSandboxRow_(body.invoice) : einvFind_(body.order_id);
   if (!row) return { ok: false, error: 'Esa orden no tiene factura digital.', code: 404 };
   const is = einvIssuer_();
   const sim = row.provider === 'simulador';
@@ -1309,24 +1326,26 @@ function einvoiceSend_(body, sandbox) {
   if (is.email) opts.replyTo = is.email;
   MailApp.sendEmail(opts);
   const now = new Date().toISOString();
+  if (sandbox) return { ok: true, sentTo: to, emailedAt: now };
   upsert_('einvoices', [{ id: row.id, emailed_to: to, emailed_at: now, updated_at: now }]);
   return { ok: true, sentTo: to, emailedAt: now };
 }
 
 /** Enlace al PDF (cualquiera con el enlace puede verlo) para mandarlo por WhatsApp. */
 function einvoiceLink_(body, sandbox) {
-  if (sandbox) return { ok: false, error: 'En modo prueba no se genera el enlace del PDF.', code: 400 };
-  const row = einvFind_(body.order_id);
+  const row = sandbox ? einvSandboxRow_(body.invoice) : einvFind_(body.order_id);
   if (!row) return { ok: false, error: 'Esa orden no tiene factura digital.', code: 404 };
   let id = (String(row.pdf_url || '').match(/\/d\/([A-Za-z0-9_-]+)/) || [])[1];
   if (!id) {
-    const it = DriveApp.getFoldersByName('facturas_digitales');
-    const folder = it.hasNext() ? it.next() : DriveApp.createFolder('facturas_digitales');
+    const folderName = sandbox ? 'facturas_digitales_prueba' : 'facturas_digitales';
+    const it = DriveApp.getFoldersByName(folderName);
+    const folder = it.hasNext() ? it.next() : DriveApp.createFolder(folderName);
     id = folder.createFile(einvPdfBlob_(row)).getId();
   }
   const file = DriveApp.getFileById(id);
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
   const url = file.getUrl();
+  if (sandbox) return { ok: true, url: url, invoice: einvPublic_(Object.assign({}, row, { pdf_url: url })) };
   if (url !== row.pdf_url) upsert_('einvoices', [{ id: row.id, pdf_url: url, updated_at: new Date().toISOString() }]);
   return { ok: true, url: url, invoice: einvPublic_(Object.assign({}, row, { pdf_url: url })) };
 }

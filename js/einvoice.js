@@ -1,5 +1,6 @@
 import Store from './store.js';
 import { einvoiceCall } from './sheets.js';
+import { isSandbox } from './sandbox.js';
 import { orderItems, orderTotals } from './orders.js';
 import { ivaTipoOf } from './fiscal.js';
 
@@ -53,12 +54,25 @@ export const isSimulated = (order) => order.einvoice_provider === 'simulador';
 
 // Envía la factura por correo (PDF adjunto) desde la cuenta de Google del Apps Script.
 export function sendEinvoiceEmail(order, to) {
-  return einvoiceCall('einvoiceSend', { order_id: order.id, to });
+  return einvoiceCall('einvoiceSend', { order_id: order.id, to, ...sandboxInvoice(order) });
+}
+
+// En modo prueba el servidor no guarda la factura, así que se le mandan sus datos.
+function sandboxInvoice(order) {
+  if (!isSandbox()) return {};
+  const inv = einvoiceFromOrder(order);
+  return {
+    invoice: {
+      order_id: order.id, order_number: order.order_number, number: order.invoice_number, control: order.control_number,
+      issue_date: order.invoice_date, customer: inv.customer, lines: inv.lines,
+      subtotal: inv.expected.subtotal, tax: inv.expected.tax, total: inv.expected.total
+    }
+  };
 }
 
 // Enlace público al PDF, para mandarlo por WhatsApp.
 export async function einvoicePdfLink(order) {
-  const res = await einvoiceCall('einvoiceLink', { order_id: order.id });
+  const res = await einvoiceCall('einvoiceLink', { order_id: order.id, ...sandboxInvoice(order) });
   return res.url;
 }
 
