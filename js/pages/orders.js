@@ -304,7 +304,7 @@ function invoiceModal(order, onDone) {
         const mailTo = md.$('i-email') && md.$('i-email').checked ? contactOf(order).email : '';
         if (mailTo && !inv.emailedTo) {
           btn.textContent = 'Enviando correo…';
-          try { await sendEinvoiceEmail(order, mailTo); } catch (e) { alert(`La factura se emitió, pero no se pudo enviar el correo: ${e.message}\nPuedes reenviarla con el botón "Enviar por correo".`); }
+          try { await sendEinvoiceEmail(Store.getById('sales_orders', order.id), mailTo); } catch (e) { alert(`La factura se emitió, pero no se pudo enviar el correo: ${e.message}\nPuedes reenviarla con el botón "Enviar por correo".`); }
         }
       } catch (err) {
         btn.disabled = false;
