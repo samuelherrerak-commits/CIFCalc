@@ -49,7 +49,7 @@ export function openBusinessProfileModal(Store, onSaved) {
       <div class="px-5 py-4 border-b border-slate-100 flex justify-between items-center">
         <div>
           <h3 class="text-base font-bold text-slate-800">Datos de la empresa</h3>
-          <p class="text-xs text-slate-400">Aparecen en los presupuestos y notas de venta impresos.</p>
+          <p class="text-xs text-slate-400">Aparecen en los presupuestos, notas de venta y facturas.</p>
         </div>
         <button data-close class="text-slate-400 hover:text-slate-600 text-xl font-bold leading-none">✕</button>
       </div>
@@ -66,7 +66,10 @@ export function openBusinessProfileModal(Store, onSaved) {
           <div><label class="${label}">RIF</label><input id="bp-rif" class="${input}" value="${esc(p.rif)}"></div>
           <div><label class="${label}">Teléfono</label><input id="bp-phone" class="${input}" value="${esc(p.phone)}"></div>
         </div>
-        <div><label class="${label}">E-mail</label><input id="bp-email" class="${input}" value="${esc(p.email)}"></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div><label class="${label}">E-mail</label><input id="bp-email" class="${input}" value="${esc(p.email)}"></div>
+          <div><label class="${label}">Instagram</label><input id="bp-instagram" class="${input}" value="${esc(p.instagram)}" placeholder="@empresa"></div>
+        </div>
         <div><label class="${label}">Dirección</label><input id="bp-address" class="${input}" value="${esc(p.address)}"></div>
         <div><label class="${label}">Términos y condiciones (presupuestos)</label><textarea id="bp-terms" rows="3" class="${input}" placeholder="Precios en USD. Sujeto a disponibilidad de inventario.">${esc(p.terms)}</textarea></div>
         <div id="bp-msg" class="text-xs text-red-600"></div>
@@ -97,7 +100,7 @@ export function openBusinessProfileModal(Store, onSaved) {
   $('bp-save').addEventListener('click', () => {
     Store.saveBusinessProfile({
       name: $('bp-name').value.trim(), rif: $('bp-rif').value.trim(), phone: $('bp-phone').value.trim(),
-      email: $('bp-email').value.trim(), address: $('bp-address').value.trim(), terms: $('bp-terms').value.trim(), logo
+      email: $('bp-email').value.trim(), instagram: $('bp-instagram').value.trim(), address: $('bp-address').value.trim(), terms: $('bp-terms').value.trim(), logo
     });
     close();
     if (onSaved) onSaved();

@@ -1480,6 +1480,7 @@ const Store = {
       phone: s.issuer_phone || '',
       email: s.issuer_email || '',
       logo: s.issuer_logo || '',
+      instagram: s.issuer_instagram || '',
       terms: s.quote_terms || ''
     };
   },
@@ -1488,7 +1489,7 @@ const Store = {
     return this.upsert('accounting_settings', {
       id: 'default',
       issuer_name: p.name || '', issuer_rif: p.rif || '', issuer_address: p.address || '',
-      issuer_phone: p.phone || '', issuer_email: p.email || '', issuer_logo: p.logo || '',
+      issuer_phone: p.phone || '', issuer_email: p.email || '', issuer_logo: p.logo || '', issuer_instagram: p.instagram || '',
       quote_terms: p.terms || ''
     });
   },
