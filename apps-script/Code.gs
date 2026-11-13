@@ -996,6 +996,19 @@ function handleAuth_(body) {
 //   CACHICAMO_TAX_EXENTO_UUID       (exento)
 // El token se queda en el servidor: nunca viaja a la página.
 
+/**
+ * Ejecútala UNA vez desde el editor (menú de funciones → autorizarPermisos →
+ * Ejecutar) para aceptar los permisos de correo, Drive y conexiones externas.
+ * Después publica una Nueva versión. Devuelve cuántos correos quedan hoy.
+ */
+function autorizarPermisos() {
+  const quota = MailApp.getRemainingDailyQuota();
+  DriveApp.getRootFolder();
+  UrlFetchApp.getRequest('https://api.cachicamo.app');
+  Logger.log('Permisos aceptados. Correos disponibles hoy: ' + quota);
+  return quota;
+}
+
 const EINVOICE_ACTIONS = ['einvoiceInfo', 'einvoiceEmit', 'einvoiceSend', 'einvoiceLink'];
 const CACHICAMO_API_URL = 'https://api.cachicamo.app';
 const EINV_SCALE = 10000; // Cachicamo manda los montos como enteros × 10.000
