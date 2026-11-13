@@ -202,7 +202,8 @@ export function registerDispatch(order, { date, qtyByProduct, notes = '' }) {
 // Factura de la orden: un solo asiento consolidado. payNow = { method,
 // accountId } para la venta de contado del punto de venta (lo que no cubren
 // anticipos ni retención se cobra en el acto en vez de ir a CxC).
-export function invoiceOrder(order, { date, invoiceNumber = '', controlNumber = '', payNow = null }) {
+// einvoice = { provider, uuid, pdfUrl, rate } si la factura la emitió la imprenta digital.
+export function invoiceOrder(order, { date, invoiceNumber = '', controlNumber = '', payNow = null, einvoice = null }) {
   const fiscal = isFiscal(order);
   const items = orderItems(order);
   const t = orderTotals(order, items);
@@ -231,7 +232,8 @@ export function invoiceOrder(order, { date, invoiceNumber = '', controlNumber = 
   Store.update('sales_orders', {
     id: order.id, status: 'facturada', items: JSON.stringify(finalItems), invoice_ref: refDoc,
     invoice_number: invoiceNumber, control_number: controlNumber, invoice_date: date,
-    subtotal: t.subtotal, tax: t.tax, total: t.total
+    subtotal: t.subtotal, tax: t.tax, total: t.total,
+    ...(einvoice ? { einvoice_provider: einvoice.provider, einvoice_uuid: einvoice.uuid, einvoice_pdf_url: einvoice.pdfUrl || '' } : {})
   });
   if (fiscal) {
     const contact = order.contact_id ? Store.getById('contacts', order.contact_id) : null;
@@ -241,7 +243,8 @@ export function invoiceOrder(order, { date, invoiceNumber = '', controlNumber = 
       total: t.total, exempt: t.exempt, base_general: t.base_general, tax_general: t.tax_general,
       base_reducida: t.base_reducida, tax_reducida: t.tax_reducida,
       withheld: m.withheld, withholding_date: m.withheld > 0 ? date : '',
-      ref_doc: refDoc, source_ref: order.id, tasa_bcv: Store.usdRateFor(date)
+      ref_doc: refDoc, source_ref: order.id, tasa_bcv: (einvoice && einvoice.rate) || Store.usdRateFor(date),
+      notes: einvoice && einvoice.provider === 'simulador' ? 'Factura digital SIMULADA (sin validez fiscal)' : ''
     }));
   }
   if (payNow && restAfter > 0) {
@@ -262,8 +265,8 @@ export function orderDocument(order) {
   const invoiced = order.status === 'facturada';
   return {
     kind: 'sale',
-    title: invoiced ? (isFiscal(order) ? 'Nota de venta' : 'Nota de entrega') : 'Orden de venta',
-    number: invoiced ? order.invoice_ref : order.order_number,
+    title: invoiced ? (order.einvoice_uuid ? (order.einvoice_provider === 'simulador' ? 'Factura simulada (sin validez fiscal)' : 'Factura') : isFiscal(order) ? 'Nota de venta' : 'Nota de entrega') : 'Orden de venta',
+    number: invoiced ? (order.einvoice_uuid ? order.invoice_number : order.invoice_ref) : order.order_number,
     date: invoiced ? order.invoice_date : order.date,
     client: contact ? { name: contact.name, rif: contact.rif, address: contact.address, phone: contact.phone, email: contact.email } : { name: order.contact_name },
     items: orderItems(order).map(it => ({ name: it.name, sku: it.sku, qty: it.qty, unit: 'unidad', unitPrice: it.unitPrice, listPrice: it.listPrice, discountPct: it.discountPct })),

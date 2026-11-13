@@ -226,7 +226,10 @@ const SCHEMAS = {
     'created_at', 'updated_at',
     // Forma de pago: 'divisas' (USD efectivo / USDT) o 'bs' (bolívares a tasa
     // BCV). En 'bs' los precios van en $ a tasa BCV = precio × (USDT ÷ BCV).
-    'payment_currency', 'fx_bcv', 'fx_usdt', 'fx_factor'
+    'payment_currency', 'fx_bcv', 'fx_usdt', 'fx_factor',
+    // Factura digital: proveedor ('simulador' o 'cachicamo'), uuid del
+    // documento allá y enlace al PDF.
+    'einvoice_provider', 'einvoice_uuid', 'einvoice_pdf_url'
   ],
   // Anticipos (antes de facturar) y cobros (después) de una orden, con la
   // foto del comprobante en Drive (foto_url / foto_file_id).
@@ -251,6 +254,14 @@ const SCHEMAS = {
   // de mercancía, salidas manuales y ajustes. items = JSON [{productId, name, sku, qty}].
   stock_moves: [
     'id', 'move_number', 'kind', 'date', 'container_id', 'reference', 'items', 'notes',
+    'created_at', 'updated_at'
+  ],
+  // Facturas digitales emitidas (registro del servidor; la app solo lo lee).
+  // Lo escribe la acción einvoiceEmit, nunca el upsert genérico.
+  einvoices: [
+    'id', 'order_id', 'order_number', 'provider', 'document_uuid',
+    'invoice_number', 'control_number', 'issue_date', 'customer_rif', 'customer_name',
+    'subtotal', 'tax', 'total', 'rate', 'pdf_url', 'status', 'user', 'response',
     'created_at', 'updated_at'
   ]
 };
@@ -335,7 +346,10 @@ function doPost(e) {
     if (!isAuthorized_(pt) && !sessionUser_(body.st)) {
       return json_({ ok: false, error: 'unauthorized', code: 401 });
     }
-    if (body.table === 'users') return json_({ ok: false, error: 'forbidden', code: 403 });
+    if (body.table === 'users' || body.table === 'einvoices') return json_({ ok: false, error: 'forbidden', code: 403 });
+
+    // Factura digital (imprenta digital vía Cachicamo, o el simulador).
+    if (EINVOICE_ACTIONS.indexOf(body.action) >= 0) return json_(handleEinvoice_(body, sessionUser_(body.st)));
 
     // Subida de fotos: se resuelve antes de validar "table" porque el cuerpo
     // trae un archivo, no filas de tabla.
@@ -951,6 +965,347 @@ function handleAuth_(body) {
   }
 
   return fail('acción desconocida: ' + body.action, 400);
+}
+
+// ---------------------------------------------------------------------------
+// FACTURA DIGITAL (imprenta digital vía Cachicamo, o el simulador interno)
+// ---------------------------------------------------------------------------
+//
+// La app manda la factura en un formato propio (cliente, líneas con su base
+// sin IVA y su tipo de IVA, totales esperados). Este código la traduce al
+// cuerpo que pide la API de Cachicamo (POST /documents/preview y
+// /documents/save_preview) y lee el número de factura y el número de control
+// de la respuesta.
+//
+// Mientras no haya cuenta en Cachicamo, las peticiones las contesta
+// simulatedCachicamo_, que imita esa API: valida el cuerpo igual, calcula los
+// totales y asigna números correlativos propios. Las facturas simuladas NO
+// tienen validez fiscal.
+//
+// Para pasar a Cachicamo de verdad: Configuración del proyecto (engranaje) →
+// Propiedades del script, agrega:
+//   EINVOICE_PROVIDER               cachicamo
+//   CACHICAMO_API_TOKEN             (Cachicamo → Configuración → Integraciones)
+//   CACHICAMO_STORE_UUID            (uuid de la tienda)
+//   CACHICAMO_PRINTER_DOCUMENT_UUID (dispositivo: la imprenta digital, GET /printer_documents)
+//   CACHICAMO_CURRENCY_USD_UUID     (moneda USD, GET /currencies)
+//   CACHICAMO_TAX_GENERAL_UUID      (IVA 16 %, GET /taxes)
+//   CACHICAMO_TAX_REDUCIDA_UUID     (IVA 8 %)
+//   CACHICAMO_TAX_EXENTO_UUID       (exento)
+// El token se queda en el servidor: nunca viaja a la página.
+
+const EINVOICE_ACTIONS = ['einvoiceInfo', 'einvoiceEmit'];
+const CACHICAMO_API_URL = 'https://api.cachicamo.app';
+const EINV_SCALE = 10000; // Cachicamo manda los montos como enteros × 10.000
+
+// Identificadores fijos del simulador (en Cachicamo salen de su API).
+const SIM_IDS = {
+  printer: 'sim-printer-imprenta-digital', usd: 'sim-currency-usd',
+  taxG: 'sim-tax-iva-16', taxR: 'sim-tax-iva-8', taxE: 'sim-tax-exento'
+};
+const SIM_TAX_RATES = { 'sim-tax-iva-16': 16, 'sim-tax-iva-8': 8, 'sim-tax-exento': 0 };
+
+function einvConfig_() {
+  const p = PropertiesService.getScriptProperties();
+  const g = function (k) { return String(p.getProperty(k) || '').trim(); };
+  if (g('EINVOICE_PROVIDER').toLowerCase() !== 'cachicamo') {
+    return { provider: 'simulador', printer: SIM_IDS.printer, usd: SIM_IDS.usd, taxG: SIM_IDS.taxG, taxR: SIM_IDS.taxR, taxE: SIM_IDS.taxE };
+  }
+  return {
+    provider: 'cachicamo', token: g('CACHICAMO_API_TOKEN'), store: g('CACHICAMO_STORE_UUID'),
+    printer: g('CACHICAMO_PRINTER_DOCUMENT_UUID'), usd: g('CACHICAMO_CURRENCY_USD_UUID'),
+    taxG: g('CACHICAMO_TAX_GENERAL_UUID'), taxR: g('CACHICAMO_TAX_REDUCIDA_UUID'), taxE: g('CACHICAMO_TAX_EXENTO_UUID')
+  };
+}
+
+/** Datos de configuración que faltan (vacío = listo para emitir). */
+function einvMissing_(cfg) {
+  if (cfg.provider !== 'cachicamo') return [];
+  const names = {
+    token: 'CACHICAMO_API_TOKEN', store: 'CACHICAMO_STORE_UUID', printer: 'CACHICAMO_PRINTER_DOCUMENT_UUID',
+    usd: 'CACHICAMO_CURRENCY_USD_UUID', taxG: 'CACHICAMO_TAX_GENERAL_UUID', taxR: 'CACHICAMO_TAX_REDUCIDA_UUID',
+    taxE: 'CACHICAMO_TAX_EXENTO_UUID'
+  };
+  return Object.keys(names).filter(function (k) { return !cfg[k]; }).map(function (k) { return names[k]; });
+}
+
+function handleEinvoice_(body, user) {
+  if (!user) return { ok: false, error: 'unauthorized', code: 401 };
+  const allowed = user.role === 'admin' || (user.permissions || []).indexOf('orders') >= 0;
+  if (!allowed) return { ok: false, error: 'No tienes permiso para facturar órdenes de venta.', code: 403 };
+  const cfg = einvConfig_();
+  if (body.action === 'einvoiceInfo') {
+    return { ok: true, provider: cfg.provider, simulated: cfg.provider === 'simulador', missing: einvMissing_(cfg) };
+  }
+  if (body.action === 'einvoiceEmit') return einvoiceEmit_(cfg, body.invoice || {}, user, body.sandbox === true);
+  return { ok: false, error: 'acción desconocida: ' + body.action, code: 400 };
+}
+
+const r2_ = function (n) { return Math.round((Number(n) || 0) * 100) / 100; };
+
+/** Revisa la factura que manda la app. Devuelve el texto del error o ''. */
+function einvValidate_(inv) {
+  if (!inv.order_id || !inv.order_number) return 'Falta la orden de venta.';
+  const c = inv.customer || {};
+  if (!String(c.rif || '').trim()) return 'El cliente no tiene RIF o cédula: agrégalo en Clientes antes de facturar.';
+  if (!String(c.name || '').trim()) return 'El cliente no tiene nombre.';
+  if (!Array.isArray(inv.lines) || inv.lines.length === 0) return 'La orden no tiene productos.';
+  for (let i = 0; i < inv.lines.length; i++) {
+    const l = inv.lines[i];
+    if (!(Number(l.qty) > 0)) return 'Línea ' + (i + 1) + ': cantidad inválida.';
+    if (!(Number(l.unit_price) >= 0)) return 'Línea ' + (i + 1) + ': precio inválido.';
+    if (['G', 'R', 'E'].indexOf(l.iva) < 0) return 'Línea ' + (i + 1) + ': tipo de IVA inválido.';
+  }
+  return '';
+}
+
+/** RIF/cédula como lo guarda Cachicamo: J123456784 (sin guiones ni espacios). */
+function einvDni_(rif) {
+  return String(rif || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+/** Cuerpo de POST /documents/preview y /documents/save_preview. */
+function einvDocumentBody_(cfg, inv, customerUuid) {
+  const taxOf = { G: cfg.taxG, R: cfg.taxR, E: cfg.taxE };
+  return {
+    document_type: 'INVOICE',
+    customer_uuid: customerUuid,
+    printer_document_uuid: cfg.printer,
+    products: inv.lines.map(function (l) {
+      return {
+        custom_product_name: String(l.sku ? l.sku + ' · ' + l.name : l.name).slice(0, 200),
+        custom_unit_price: Math.round(Number(l.unit_price) * EINV_SCALE),
+        custom_currency_uuid: cfg.usd,
+        qty: Number(l.qty),
+        taxes_uuid: [taxOf[l.iva]],
+        request_reference: String(l.ref || '')
+      };
+    }),
+    // Sin pagos: los anticipos y cobros se controlan en la app, y la
+    // retención de IVA se registra cuando el cliente entrega el comprobante.
+    metadata: { origen: 'CIFCalc', order_id: inv.order_id, order_number: inv.order_number }
+  };
+}
+
+/** Totales en USD, número y control de una respuesta DocumentPreview. */
+function einvReadDocument_(resp) {
+  const d = resp || {};
+  const doc = d.document || d.invoice || {};
+  const usd = function (f, raw) {
+    if (f && typeof f.amount_float === 'number') return r2_(f.amount_float);
+    return r2_(Number(raw || 0) / EINV_SCALE);
+  };
+  return {
+    uuid: doc.uuid || '',
+    number: doc.document_number_format || doc.document_number || '',
+    control: doc.manual_control_number_format || doc.manual_control_number || '',
+    issueDate: String(doc.issue_date || '').slice(0, 10),
+    subtotal: usd(d.total_products_usd_format, d.total_products),
+    tax: usd(d.total_taxes_usd_format, d.total_taxes),
+    total: usd(d.total_invoice_usd_format, d.total_invoice),
+    rate: Number(d.currency_rate_invoice) || 0
+  };
+}
+
+/** Una petición a la API de Cachicamo (o al simulador). Devuelve { status, body }. */
+function cachicamoRequest_(cfg, method, path, payload, sandbox) {
+  if (cfg.provider !== 'cachicamo') return simulatedCachicamo_(method, path, payload, sandbox);
+  const opts = {
+    method: method.toLowerCase(), muteHttpExceptions: true, contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + cfg.token, 'X-Store-Uuid': cfg.store, Accept: 'application/json' }
+  };
+  if (payload) opts.payload = JSON.stringify(payload);
+  const res = UrlFetchApp.fetch(CACHICAMO_API_URL + path, opts);
+  let body = null;
+  try { body = JSON.parse(res.getContentText() || 'null'); } catch (e) { body = { message: res.getContentText() }; }
+  return { status: res.getResponseCode(), body: body };
+}
+
+function einvError_(step, r) {
+  const b = r.body || {};
+  return 'Cachicamo (' + step + ', ' + r.status + '): ' + (b.message || b.error_code || 'error sin detalle');
+}
+
+/** Busca el cliente por RIF; si no existe lo crea. Devuelve su uuid. */
+function einvCustomer_(cfg, c, sandbox) {
+  const dni = einvDni_(c.rif);
+  const found = cachicamoRequest_(cfg, 'GET', '/customers/dni/' + encodeURIComponent(dni), null, sandbox);
+  if (found.status === 200 && found.body && found.body.uuid) return found.body.uuid;
+  if (found.status !== 404) throw fail_(502, einvError_('buscar cliente', found));
+  const created = cachicamoRequest_(cfg, 'POST', '/customers', {
+    country: 'VE', dni: dni, name: String(c.name).trim(), address: c.address || '',
+    phone: c.phone || '', email: c.email || ''
+  }, sandbox);
+  if (created.status !== 200 && created.status !== 201) throw fail_(502, einvError_('crear cliente', created));
+  return created.body.uuid;
+}
+
+function einvoiceEmit_(cfg, inv, user, sandbox) {
+  if (sandbox && cfg.provider !== 'simulador') {
+    return { ok: false, error: 'En modo prueba solo se usa el simulador: no se emiten facturas reales.', code: 400 };
+  }
+  const missing = einvMissing_(cfg);
+  if (missing.length) return { ok: false, error: 'Falta configurar en el Apps Script: ' + missing.join(', '), code: 400 };
+  const invalid = einvValidate_(inv);
+  if (invalid) return { ok: false, error: invalid, code: 400 };
+
+  // Una orden se factura una sola vez: si ya tiene factura digital se
+  // devuelve la misma (p. ej. si la app perdió la respuesta y reintenta).
+  const props = PropertiesService.getScriptProperties();
+  const busyKey = 'EINV_BUSY_' + inv.order_id;
+  if (!sandbox) {
+    const lock = LockService.getScriptLock();
+    lock.waitLock(LOCK_WAIT_MS);
+    try {
+      const prev = readTable_('einvoices').filter(function (r) { return r.order_id === inv.order_id && r.status === 'emitida'; })[0];
+      if (prev) return { ok: true, already: true, invoice: einvPublic_(prev) };
+      const busy = Number(props.getProperty(busyKey) || 0);
+      if (busy && Date.now() - busy < 5 * 60 * 1000) return { ok: false, error: 'Esta orden ya se está facturando. Espera un momento y revisa.', code: 409 };
+      props.setProperty(busyKey, String(Date.now()));
+    } finally {
+      lock.releaseLock();
+    }
+  }
+
+  try {
+    const customerUuid = einvCustomer_(cfg, inv.customer, sandbox);
+    const docBody = einvDocumentBody_(cfg, inv, customerUuid);
+
+    // 1) Vista previa: Cachicamo calcula los totales sin emitir nada.
+    const pre = cachicamoRequest_(cfg, 'POST', '/documents/preview', docBody, sandbox);
+    if (pre.status !== 200) throw fail_(502, einvError_('vista previa', pre));
+    const p = einvReadDocument_(pre.body);
+    const exp = inv.expected || {};
+    const qtys = inv.lines.reduce(function (s, l) { return s + Number(l.qty); }, 0);
+    const tol = 0.01 + qtys * 0.00005; // redondeo del precio unitario a 4 decimales
+    if (Math.abs(p.total - Number(exp.total || 0)) > tol) {
+      return {
+        ok: false, code: 409,
+        error: 'El total de la imprenta ($' + p.total.toFixed(2) + ') no coincide con el de la orden ($' + Number(exp.total || 0).toFixed(2) + '). No se emitió la factura.'
+      };
+    }
+
+    // 2) Emisión: número de factura y de control de la imprenta digital.
+    const saved = cachicamoRequest_(cfg, 'POST', '/documents/save_preview', docBody, sandbox);
+    if (saved.status !== 200 && saved.status !== 201) throw fail_(502, einvError_('emitir', saved));
+    const s = einvReadDocument_(saved.body);
+    if (!s.uuid || !s.number) throw fail_(502, 'Cachicamo emitió el documento pero no devolvió su número. Revisa en Cachicamo antes de reintentar.');
+
+    const now = new Date().toISOString();
+    const row = {
+      id: Utilities.getUuid(), order_id: inv.order_id, order_number: inv.order_number, provider: cfg.provider,
+      document_uuid: s.uuid, invoice_number: s.number, control_number: s.control,
+      issue_date: s.issueDate || now.slice(0, 10), customer_rif: einvDni_(inv.customer.rif), customer_name: inv.customer.name,
+      subtotal: s.subtotal, tax: s.tax, total: s.total, rate: s.rate, pdf_url: '', status: 'emitida',
+      user: user.username, response: JSON.stringify(saved.body).slice(0, 40000), created_at: now, updated_at: now
+    };
+    if (cfg.provider === 'cachicamo') row.pdf_url = einvSavePdf_(cfg, s.uuid, s.number);
+    if (!sandbox) upsert_('einvoices', [row]);
+    return { ok: true, invoice: einvPublic_(row) };
+  } finally {
+    if (!sandbox) props.deleteProperty(busyKey);
+  }
+}
+
+function einvPublic_(r) {
+  return {
+    provider: r.provider, uuid: r.document_uuid, number: r.invoice_number, control: r.control_number,
+    issueDate: String(r.issue_date || '').slice(0, 10), subtotal: Number(r.subtotal) || 0, tax: Number(r.tax) || 0,
+    total: Number(r.total) || 0, rate: Number(r.rate) || 0, pdfUrl: r.pdf_url || ''
+  };
+}
+
+/** Guarda el PDF sellado en Drive (carpeta facturas_digitales, privada). */
+function einvSavePdf_(cfg, uuid, number) {
+  try {
+    const res = UrlFetchApp.fetch(CACHICAMO_API_URL + '/documents/' + encodeURIComponent(uuid) + '/render', {
+      method: 'get', muteHttpExceptions: true,
+      headers: { Authorization: 'Bearer ' + cfg.token, 'X-Store-Uuid': cfg.store }
+    });
+    if (res.getResponseCode() !== 200) return '';
+    const it = DriveApp.getFoldersByName('facturas_digitales');
+    const folder = it.hasNext() ? it.next() : DriveApp.createFolder('facturas_digitales');
+    const file = folder.createFile(res.getBlob().setName('Factura_' + number + '.pdf'));
+    return file.getUrl();
+  } catch (e) {
+    return ''; // la factura ya está emitida; el PDF se puede bajar desde Cachicamo
+  }
+}
+
+// ---------- Simulador de la API de Cachicamo ----------
+// Contesta las mismas rutas con la misma forma de respuesta. Los clientes y
+// los correlativos quedan en las Propiedades del script (SIM_*); en modo
+// prueba de la app usa correlativos aparte (SIMTEST_*).
+
+function simulatedCachicamo_(method, path, body, sandbox) {
+  const props = PropertiesService.getScriptProperties();
+  const pre = sandbox ? 'SIMTEST_' : 'SIM_';
+  const err = function (status, message) { return { status: status, body: { message: message, error_code: 'SIMULADOR' } }; };
+
+  let m = path.match(/^\/customers\/dni\/(.+)$/);
+  if (method === 'GET' && m) {
+    const c = props.getProperty(pre + 'CUST_' + decodeURIComponent(m[1]));
+    return c ? { status: 200, body: JSON.parse(c) } : err(404, 'Customer not found');
+  }
+  if (method === 'POST' && path === '/customers') {
+    if (!body || !body.country) return err(400, 'country is required');
+    if (!body.dni || !body.name) return err(400, 'name+dni or company+company_vat is mandatory');
+    if (!/^[VEJPGC]\d{5,9}$/.test(body.dni)) return err(400, 'invalid RIF: ' + body.dni);
+    if (props.getProperty(pre + 'CUST_' + body.dni)) return err(400, 'duplicate dni');
+    const c = { uuid: Utilities.getUuid(), country: body.country, dni: body.dni, name: body.name, address: body.address || '', phone: body.phone || '', email: body.email || '' };
+    props.setProperty(pre + 'CUST_' + body.dni, JSON.stringify(c));
+    return { status: 200, body: c };
+  }
+  if (method === 'POST' && (path === '/documents/preview' || path === '/documents/save_preview')) {
+    const b = body || {};
+    if (b.document_type !== 'INVOICE') return err(400, 'unsupported document_type');
+    if (!b.customer_uuid) return err(400, 'customer_uuid is required');
+    if (b.printer_document_uuid !== SIM_IDS.printer) return err(400, 'printer_document_uuid not found');
+    if (!Array.isArray(b.products) || b.products.length === 0) return err(400, 'products: at least one line');
+    let base = 0, exempt = 0, taxes = 0;
+    for (let i = 0; i < b.products.length; i++) {
+      const l = b.products[i];
+      if (!(Number(l.qty) > 0)) return err(400, 'products[' + i + '].qty must be > 0');
+      if (!l.product_uuid && !(l.custom_product_name && l.custom_unit_price !== undefined && l.custom_currency_uuid)) {
+        return err(400, 'products[' + i + ']: product_uuid or custom_product_name+custom_unit_price+custom_currency_uuid');
+      }
+      if (l.custom_currency_uuid && l.custom_currency_uuid !== SIM_IDS.usd) return err(400, 'currency not found');
+      if (!Array.isArray(l.taxes_uuid) || l.taxes_uuid.length !== 1 || !(l.taxes_uuid[0] in SIM_TAX_RATES)) return err(400, 'products[' + i + ']: tax not found');
+      const amount = Number(l.qty) * Number(l.custom_unit_price) / EINV_SCALE;
+      const rate = SIM_TAX_RATES[l.taxes_uuid[0]];
+      if (rate === 0) exempt += amount; else base += amount;
+      taxes += r2_(amount * rate / 100);
+    }
+    const subtotal = r2_(base + exempt);
+    const total = r2_(subtotal + taxes);
+    const fmt = function (n) { return { amount_float: r2_(n), amount_format: '$ ' + r2_(n).toFixed(2), currency_iso: 'USD' }; };
+    const out = {
+      document: { uuid: '', document_number: '', manual_control_number: '', issue_date: new Date().toISOString(), customer_uuid: b.customer_uuid, document_status: 'PREVIEW' },
+      total_products: Math.round(subtotal * EINV_SCALE), total_taxes: Math.round(taxes * EINV_SCALE), total_invoice: Math.round(total * EINV_SCALE),
+      exempt_base: Math.round(r2_(exempt) * EINV_SCALE), taxable_base: Math.round(r2_(base) * EINV_SCALE),
+      total_products_usd_format: fmt(subtotal), total_taxes_usd_format: fmt(taxes), total_invoice_usd_format: fmt(total),
+      currency_rate_invoice: 0
+    };
+    if (path === '/documents/save_preview') {
+      const lock = LockService.getScriptLock();
+      lock.waitLock(LOCK_WAIT_MS);
+      try {
+        const n = Number(props.getProperty(pre + 'NEXT_INVOICE') || 1);
+        props.setProperty(pre + 'NEXT_INVOICE', String(n + 1));
+        const pad = ('00000000' + n).slice(-8);
+        out.document.uuid = Utilities.getUuid();
+        out.document.document_number = pad;
+        out.document.document_number_format = (sandbox ? 'PRUEBA-' : 'SIM-') + pad;
+        out.document.manual_control_number = '00-' + pad;
+        out.document.manual_control_number_format = '00-' + pad;
+        out.document.document_status = 'EMITTED';
+      } finally {
+        lock.releaseLock();
+      }
+    }
+    return { status: 200, body: out };
+  }
+  return err(404, 'ruta no simulada: ' + method + ' ' + path);
 }
 
 /**
