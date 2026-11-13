@@ -1,7 +1,8 @@
 import Store from './store.js';
 import { einvoiceCall } from './sheets.js';
 import { isSandbox } from './sandbox.js';
-import { orderItems, orderTotals } from './orders.js';
+import { orderItems, orderTotals, orderMoney } from './orders.js';
+import Auth from './auth.js';
 import { ivaTipoOf } from './fiscal.js';
 
 // Factura digital: la app arma la factura de la orden en un formato propio y
@@ -17,6 +18,7 @@ const IVA_CODE = { general: 'G', reducida: 'R', exento: 'E' };
 export function einvoiceFromOrder(order) {
   const items = orderItems(order);
   const t = orderTotals(order, items);
+  const m = orderMoney(order);
   const contact = order.contact_id ? Store.getById('contacts', order.contact_id) : null;
   const products = new Map(Store.getAll('products').map(p => [p.id, p]));
   return {
@@ -35,7 +37,13 @@ export function einvoiceFromOrder(order) {
         iva: IVA_CODE[tipo] || 'G'
       };
     }),
-    expected: { subtotal: t.subtotal, tax: t.tax, total: t.total }
+    expected: { subtotal: t.subtotal, tax: t.tax, total: t.total },
+    // Datos para la representación impresa.
+    rate_bcv: Store.usdRateFor(new Date().toISOString().slice(0, 10)) || 0,
+    retention_pct: m.withheld > 0 ? m.retPct : 0,
+    conditions: m.advances >= t.total - m.withheld - 0.005 ? 'CONTADO' : 'CRÉDITO',
+    credit_days: 0,
+    seller: (Auth.user() || {}).name || ''
   };
 }
 
@@ -65,7 +73,8 @@ function sandboxInvoice(order) {
     invoice: {
       order_id: order.id, order_number: order.order_number, number: order.invoice_number, control: order.control_number,
       issue_date: order.invoice_date, customer: inv.customer, lines: inv.lines,
-      subtotal: inv.expected.subtotal, tax: inv.expected.tax, total: inv.expected.total
+      subtotal: inv.expected.subtotal, tax: inv.expected.tax, total: inv.expected.total,
+      rate_bcv: inv.rate_bcv, retention_pct: inv.retention_pct, conditions: inv.conditions, credit_days: inv.credit_days, seller: inv.seller
     }
   };
 }
