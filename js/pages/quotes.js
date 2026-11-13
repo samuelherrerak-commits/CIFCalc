@@ -71,7 +71,8 @@ export function quoteDocument(q) {
     fiscal: (() => {
       const items = Store.getQuoteItems(q);
       const t = quoteTax(items.map(it => ({ qty: it.qty, unitPrice: it.unitPrice, product: Store.getById('products', it.productId) })), isQuoteFiscal(q));
-      return t.rows.length ? { ...t, rate: Store.usdRateFor(q.date) } : null;
+      // Sin equivalente en Bs: el pago en bolívares usa la tasa USDT ÷ BCV.
+      return t.rows.length ? { ...t, rate: 0 } : null;
     })()
   };
 }

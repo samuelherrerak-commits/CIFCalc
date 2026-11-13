@@ -275,7 +275,7 @@ export function orderDocument(order) {
       rows: taxSummaryRows(m, { ...fs, ivaEnabled: isFiscal(order) })
         .concat(m.advances > 0 ? [['Anticipos recibidos', -m.advances]] : [])
         .concat(m.withheld > 0 ? [['IVA retenido por el cliente', -m.withheld]] : []),
-      total: m.total, rate: Store.usdRateFor(invoiced ? order.invoice_date : order.date),
+      total: m.total, rate: 0, // sin equivalente en Bs: el pago en bolívares usa la tasa USDT ÷ BCV
       invoice: order.invoice_number, control: order.control_number
     },
     terms: Store.getBusinessProfile().terms

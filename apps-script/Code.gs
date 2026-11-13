@@ -262,7 +262,9 @@ const SCHEMAS = {
     'id', 'order_id', 'order_number', 'provider', 'document_uuid',
     'invoice_number', 'control_number', 'issue_date', 'customer_rif', 'customer_name',
     'subtotal', 'tax', 'total', 'rate', 'pdf_url', 'status', 'user', 'response',
-    'created_at', 'updated_at'
+    'created_at', 'updated_at',
+    // Factura enviada por la app (para el PDF del simulador) y envío por correo.
+    'request', 'emailed_to', 'emailed_at'
   ]
 };
 
@@ -994,7 +996,7 @@ function handleAuth_(body) {
 //   CACHICAMO_TAX_EXENTO_UUID       (exento)
 // El token se queda en el servidor: nunca viaja a la página.
 
-const EINVOICE_ACTIONS = ['einvoiceInfo', 'einvoiceEmit'];
+const EINVOICE_ACTIONS = ['einvoiceInfo', 'einvoiceEmit', 'einvoiceSend', 'einvoiceLink'];
 const CACHICAMO_API_URL = 'https://api.cachicamo.app';
 const EINV_SCALE = 10000; // Cachicamo manda los montos como enteros × 10.000
 
@@ -1038,6 +1040,8 @@ function handleEinvoice_(body, user) {
     return { ok: true, provider: cfg.provider, simulated: cfg.provider === 'simulador', missing: einvMissing_(cfg) };
   }
   if (body.action === 'einvoiceEmit') return einvoiceEmit_(cfg, body.invoice || {}, user, body.sandbox === true);
+  if (body.action === 'einvoiceSend') return einvoiceSend_(body, body.sandbox === true);
+  if (body.action === 'einvoiceLink') return einvoiceLink_(body, body.sandbox === true);
   return { ok: false, error: 'acción desconocida: ' + body.action, code: 400 };
 }
 
@@ -1048,6 +1052,9 @@ function einvValidate_(inv) {
   if (!inv.order_id || !inv.order_number) return 'Falta la orden de venta.';
   const c = inv.customer || {};
   if (!String(c.rif || '').trim()) return 'El cliente no tiene RIF o cédula: agrégalo en Clientes antes de facturar.';
+  if (!/^[VEJPGC]\d{5,9}$/.test(einvDni_(c.rif))) {
+    return 'El RIF o cédula del cliente (' + c.rif + ') no es válido. Corrígelo en Clientes: por ejemplo J-12345678-9 o V-12345678.';
+  }
   if (!String(c.name || '').trim()) return 'El cliente no tiene nombre.';
   if (!Array.isArray(inv.lines) || inv.lines.length === 0) return 'La orden no tiene productos.';
   for (let i = 0; i < inv.lines.length; i++) {
@@ -1059,9 +1066,13 @@ function einvValidate_(inv) {
   return '';
 }
 
-/** RIF/cédula como lo guarda Cachicamo: J123456784 (sin guiones ni espacios). */
+/**
+ * RIF/cédula como lo guarda Cachicamo: J123456784 (sin guiones ni espacios).
+ * Una cédula escrita solo con números (30580323) se toma como venezolana: V30580323.
+ */
 function einvDni_(rif) {
-  return String(rif || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const s = String(rif || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return /^\d{5,9}$/.test(s) ? 'V' + s : s;
 }
 
 /** Cuerpo de POST /documents/preview y /documents/save_preview. */
@@ -1197,7 +1208,8 @@ function einvoiceEmit_(cfg, inv, user, sandbox) {
       document_uuid: s.uuid, invoice_number: s.number, control_number: s.control,
       issue_date: s.issueDate || now.slice(0, 10), customer_rif: einvDni_(inv.customer.rif), customer_name: inv.customer.name,
       subtotal: s.subtotal, tax: s.tax, total: s.total, rate: s.rate, pdf_url: '', status: 'emitida',
-      user: user.username, response: JSON.stringify(saved.body).slice(0, 40000), created_at: now, updated_at: now
+      user: user.username, response: JSON.stringify(saved.body).slice(0, 40000), request: JSON.stringify(inv).slice(0, 40000),
+      emailed_to: '', emailed_at: '', created_at: now, updated_at: now
     };
     if (cfg.provider === 'cachicamo') row.pdf_url = einvSavePdf_(cfg, s.uuid, s.number);
     if (!sandbox) upsert_('einvoices', [row]);
@@ -1211,7 +1223,8 @@ function einvPublic_(r) {
   return {
     provider: r.provider, uuid: r.document_uuid, number: r.invoice_number, control: r.control_number,
     issueDate: String(r.issue_date || '').slice(0, 10), subtotal: Number(r.subtotal) || 0, tax: Number(r.tax) || 0,
-    total: Number(r.total) || 0, rate: Number(r.rate) || 0, pdfUrl: r.pdf_url || ''
+    total: Number(r.total) || 0, rate: Number(r.rate) || 0, pdfUrl: r.pdf_url || '',
+    emailedTo: r.emailed_to || '', emailedAt: r.emailed_at || ''
   };
 }
 
@@ -1230,6 +1243,92 @@ function einvSavePdf_(cfg, uuid, number) {
   } catch (e) {
     return ''; // la factura ya está emitida; el PDF se puede bajar desde Cachicamo
   }
+}
+
+// ---------- Envío al cliente (correo y WhatsApp) ----------
+
+function einvFind_(orderId) {
+  return readTable_('einvoices').filter(function (r) { return r.order_id === orderId && r.status === 'emitida'; })[0] || null;
+}
+
+function einvIssuer_() {
+  const s = readTable_('accounting_settings').filter(function (r) { return r.id === 'default'; })[0] || {};
+  return { name: s.issuer_name || '', rif: s.issuer_rif || '', address: s.issuer_address || '', phone: s.issuer_phone || '', email: s.issuer_email || '' };
+}
+
+const einvEsc_ = function (s) {
+  return String(s === undefined || s === null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; });
+};
+const einvMoney_ = function (n) { return '$' + (Number(n) || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); };
+
+/** PDF de la factura: el de la imprenta (Drive) o, en el simulador, uno armado aquí. */
+function einvPdfBlob_(row) {
+  const m = String(row.pdf_url || '').match(/\/d\/([A-Za-z0-9_-]+)/);
+  if (m) return DriveApp.getFileById(m[1]).getBlob().setName('Factura_' + row.invoice_number + '.pdf');
+  let inv = {};
+  try { inv = JSON.parse(row.request || '{}'); } catch (e) { inv = {}; }
+  const is = einvIssuer_();
+  const ivaLabel = { G: 'G (16%)', R: 'R (8%)', E: 'E (exento)' };
+  const lines = (inv.lines || []).map(function (l) {
+    return '<tr><td>' + einvEsc_(l.sku) + '</td><td>' + einvEsc_(l.name) + '</td><td class="r">' + einvEsc_(l.qty) + '</td><td class="r">' + einvMoney_(l.unit_price) +
+      '</td><td class="c">' + (ivaLabel[l.iva] || '') + '</td><td class="r">' + einvMoney_(Number(l.qty) * Number(l.unit_price)) + '</td></tr>';
+  }).join('');
+  const sim = row.provider === 'simulador';
+  const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><style>' +
+    'body{font-family:Arial,sans-serif;font-size:11px;color:#1e293b;margin:24px}h1{font-size:18px;margin:0}' +
+    'table{width:100%;border-collapse:collapse;margin-top:14px;font-size:11px}th,td{padding:5px;border-bottom:1px solid #e2e8f0;text-align:left}' +
+    '.r{text-align:right}.c{text-align:center}.box{display:flex;justify-content:space-between}.sim{color:#b45309;font-weight:bold;font-size:13px;border:2px solid #b45309;padding:6px;text-align:center;margin:10px 0}' +
+    '</style></head><body>' +
+    (sim ? '<div class="sim">FACTURA SIMULADA · SIN VALIDEZ FISCAL · SOLO PARA PRUEBAS</div>' : '') +
+    '<table><tr><td style="border:0"><h1>' + einvEsc_(is.name) + '</h1>RIF: ' + einvEsc_(is.rif) + '<br>' + einvEsc_(is.address) + '<br>' + einvEsc_(is.phone) + '</td>' +
+    '<td class="r" style="border:0"><h1>FACTURA</h1>N.º de documento: <b>' + einvEsc_(row.invoice_number) + '</b><br>N.º de control: <b>' + einvEsc_(row.control_number) + '</b><br>Fecha de emisión: ' + einvEsc_(row.issue_date) + '<br>Orden: ' + einvEsc_(row.order_number) + '</td></tr></table>' +
+    '<p><b>Cliente:</b> ' + einvEsc_(row.customer_name) + ' · <b>RIF/C.I.:</b> ' + einvEsc_(row.customer_rif) + '<br>' + einvEsc_((inv.customer || {}).address) + '</p>' +
+    '<table><tr><th>Código</th><th>Descripción</th><th class="r">Cant.</th><th class="r">Precio unit.</th><th class="c">IVA</th><th class="r">Total</th></tr>' + lines + '</table>' +
+    '<table style="width:45%;margin-left:55%"><tr><td>Subtotal</td><td class="r">' + einvMoney_(row.subtotal) + '</td></tr><tr><td>IVA</td><td class="r">' + einvMoney_(row.tax) +
+    '</td></tr><tr><td><b>Total</b></td><td class="r"><b>' + einvMoney_(row.total) + '</b></td></tr></table></body></html>';
+  return Utilities.newBlob(html, 'text/html', 'factura.html').getAs('application/pdf').setName('Factura_' + row.invoice_number + '.pdf');
+}
+
+/** Envía la factura por correo al cliente, con el PDF adjunto. */
+function einvoiceSend_(body, sandbox) {
+  if (sandbox) return { ok: false, error: 'En modo prueba no se envían correos.', code: 400 };
+  const to = String(body.to || '').trim();
+  if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(to)) return { ok: false, error: 'El correo del cliente no es válido.', code: 400 };
+  const row = einvFind_(body.order_id);
+  if (!row) return { ok: false, error: 'Esa orden no tiene factura digital.', code: 404 };
+  const is = einvIssuer_();
+  const sim = row.provider === 'simulador';
+  const subject = (sim ? '[PRUEBA] ' : '') + 'Factura N.º ' + row.invoice_number + (is.name ? ' · ' + is.name : '');
+  const html = '<p>Estimado(a) ' + einvEsc_(row.customer_name) + ':</p>' +
+    '<p>Le enviamos adjunta su factura digital <b>N.º ' + einvEsc_(row.invoice_number) + '</b> (N.º de control ' + einvEsc_(row.control_number) +
+    ') de fecha ' + einvEsc_(row.issue_date) + ', por un total de <b>' + einvMoney_(row.total) + '</b>.</p>' +
+    (sim ? '<p style="color:#b45309"><b>Este es un envío de prueba: la factura es simulada y no tiene validez fiscal.</b></p>' : '') +
+    '<p>Gracias por su compra.<br>' + einvEsc_(is.name) + (is.phone ? '<br>' + einvEsc_(is.phone) : '') + '</p>';
+  const opts = { to: to, subject: subject, htmlBody: html, attachments: [einvPdfBlob_(row)] };
+  if (is.name) opts.name = is.name;
+  if (is.email) opts.replyTo = is.email;
+  MailApp.sendEmail(opts);
+  const now = new Date().toISOString();
+  upsert_('einvoices', [{ id: row.id, emailed_to: to, emailed_at: now, updated_at: now }]);
+  return { ok: true, sentTo: to, emailedAt: now };
+}
+
+/** Enlace al PDF (cualquiera con el enlace puede verlo) para mandarlo por WhatsApp. */
+function einvoiceLink_(body, sandbox) {
+  if (sandbox) return { ok: false, error: 'En modo prueba no se genera el enlace del PDF.', code: 400 };
+  const row = einvFind_(body.order_id);
+  if (!row) return { ok: false, error: 'Esa orden no tiene factura digital.', code: 404 };
+  let id = (String(row.pdf_url || '').match(/\/d\/([A-Za-z0-9_-]+)/) || [])[1];
+  if (!id) {
+    const it = DriveApp.getFoldersByName('facturas_digitales');
+    const folder = it.hasNext() ? it.next() : DriveApp.createFolder('facturas_digitales');
+    id = folder.createFile(einvPdfBlob_(row)).getId();
+  }
+  const file = DriveApp.getFileById(id);
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const url = file.getUrl();
+  if (url !== row.pdf_url) upsert_('einvoices', [{ id: row.id, pdf_url: url, updated_at: new Date().toISOString() }]);
+  return { ok: true, url: url, invoice: einvPublic_(Object.assign({}, row, { pdf_url: url })) };
 }
 
 // ---------- Simulador de la API de Cachicamo ----------

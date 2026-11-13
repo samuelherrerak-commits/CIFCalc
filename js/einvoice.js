@@ -50,3 +50,28 @@ export async function emitEinvoice(order) {
 }
 
 export const isSimulated = (order) => order.einvoice_provider === 'simulador';
+
+// Envía la factura por correo (PDF adjunto) desde la cuenta de Google del Apps Script.
+export function sendEinvoiceEmail(order, to) {
+  return einvoiceCall('einvoiceSend', { order_id: order.id, to });
+}
+
+// Enlace público al PDF, para mandarlo por WhatsApp.
+export async function einvoicePdfLink(order) {
+  const res = await einvoiceCall('einvoiceLink', { order_id: order.id });
+  return res.url;
+}
+
+// Mensaje de WhatsApp con los datos de la factura y el enlace al PDF.
+export function whatsappText(order, url) {
+  const fmt = (n) => '$' + (Number(n) || 0).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const sim = isSimulated(order) ? ' (PRUEBA: factura simulada, sin validez fiscal)' : '';
+  return `Hola ${order.contact_name || ''}, le enviamos su factura N.º ${order.invoice_number} (control ${order.control_number}) por ${fmt(order.total)}${sim}.\n\nPDF: ${url}`;
+}
+
+// Enlace de WhatsApp (número venezolano local 0414… → 58414…).
+export const waLink = (phone, text = '') => {
+  let digits = String(phone || '').replace(/\D/g, '');
+  if (digits.startsWith('0')) digits = '58' + digits.slice(1);
+  return digits ? `https://wa.me/${digits}${text ? '?text=' + encodeURIComponent(text) : ''}` : '';
+};
