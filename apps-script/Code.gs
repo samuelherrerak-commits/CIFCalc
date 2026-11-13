@@ -1048,6 +1048,9 @@ function einvValidate_(inv) {
   if (!inv.order_id || !inv.order_number) return 'Falta la orden de venta.';
   const c = inv.customer || {};
   if (!String(c.rif || '').trim()) return 'El cliente no tiene RIF o cédula: agrégalo en Clientes antes de facturar.';
+  if (!/^[VEJPGC]\d{5,9}$/.test(einvDni_(c.rif))) {
+    return 'El RIF o cédula del cliente (' + c.rif + ') no es válido. Corrígelo en Clientes: por ejemplo J-12345678-9 o V-12345678.';
+  }
   if (!String(c.name || '').trim()) return 'El cliente no tiene nombre.';
   if (!Array.isArray(inv.lines) || inv.lines.length === 0) return 'La orden no tiene productos.';
   for (let i = 0; i < inv.lines.length; i++) {
@@ -1059,9 +1062,13 @@ function einvValidate_(inv) {
   return '';
 }
 
-/** RIF/cédula como lo guarda Cachicamo: J123456784 (sin guiones ni espacios). */
+/**
+ * RIF/cédula como lo guarda Cachicamo: J123456784 (sin guiones ni espacios).
+ * Una cédula escrita solo con números (30580323) se toma como venezolana: V30580323.
+ */
 function einvDni_(rif) {
-  return String(rif || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const s = String(rif || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return /^\d{5,9}$/.test(s) ? 'V' + s : s;
 }
 
 /** Cuerpo de POST /documents/preview y /documents/save_preview. */
