@@ -34,9 +34,13 @@ export function categoryForCode(code) {
   return cat ? cat.key : 'other';
 }
 
+// Monto de costo de una línea: el debe suma y el haber resta (un descuento
+// en la factura del proveedor se registra en el haber de la misma cuenta).
+export const costAmount = (m) => (Number(m.debit) || 0) - (Number(m.credit) || 0);
+
 // ¿Esta línea del diario es costo (no IVA, no contrapartida)?
 export function isCostLine(m, tipoOf) {
-  if (!(Number(m.debit) > 0)) return false;
+  if (!costAmount(m)) return false;
   const code = String(m.codigo_cuenta || '');
   return code.startsWith('5') || tipoOf.get(code) === 'Costo';
 }
@@ -63,7 +67,7 @@ export function analyzeContainer(container, items, lines = []) {
   const open = container.status !== 'closed';
   const cats = COST_CATEGORIES.map(k => {
     const est = calculated.reduce((s, c) => s + (Number(k.est(c)) || 0), 0);
-    const real = lines.filter(m => categoryForCode(m.codigo_cuenta) === k.key).reduce((s, m) => s + (Number(m.debit) || 0), 0);
+    const real = lines.filter(m => categoryForCode(m.codigo_cuenta) === k.key).reduce((s, m) => s + costAmount(m), 0);
     return { key: k.key, label: k.label, code: k.code, estFn: k.est, est: r2(est), real: r2(real), used: open ? r2(Math.max(real, est)) : (real > 0 ? r2(real) : r2(est)), hasReal: real > 0 };
   });
   const estTotal = r2(cats.reduce((s, k) => s + k.est, 0));

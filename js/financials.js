@@ -1,6 +1,6 @@
 import Store from './store.js';
 import { inferirTipo } from './accounting.js';
-import { analyzeContainer, realCostLines } from './container-costs.js';
+import { analyzeContainer, realCostLines, costAmount } from './container-costs.js';
 import { accountBalances, isOverdrawn } from './overdrawn.js';
 import { stockOuts } from './analytics.js';
 
@@ -65,7 +65,7 @@ export function inventoryAt(date) {
     const lines = real.get(c.id) || [];
     const arrived = c.status === 'closed' && String(c.operation_date || '').slice(0, 10) <= date;
     if (!arrived) {
-      const paid = lines.reduce((s, m) => s + (Number(m.debit) || 0), 0);
+      const paid = lines.reduce((s, m) => s + costAmount(m), 0);
       if (paid > 0) { transit += paid; transitDetail.push({ name: `Mercancía en tránsito — ${c.bl_number || 'contenedor'}`, qty: 0, avg: 0, value: r2(paid) }); }
       continue;
     }
