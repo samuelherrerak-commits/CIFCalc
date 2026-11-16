@@ -59,7 +59,9 @@ export function invoiceFieldsHtml(fs, { input, label }) {
 
 // totalInput: el campo "Monto Total" de la página; con factura se vuelve de
 // solo lectura y muestra el total de la factura (lo que se paga).
-export function mountInvoiceFields(fs, { totalInput, totalLabel, onChange } = {}) {
+// basesFromLines: el exento y las bases imponibles salen de las líneas de la
+// factura (solo lectura; se fijan con setBases) y el IVA sigue editable.
+export function mountInvoiceFields(fs, { totalInput, totalLabel, onChange, basesFromLines = false, onToggle } = {}) {
   const $ = (id) => document.getElementById(id);
   const on = $('inv-on');
   if (!on) {
@@ -100,18 +102,29 @@ export function mountInvoiceFields(fs, { totalInput, totalLabel, onChange } = {}
     if (onChange) onChange(t);
   };
 
-  on.addEventListener('change', render);
+  if (basesFromLines) {
+    ['inv-exempt', 'inv-base-g', 'inv-base-r'].forEach(id => { $(id).readOnly = true; $(id).classList.add('bg-slate-100'); $(id).title = 'Sale de las líneas de la factura'; });
+  }
+  on.addEventListener('change', () => { render(); if (onToggle) onToggle(on.checked); });
   ['inv-exempt', 'inv-base-g', 'inv-base-r'].forEach(id => $(id).addEventListener('input', () => { autoTax(); render(); }));
   ['inv-tax-g', 'inv-tax-r'].forEach(id => $(id).addEventListener('input', () => { manual[id] = $(id).value !== ''; render(); }));
 
   return {
     active: () => on.checked,
     read,
+    // Exento y bases imponibles desde las líneas (modo basesFromLines).
+    setBases({ exempt = 0, base_general = 0, base_reducida = 0 }) {
+      const put = (id, v) => { $(id).value = v ? r2(v).toFixed(2) : ''; };
+      put('inv-exempt', exempt); put('inv-base-g', base_general); put('inv-base-r', base_reducida);
+      autoTax();
+      render();
+    },
     validate: () => {
       if (!on.checked) return '';
       const t = read();
       if (!t.invoice_number) return 'Indica el N.º de la factura del proveedor (va al Libro de Compras).';
       if (!(t.total > 0)) return 'Indica al menos un monto de la factura: exento o base imponible.';
+      if (t.exempt < 0 || t.base_general < 0 || t.base_reducida < 0) return 'Un descuento deja negativa la base o el exento: revisa el IVA de las líneas.';
       if ((t.tax_general > 0 && !t.base_general) || (t.tax_reducida > 0 && !t.base_reducida)) return 'Hay IVA sin base imponible: revisa los renglones de la factura.';
       return '';
     },

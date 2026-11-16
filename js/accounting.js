@@ -200,7 +200,7 @@ export function buildContainerClosingLines(container, summary, mapping, accounts
 // extra = { cantidad, unidad, precio_venta, codigo_barra } — columnas "anchas"
 // estilo LegalYa (addTransaction); las líneas de pago/contrapartida van sin
 // cantidad real (cantidad: 0, unidad: 'monto'), igual que allá.
-function line(entryDate, account, debit, credit, concepto, refDoc, entidad, extra) {
+export function line(entryDate, account, debit, credit, concepto, refDoc, entidad, extra) {
   const ex = extra || {};
   return {
     entry_date: entryDate,

@@ -149,6 +149,7 @@ const Calculator = {
             <td class="p-2">$${fmtNum(c.oceanFreightAssigned)}</td>
             <td class="p-2 text-blue-700 font-medium">$${fmtNum(c.insuranceAmount)}</td>
             <td class="p-2 font-bold text-slate-900 bg-blue-50/50">$${fmtNum(c.cifTotal)}</td>
+            <td class="p-2 font-bold text-blue-900 bg-blue-50/50">$${fmtNum(c.cifUnit)}</td>
             <td class="p-2 text-amber-800 font-medium">$${fmtNum(c.tariffAmount)}</td>
             <td class="p-2 text-teal-700 font-medium">$${fmtNum(c.portFeeAmount)}</td>
             <td class="p-2 text-amber-700 font-medium">$${fmtNum(c.customsBrokerAmount)}</td>
@@ -236,7 +237,7 @@ const Calculator = {
             : `<div class="text-[10px] font-normal text-slate-400 line-through">${esc(item.sku_briggs) || ''}</div>
                <button data-link="${index}" class="whitespace-nowrap text-[11px] font-bold px-2 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800" title="Sin vincular al catálogo: no entra al inventario">⚠ Vincular</button>`}</td>
           <td class="p-2">${esc(item.sku) || '—'}</td>
-          <td class="p-2">${esc(item.name) || '—'}</td>
+          <td class="p-2"><div class="flex items-center gap-2">${item.foto_url ? `<img src="${esc(item.foto_url)}" loading="lazy" class="w-10 h-10 object-contain rounded border border-slate-200 bg-white flex-shrink-0" alt="">` : ''}<span>${esc(item.name) || '—'}</span></div></td>
           <td class="p-2">${esc(supplierName(item.supplier_id)) || '—'}</td>
           <td class="p-2">${esc(item.origin_country) || '—'}</td>
           <td class="p-2 text-right"><input data-field="qty" data-idx="${index}" type="number" step="1" min="0" value="${item.qty}" class="w-20 p-1 border rounded bg-white text-xs text-right"></td>
@@ -559,6 +560,13 @@ const Calculator = {
             </label>
           </div>
           <div>
+            <label class="block text-xs font-semibold text-blue-700 mb-1">Base del seguro</label>
+            <select id="f-insurance-basis" class="w-full p-2 border border-blue-200 rounded-lg text-sm bg-blue-50/30 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none font-semibold text-blue-900">
+              <option value="fob" ${container.insurance_basis !== 'cfr110' ? 'selected' : ''}>Sobre FOB</option>
+              <option value="cfr110" ${container.insurance_basis === 'cfr110' ? 'selected' : ''}>110 % del CFR (FOB + flete)</option>
+            </select>
+          </div>
+          <div>
             <label class="block text-xs font-semibold text-teal-700 mb-1">Tasa Portuaria (%)</label>
             <input id="f-port-rate" type="number" step="0.01" value="${container.port_fee_rate}" class="w-full p-2 border border-teal-200 rounded-lg text-sm bg-teal-50/30 focus:bg-white focus:ring-2 focus:ring-teal-500 outline-none font-semibold text-teal-900">
           </div>
@@ -675,6 +683,7 @@ const Calculator = {
                 <th class="p-2">Flete Mar. ($)</th>
                 <th class="p-2 text-blue-300">Seguro ($)</th>
                 <th class="p-2 font-bold text-blue-200">CIF Total ($)</th>
+                <th class="p-2 font-bold text-blue-200">CIF Unit. ($)</th>
                 <th class="p-2">Arancel ($)</th>
                 <th class="p-2 text-teal-300">Tasa Port. ($)</th>
                 <th class="p-2 text-amber-300">Ag. Aduanal ($)</th>
@@ -761,6 +770,7 @@ const Calculator = {
     bind('f-capacity', 'container_capacity', true);
     bind('f-max-wt', 'container_max_weight', true);
     bind('f-insurance-rate', 'insurance_rate', true);
+    bind('f-insurance-basis', 'insurance_basis', false);
     bind('f-port-rate', 'port_fee_rate', true);
     bind('f-vat', 'vat_rate', true);
     bind('f-ocean', 'ocean_freight', true);
@@ -850,7 +860,7 @@ const Calculator = {
     // Bloqueamos los montos aquí para que no se pueda desincronizar ese asiento editando el costeo después.
     const LOCKABLE_FIELD_IDS = [
       'f-bl', 'f-date', 'f-capacity', 'f-max-wt',
-      'f-insurance-on', 'f-insurance-rate', 'f-port-rate', 'f-vat',
+      'f-insurance-on', 'f-insurance-rate', 'f-insurance-basis', 'f-port-rate', 'f-vat',
       'f-ocean', 'f-inland', 'f-customs', 'f-broker', 'f-op', 'sel-company'
     ];
     const renderLockState = () => {
@@ -965,6 +975,7 @@ const Calculator = {
           'Flete Mar. ($)': c.oceanFreightAssigned,
           'Seguro ($)': c.insuranceAmount,
           'CIF Total ($)': c.cifTotal,
+          'CIF Unit. ($)': c.cifUnit,
           'Arancel ($)': c.tariffAmount,
           'Tasa Port. ($)': c.portFeeAmount,
           'Ag. Aduanal ($)': c.customsBrokerAmount,

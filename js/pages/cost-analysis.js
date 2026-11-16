@@ -1,6 +1,6 @@
 import Store from '../store.js';
 import { fmtNum, esc } from '../utils.js';
-import { analyzeContainer, realCostLines } from '../container-costs.js';
+import { analyzeContainer, realCostLines, costAmount } from '../container-costs.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { card } from '../components/accounting-shell.js';
 
@@ -89,8 +89,8 @@ const CostAnalysis = {
                 <tbody>${lines.map(m => `
                   <tr class="border-t border-slate-100 first:border-t-0">
                     <td class="py-1.5 text-slate-500 whitespace-nowrap pr-2">${esc(String(m.entry_date).slice(0, 10))}</td>
-                    <td class="py-1.5"><div class="text-slate-700 truncate max-w-[16rem]">${esc(String(m.concepto || '').split('|')[0])}</div><div class="text-[10px] text-slate-400">${esc(m.ref_doc)} · ${esc(m.cuenta_contable)}${m.entidad ? ' · ' + esc(m.entidad) : ''}</div></td>
-                    <td class="py-1.5 text-right tabular-nums">$${fmtNum(m.debit)}</td>
+                    <td class="py-1.5"><div class="text-slate-700 truncate max-w-[16rem]">${esc(String(m.concepto || '').split('|').map(x => x.trim()).filter(Boolean).reverse().join(' · '))}</div><div class="text-[10px] text-slate-400">${esc(m.ref_doc)} · ${esc(m.cuenta_contable)}${m.entidad ? ' · ' + esc(m.entidad) : ''}</div></td>
+                    <td class="py-1.5 text-right tabular-nums ${costAmount(m) < 0 ? 'text-emerald-700' : ''}">${costAmount(m) < 0 ? '−' : ''}$${fmtNum(Math.abs(costAmount(m)))}</td>
                   </tr>`).join('')}</tbody>
               </table>` : '<p class="text-xs text-slate-400 py-2">Todavía no hay costos asignados a este contenedor. Asígnalos en <a href="#/contabilidad/costos" class="text-blue-600">Costos</a>.</p>'}
             </div>

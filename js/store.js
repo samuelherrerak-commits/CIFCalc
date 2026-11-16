@@ -110,7 +110,8 @@ const TABLE_DEFAULTS = {
     port_fee_rate: 0, vat_rate: 0,
     ocean_freight: 0, inland_freight: 0,
     customs_expenses: 0, customs_broker_fee: 0, op_expenses: 0,
-    status: 'draft', created_at: '', updated_at: '', inventory_posted: false
+    status: 'draft', created_at: '', updated_at: '', inventory_posted: false,
+    insurance_basis: 'fob'
   },
   items: {
     container_id: null,
@@ -120,7 +121,7 @@ const TABLE_DEFAULTS = {
     qty: 0, units_per_box: 1, box_volume: 0,
     fob_unit: 0, tariff_rate: 0, gain_margin: 0,
     product_id: null, sku_briggs: '', weight_kg: 0,
-    created_at: '', updated_at: ''
+    created_at: '', updated_at: '', foto_url: '', foto_file_id: ''
   },
   products: {
     sku_briggs: '', sku: '', name: '',

@@ -1,4 +1,5 @@
 import Store from '../store.js';
+import Auth from '../auth.js';
 import { fmtNum, fmtInt, esc } from '../utils.js';
 import { contactOptions, quickAddContact } from '../components/contact-picker.js';
 import { mountPOS } from '../components/pos.js';
@@ -200,6 +201,7 @@ function renderHome(app) {
             ${x.status === 'aprobado' ? btn('data-convert', 'Convertir en orden de venta', 'bg-emerald-600 text-white hover:bg-emerald-700') : ''}
             ${x.status === 'aprobado' ? btn('data-unapprove', 'Volver a pendiente', 'bg-slate-100 text-slate-700 hover:bg-slate-200') : ''}
             ${x.status === 'pendiente' || x.status === 'aprobado' ? btn('data-reject', 'Rechazar', 'text-red-600 hover:bg-red-50') : ''}
+            ${Auth.isAdmin() && x.status !== 'convertido' ? btn('data-delete', 'Eliminar', 'text-slate-400 hover:text-red-600 hover:bg-red-50') : ''}
           </div>
         </div>`;
       }).join('');
@@ -229,6 +231,12 @@ function renderHome(app) {
       Store.update('sales_orders', { id: order.id, payment_currency: q.payment_currency || 'divisas', fx_bcv: Number(q.fx_bcv) || 0, fx_usdt: Number(q.fx_usdt) || 0, fx_factor: Number(q.fx_factor) || 0 });
       Store.update('quotes', { id, status: 'convertido', converted_ref: order.order_number });
       location.hash = `#/contabilidad/ordenes/${order.id}`;
+    });
+    on('data-delete', id => {
+      const q = Store.getById('quotes', id);
+      if (!q || !confirm(`¿Eliminar el presupuesto ${q.quote_number}? No se puede deshacer.`)) return;
+      Store.remove('quotes', id);
+      renderAll();
     });
     on('data-reject', id => {
       if (!confirm('¿Marcar este presupuesto como rechazado?')) return;

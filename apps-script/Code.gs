@@ -95,13 +95,17 @@ const SCHEMAS = {
     'insurance_rate', 'insurance_enabled', 'port_fee_rate', 'vat_rate',
     'ocean_freight', 'inland_freight', 'customs_expenses',
     'customs_broker_fee', 'op_expenses', 'status',
-    'created_at', 'updated_at', 'inventory_posted'
+    'created_at', 'updated_at', 'inventory_posted',
+    // Base del seguro: 'fob' o 'cfr110' (110 % del CFR).
+    'insurance_basis'
   ],
   items: [
     'id', 'container_id', 'product_id', 'supplier_id', 'origin_country',
     'sku', 'sku_briggs', 'name', 'qty', 'units_per_box', 'box_volume',
     'weight_kg', 'fob_unit', 'hs_code', 'tariff_rate', 'gain_margin',
-    'created_at', 'updated_at'
+    'created_at', 'updated_at',
+    // Foto del ítem (productos que aún no están en el catálogo).
+    'foto_url', 'foto_file_id'
   ],
   // Catálogo maestro: SIN qty, gain_margin ni weight_lbs.
   // foto_url / foto_file_id van AL FINAL a propósito: las columnas nuevas

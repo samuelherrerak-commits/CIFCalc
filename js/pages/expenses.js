@@ -1,6 +1,7 @@
 import Store from '../store.js';
 import { fmtNum, esc, num } from '../utils.js';
-import { buildExpenseLines, buildTwoLineEntry, withRoundingPlug } from '../accounting.js';
+import { line, withRoundingPlug } from '../accounting.js';
+import { invoiceLinesHtml, mountInvoiceLines } from '../components/invoice-lines.js';
 import { contactOptions, quickAddContact } from '../components/contact-picker.js';
 import { invoiceFieldsHtml, mountInvoiceFields, purchaseFiscalDoc } from '../components/invoice-fields.js';
 import AccountingTabs from '../components/accounting-tabs.js';
@@ -20,6 +21,20 @@ const Expenses = {
     const diffAccount = () => accounts.find(a => a.codigo === '6.9.01.01');
     const fs = Store.getFiscalSettings();
     let invoice = null; // bloque de factura fiscal (exento + bases imponibles + IVA)
+    let lines = null; // líneas de la factura (concepto → cuenta → monto)
+    const LINE_GROUPS = [{ label: 'Gastos', accounts: byTipo('Gasto') }, { label: 'Costos', accounts: byTipo('Costo') }];
+
+    // Asiento de la factura: cada línea a su cuenta (descuento al haber), el IVA
+    // a IVA crédito fiscal y el total (neto + IVA) contra el método de pago.
+    const entryLines = ({ date, concepto, entidad, refDoc, payAccount, tax }) => {
+      const out = lines.journalLines({ date, concepto, refDoc, entidad });
+      if (tax > 0) {
+        const ivaAccount = accounts.find(a => a.codigo === '1.1.03.01') || Store.ensureCatalogAccount('1.1.03.01');
+        out.push(line(date, ivaAccount, tax, 0, `${concepto} | IVA crédito fiscal`, refDoc, entidad));
+      }
+      out.push(line(date, payAccount, 0, Math.round((lines.totals().subtotal + tax) * 100) / 100, concepto, refDoc, entidad));
+      return out;
+    };
     // Una fila por documento (ref_doc): neto del gasto/costo, IVA y total.
     const recentDocs = () => {
       const byRef = new Map();
@@ -28,9 +43,13 @@ const Expenses = {
         byRef.get(m.ref_doc).push(m);
       }
       const fiscal = new Map(Store.getAll('fiscal_docs').filter(d => d.ref_doc).map(d => [d.ref_doc, d]));
+      const tipoOf = new Map(accounts.map(a => [String(a.codigo), a.tipo]));
+      const isNetLine = (l) => { const c = String(l.codigo_cuenta); return c.startsWith('5') || c.startsWith('6') || ['Costo', 'Gasto'].includes(tipoOf.get(c)); };
       return [...byRef.entries()].map(([ref, lines]) => {
         const iva = lines.filter(l => String(l.codigo_cuenta) === '1.1.03.01').reduce((s, l) => s + (Number(l.debit) || 0), 0);
-        const debits = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
+        // Neto = lo que va a costo/gasto (debe − haber: los descuentos restan).
+        const net = lines.filter(isNetLine).reduce((s, l) => s + (Number(l.debit) || 0) - (Number(l.credit) || 0), 0);
+        const debits = net + iva;
         const first = lines[0];
         return { ref, date: first.entry_date, created: first.created_at, concepto: String(first.concepto || '').split('|')[0].trim(), entidad: first.entidad, net: debits - iva, iva, total: debits, invoice: (fiscal.get(ref) || {}).invoice_number };
       }).sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(b.created || '').localeCompare(String(a.created || ''))).slice(0, 30);
@@ -62,60 +81,44 @@ const Expenses = {
 
     const saveExpense = () => {
       const date = document.getElementById('f-date').value;
-      const expenseId = document.getElementById('f-expense').value;
       const paymentId = document.getElementById('f-payment').value;
       const contact = contacts.find(c => c.id === document.getElementById('f-contact').value);
       const entidad = contact ? contact.name : '';
       const concepto = document.getElementById('f-concepto').value.trim();
       const inv = invoice.active() ? invoice.read() : null;
-      // Con factura: el gasto es lo exento + la base imponible (sin IVA) y el
-      // IVA va aparte a IVA Acreditable; sin factura, el monto escrito.
-      const total = inv ? inv.net : num(document.getElementById('f-total'));
       const msgEl = document.getElementById('expense-msg');
       msgEl.textContent = '';
 
       if (!date) { msgEl.textContent = 'La fecha es obligatoria.'; return; }
-      if (!expenseId) { msgEl.textContent = 'Selecciona la categoría de gasto.'; return; }
+      const linesMsg = lines.validate();
+      if (linesMsg) { msgEl.textContent = linesMsg; return; }
       if (!paymentId) { msgEl.textContent = 'Selecciona la cuenta de pago (Efectivo/Banco/Proveedores).'; return; }
       const invMsg = invoice.validate();
       if (invMsg) { msgEl.textContent = invMsg; return; }
-      if (total <= 0) { msgEl.textContent = 'El monto debe ser mayor a 0.'; return; }
       if (!concepto) { msgEl.textContent = 'El concepto es obligatorio.'; return; }
 
       const refDoc = Store.uniqueRef('GST');
       const paymentAccount = accounts.find(a => a.id === paymentId);
-      const data = {
-        date, total, concepto, entidad, refDoc,
-        paymentAccount,
-        expenseAccount: accounts.find(a => a.id === expenseId)
-      };
-
-      let lines = buildExpenseLines(data);
-      if (inv && inv.tax > 0) {
-        const ivaAccount = accounts.find(a => a.codigo === '1.1.03.01') || Store.ensureCatalogAccount('1.1.03.01');
-        lines = lines.concat(buildTwoLineEntry({ date, total: inv.tax, concepto: `${concepto} | IVA crédito fiscal`, entidad, refDoc, debitAccount: ivaAccount, creditAccount: paymentAccount }));
-      }
-      Store.postJournalRows(withRoundingPlug(lines, diffAccount(), date, refDoc), { source: 'expense' });
+      const jl = entryLines({ date, concepto, entidad, refDoc, payAccount: paymentAccount, tax: inv ? inv.tax : 0 });
+      Store.postJournalRows(withRoundingPlug(jl, diffAccount(), date, refDoc), { source: 'expense', keepLines: true });
       if (inv) Store.insert('fiscal_docs', purchaseFiscalDoc(Store, inv, { date, contact, entidad, concepto, refDoc }));
 
-      document.getElementById('f-total').value = '';
       document.getElementById('f-concepto').value = '';
       document.getElementById('f-contact').value = '';
+      lines.reset();
       invoice.reset();
+      updateTotal();
       renderList();
     };
 
     const body = `
       <div class="${card} space-y-3">
-        <h2 class="text-sm font-semibold text-slate-900">Registrar Gasto</h2>
+        <h2 class="text-sm font-semibold text-slate-900">Registrar factura de gastos</h2>
+        <p class="text-xs text-slate-400">Una factura puede tener varias líneas, cada una a su cuenta contable.</p>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div>
             <label class="${label}">Fecha *</label>
             <input id="f-date" type="date" value="${new Date().toISOString().slice(0, 10)}" class="${input}">
-          </div>
-          <div>
-            <label class="${label}">Categoría de Gasto *</label>
-            <select id="f-expense" class="${input}">${accountOptions(byTipo('Gasto'))}</select>
           </div>
           <div>
             <label class="${label}">Beneficiario</label>
@@ -131,17 +134,18 @@ const Expenses = {
             </select>
           </div>
           <div class="sm:col-span-2 lg:col-span-3">
-            <label class="${label}">Concepto *</label>
+            <label class="${label}">Concepto general *</label>
             <input id="f-concepto" type="text" class="${input}">
           </div>
           <div>
-            <label id="lbl-total" class="${label}">Monto Total *</label>
-            <input id="f-total" type="number" min="0" step="0.01" class="${input}">
+            <label class="${label}">Total a pagar</label>
+            <input id="f-total" type="text" readonly tabindex="-1" placeholder="Suma de las líneas" class="${input} bg-slate-100 text-right font-mono font-semibold">
           </div>
         </div>
+        ${invoiceLinesHtml({ label })}
         ${invoiceFieldsHtml(fs, { input, label })}
         <div id="expense-msg" class="text-xs text-red-600"></div>
-        <button id="btn-save-expense" class="${btnPrimary}">Registrar Gasto</button>
+        <button id="btn-save-expense" class="${btnPrimary}">Registrar factura</button>
       </div>
 
       <div class="${card}">
@@ -157,7 +161,25 @@ const Expenses = {
 
     document.getElementById('btn-save-expense').addEventListener('click', saveExpense);
     document.getElementById('f-contact').addEventListener('change', handleContactChange);
-    invoice = mountInvoiceFields(fs, { totalInput: document.getElementById('f-total'), totalLabel: document.getElementById('lbl-total') });
+
+    // Factura por líneas: cada concepto a su cuenta; el IVA (si hay factura
+    // fiscal) sale de las bases de las líneas.
+    const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+    const updateTotal = () => {
+      if (!lines) return; // aún montándose
+      const t = lines.totals();
+      const tax = invoice && invoice.active() ? invoice.read().tax : 0;
+      document.getElementById('f-total').value = (t.subtotal || tax) ? r2(t.subtotal + tax).toFixed(2) : '';
+    };
+    lines = mountInvoiceLines({
+      fs, groups: LINE_GROUPS, input,
+      onChange: (t) => { if (invoice && invoice.active()) invoice.setBases(t); updateTotal(); }
+    });
+    invoice = mountInvoiceFields(fs, {
+      basesFromLines: true,
+      onChange: updateTotal,
+      onToggle: (on) => { lines.setFiscal(on); if (on) invoice.setBases(lines.totals()); updateTotal(); }
+    });
 
     renderList();
 

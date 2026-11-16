@@ -281,3 +281,64 @@ export function orderDocument(order) {
     terms: Store.getBusinessProfile().terms
   };
 }
+
+// ---------- Eliminar (solo administradores; para errores de carga) ----------
+
+// Borra un asiento del diario y lo que depende de él:
+//   • la factura del Libro de Compras/Ventas con esa referencia;
+//   • el anticipo o cobro de una orden (si el asiento era eso);
+//   • si era la factura de una orden, la orden vuelve a quedar abierta.
+// Devuelve { ok, error?, what } con lo que se borró.
+export function deleteJournalEntry(refDoc) {
+  if (!refDoc) return { ok: false, error: 'Asiento sin referencia.' };
+  const what = [];
+  const order = Store.getAll('sales_orders').find(o => o.invoice_ref === refDoc);
+  if (order) {
+    const cobros = orderPayments(order.id).filter(p => p.kind === 'cobro');
+    if (cobros.length) return { ok: false, error: `La factura de ${order.order_number} tiene ${cobros.length} cobro(s) registrados. Elimina primero esos cobros.` };
+    Store.update('sales_orders', {
+      id: order.id, status: 'abierta', invoice_ref: '', invoice_number: '', control_number: '', invoice_date: '',
+      einvoice_provider: '', einvoice_uuid: '', einvoice_pdf_url: ''
+    });
+    for (const d of Store.getAll('fiscal_docs').filter(d => d.source_ref === order.id && d.book === 'ventas')) Store.remove('fiscal_docs', d.id);
+    what.push(`la factura de ${order.order_number} (la orden vuelve a quedar abierta)`);
+  }
+  const pay = Store.getAll('order_payments').find(p => p.ref_doc === refDoc);
+  if (pay) {
+    Store.remove('order_payments', pay.id);
+    const o = Store.getById('sales_orders', pay.order_id);
+    what.push(`el ${pay.kind} de ${o ? o.order_number : 'la orden'}`);
+  }
+  for (const d of Store.getAll('fiscal_docs').filter(d => d.ref_doc === refDoc)) {
+    Store.remove('fiscal_docs', d.id);
+    what.push(`la factura ${d.invoice_number || ''} del Libro de ${d.book === 'ventas' ? 'Ventas' : 'Compras'}`);
+  }
+  const hadCost = Store.getAll('movements').some(m => m.ref_doc === refDoc && m.source_ref && (m.source === 'cost' || m.source === 'expense'));
+  Store.removeJournalRowsByRef(refDoc);
+  if (hadCost) Store.applyRealCosts();
+  return { ok: true, what };
+}
+
+// Borra una orden de venta completa: sus anticipos y cobros (con sus
+// asientos), sus despachos (la mercancía vuelve al inventario), su factura
+// (asiento y Libro de Ventas). El presupuesto de origen vuelve a "aprobado".
+export function deleteSalesOrder(orderId) {
+  const order = Store.getById('sales_orders', orderId);
+  if (!order) return { ok: false, error: 'Orden no encontrada.' };
+  for (const p of orderPayments(order.id)) {
+    if (p.ref_doc) Store.removeJournalRowsByRef(p.ref_doc);
+    Store.remove('order_payments', p.id);
+  }
+  for (const d of orderDispatches(order.id)) {
+    for (const it of dispatchItems(d)) {
+      const p = Store.getById('products', it.productId);
+      if (p) Store.update('products', { id: p.id, stock: (Number(p.stock) || 0) + (Number(it.qty) || 0) });
+    }
+    Store.remove('dispatches', d.id);
+  }
+  if (order.invoice_ref) Store.removeJournalRowsByRef(order.invoice_ref);
+  for (const d of Store.getAll('fiscal_docs').filter(d => d.source_ref === order.id)) Store.remove('fiscal_docs', d.id);
+  if (order.quote_id && Store.getById('quotes', order.quote_id)) Store.update('quotes', { id: order.quote_id, status: 'aprobado', converted_ref: '' });
+  Store.remove('sales_orders', order.id);
+  return { ok: true };
+}

@@ -62,6 +62,8 @@ export function computeContainer(container, items) {
   const capacity = Number(container?.container_capacity) || 0;
   const insuranceEnabled = !!container?.insurance_enabled;
   const insuranceRate = Number(container?.insurance_rate) || 0;
+  // Base del seguro: 'fob' (FOB × tasa) o 'cfr110' (110 % del CFR = (FOB + flete) × 1,1 × tasa).
+  const insuranceOnCfr = container?.insurance_basis === 'cfr110';
   const portFeeRate = Number(container?.port_fee_rate) || 0;
   const vatRate = Number(container?.vat_rate) || 0;
   const oceanFreight = Number(container?.ocean_freight) || 0;
@@ -91,10 +93,12 @@ export function computeContainer(container, items) {
 
     const fobTotal = qty * (Number(item.fob_unit) || 0);
     const oceanFreightAssigned = oceanFreight * factor;
-    const insuranceAmount = insuranceEnabled ? (fobTotal * (insuranceRate / 100)) : 0;
+    const insuranceBase = insuranceOnCfr ? (fobTotal + oceanFreightAssigned) * 1.1 : fobTotal;
+    const insuranceAmount = insuranceEnabled ? (insuranceBase * (insuranceRate / 100)) : 0;
 
     // CIF = FOB×qty + flete marítimo asignado + seguro (solo si habilitado)
     const cifTotal = fobTotal + oceanFreightAssigned + insuranceAmount;
+    const cifUnit = qty > 0 ? cifTotal / qty : 0;
 
     const tariffAmount = cifTotal * ((Number(item.tariff_rate) || 0) / 100);
     const portFeeAmount = cifTotal * (portFeeRate / 100);
@@ -137,6 +141,7 @@ export function computeContainer(container, items) {
       oceanFreightAssigned,
       insuranceAmount,
       cifTotal,
+      cifUnit,
       tariffAmount,
       vatAmount,
       portFeeAmount,
