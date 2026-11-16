@@ -2,6 +2,8 @@ import Store from '../store.js';
 import { fmtNum, esc, num } from '../utils.js';
 import { withRoundingPlug, totalsFor } from '../accounting.js';
 import AccountingTabs from '../components/accounting-tabs.js';
+import Auth from '../auth.js';
+import { deleteJournalEntry } from '../orders.js';
 import AccountingShell, { btnPrimary, btnSecondary, card, input, label } from '../components/accounting-shell.js';
 
 const SOURCE_LABEL = { manual: 'Manual', container_close: 'Auto-Cierre', container_payment: 'Pago Contenedor', income: 'Ingreso', expense: 'Gasto', cost: 'Costo', sale: 'Venta', inventory_reception: 'Recepción', receivable_collection: 'Cobro', payable_settlement: 'Pago CxP', order_advance: 'Anticipo', iva_liquidation: 'Liquidación IVA', iva_payment: 'Pago IVA' };
@@ -75,6 +77,7 @@ const Journal = {
               <span class="text-slate-400 mx-1">·</span><span class="text-slate-700">${esc(concepto)}</span>
               ${h.entidad ? `<span class="text-slate-400 mx-1">·</span><span class="text-slate-500">${esc(h.entidad)}</span>` : ''}
               <span class="ml-2 text-[10px] text-slate-400">${esc(SOURCE_LABEL[h.source] || h.source || '')}</span>
+              ${Auth.isAdmin() && h.ref_doc ? `<button data-del-ref="${esc(h.ref_doc)}" class="float-right text-[11px] text-slate-400 hover:text-red-600">Eliminar</button>` : ''}
             </td>
           </tr>
           ${sorted.map(m => `
@@ -86,6 +89,17 @@ const Journal = {
             <td class="px-2 py-1 text-right font-mono text-xs text-slate-800">${m.credit > 0 ? '$' + fmtNum(m.credit) : ''}</td>
           </tr>`).join('')}`;
         }).join('');
+
+      tbody.querySelectorAll('[data-del-ref]').forEach(b => b.addEventListener('click', () => {
+        const ref = b.dataset.delRef;
+        const ls = Store.getAll('movements').filter(m => m.ref_doc === ref);
+        const detail = ls.map(m => `  ${m.codigo_cuenta} ${m.cuenta_contable}: ${m.debit > 0 ? 'Debe $' + fmtNum(m.debit) : 'Haber $' + fmtNum(m.credit)}`).join('\n');
+        if (!confirm(`¿Eliminar el asiento ${ref}?\n\n${detail}\n\nSe borra del diario junto con lo que depende de él (factura del Libro de Compras/Ventas, anticipo o cobro de una orden). No se puede deshacer.`)) return;
+        const res = deleteJournalEntry(ref);
+        if (!res.ok) { alert(res.error); return; }
+        if (res.what.length) alert('Asiento eliminado. También se borró: ' + res.what.join('; ') + '.');
+        renderList();
+      }));
 
       document.getElementById('journal-footer-note').textContent =
         entries.length > MAX_ROWS ? `Mostrando ${MAX_ROWS} de ${entries.length} asientos.` : '';

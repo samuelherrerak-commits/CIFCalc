@@ -3,9 +3,10 @@ import { fmtNum, fmtInt, esc } from '../utils.js';
 import { taxSummaryRows } from '../fiscal.js';
 import {
   ORDER_STATUS, PAY_METHODS, orderItems, orderMoney, orderPayments, orderDispatches, dispatchItems,
-  dispatchStatus, registerPayment, registerDispatch, invoiceOrder, attachProof, orderDocument
+  dispatchStatus, registerPayment, registerDispatch, invoiceOrder, attachProof, orderDocument, deleteSalesOrder
 } from '../orders.js';
 import { printSalesDocument } from '../components/sales-document.js';
+import Auth from '../auth.js';
 import { einvoiceInfo, emitEinvoice, sendEinvoiceEmail, einvoicePdfLink, whatsappText, waLink } from '../einvoice.js';
 import { printPage } from '../components/print-page.js';
 import { icon } from '../components/icons.js';
@@ -427,6 +428,7 @@ function renderDetail(app, id) {
         ${order.status !== 'anulada' && !ds.complete ? `<button id="a-dispatch" class="${btnSecondary}">Registrar despacho</button>` : ''}
         ${order.einvoice_uuid ? `<button id="a-mail" class="${btnSecondary}">Enviar por correo</button><button id="a-wa" class="${btnSecondary}">WhatsApp</button>` : ''}
         ${open ? `<button id="a-invoice" class="${btnPrimary}">${fiscal ? 'Facturar' : 'Emitir nota de entrega'}</button>` : ''}
+        ${Auth.isAdmin() ? `<button id="a-delete" class="px-3 py-2 rounded-lg text-sm text-slate-400 hover:text-red-600 hover:bg-red-50">Eliminar orden</button>` : ''}
       </div>
     </div>
 
@@ -558,6 +560,21 @@ function renderDetail(app, id) {
     if (document.getElementById('a-dispatch')) dispatchModal(Store.getById('sales_orders', id), refresh);
   }
   on('a-invoice', () => invoiceModal(Store.getById('sales_orders', id), refresh));
+  on('a-delete', () => {
+    const o = Store.getById('sales_orders', id);
+    const pays = orderPayments(o.id), disp = orderDispatches(o.id);
+    const parts = [
+      pays.length ? `${pays.length} anticipo(s)/cobro(s) con sus asientos` : '',
+      disp.length ? `${disp.length} despacho(s) (la mercancía vuelve al inventario)` : '',
+      o.invoice_ref ? `la factura ${o.invoice_number || o.invoice_ref} con su asiento y su registro en el Libro de Ventas` : ''
+    ].filter(Boolean);
+    const realEinv = o.einvoice_uuid && o.einvoice_provider !== 'simulador'
+      ? '\n\nATENCIÓN: la factura digital ya fue emitida en la imprenta. Borrarla aquí NO la anula allá: hay que emitir una nota de crédito.' : '';
+    if (!confirm(`¿Eliminar la orden ${o.order_number}?${parts.length ? '\n\nTambién se borra: ' + parts.join('; ') + '.' : ''}${o.quote_id ? '\nEl presupuesto vuelve a "aprobado".' : ''}${realEinv}\n\nNo se puede deshacer.`)) return;
+    const res = deleteSalesOrder(o.id);
+    if (!res.ok) { alert(res.error); return; }
+    location.hash = '#/contabilidad/ordenes';
+  });
   on('a-mail', async () => {
     const o = Store.getById('sales_orders', id);
     const to = prompt('Enviar la factura por correo a:', contactOf(o).email || '');
