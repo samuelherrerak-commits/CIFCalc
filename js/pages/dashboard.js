@@ -1,5 +1,6 @@
 import Store from '../store.js';
 import { fmtNum, fmtInt, esc, computeContainer } from '../utils.js';
+import { openPurchaseOrderImport } from '../components/purchase-order-modal.js';
 
 const STATUS_LABEL = { draft: 'Borrador', in_transit: 'En proceso', closed: 'Completo' };
 const STATUS_STYLE = {
@@ -82,9 +83,14 @@ const Dashboard = {
           <h1 class="text-2xl font-bold text-slate-900">Maestro de Costo — Dashboard de Embarques</h1>
           <p class="text-sm text-slate-500">Administra tus contenedores y embarques de importación</p>
         </div>
-        <button id="new-container" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition">
-          + Nuevo Contenedor
-        </button>
+        <div class="flex flex-wrap gap-2">
+          <button id="import-po" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition" title="Crea el contenedor desde la plantilla de orden de compra (Excel), con sus productos y fotos">
+            ⬆ Importar orden de compra
+          </button>
+          <button id="new-container" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition">
+            + Nuevo Contenedor
+          </button>
+        </div>
       </header>
 
       ${containers.length === 0 ? `
@@ -152,6 +158,7 @@ const Dashboard = {
            class="hidden fixed z-50 pointer-events-none bg-white border border-slate-200 rounded-xl shadow-2xl"></div>
     `;
 
+    document.getElementById('import-po').addEventListener('click', openPurchaseOrderImport);
     document.getElementById('new-container').addEventListener('click', () => {
       const c = Store.newContainer();
       window.location.hash = `#/contenedor/${c.id}`;
