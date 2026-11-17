@@ -25,9 +25,9 @@ const Expenses = {
     const fs = Store.getFiscalSettings();
     let invoice = null; // bloque de factura fiscal (exento + bases imponibles + IVA)
     let lines = null; // líneas de la factura (concepto → cuenta → monto)
-    // Costo = código 5.x, Gasto = código 6.x (aunque el tipo guardado venga distinto).
-    const lineAccounts = (digit, tipo) => accounts.filter(a => String(a.codigo).startsWith(digit) || a.tipo === tipo).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
-    const LINE_GROUPS = [{ label: 'Gastos', accounts: lineAccounts('6', 'Gasto') }, { label: 'Costos', accounts: lineAccounts('5', 'Costo') }];
+    // Solo cuentas de gastos (código 6.x), aunque el tipo guardado venga distinto.
+    const lineAccounts = (digit, tipo) => accounts.filter(a => String(a.codigo).startsWith(digit) || (a.tipo === tipo && !/^[1-6]/.test(String(a.codigo)))).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
+    const LINE_GROUPS = [{ label: 'Gastos', accounts: lineAccounts('6', 'Gasto') }];
 
     // Asiento de la factura: cada línea a su cuenta (descuento al haber), el IVA
     // a IVA crédito fiscal y el total (neto + IVA) contra el método de pago.
