@@ -196,7 +196,11 @@ function isSheetsReachable() {
   return sheetsReachable;
 }
 
+// Último motivo por el que Sheets no respondió (para mostrarlo en pantalla).
+let lastSyncError = '';
+
 function setSheetsReachable(ok) {
+  if (ok) lastSyncError = '';
   if (sheetsReachable === ok) return;
   sheetsReachable = ok;
   log(ok
@@ -441,6 +445,7 @@ async function getRemoteTable(table) {
     return await sheetsSelectOrEmpty(table);
   } catch (e) {
     console.warn(`Maestro de Costo: Sheets (${table}) no respondió, se mantienen los datos locales:`, e.message);
+    lastSyncError = `${table}: ${e.message}`;
     return null;
   }
 }
@@ -899,6 +904,7 @@ const Store = {
   // Cambios guardados en este navegador que aún no llegan a la base de datos.
   pendingWrites: () => getRetryQueue().length,
   isSheetsReachable,
+  lastSyncError: () => lastSyncError,
 
   getAll(key) { return readAll(STORE_KEYS[key]); },
 

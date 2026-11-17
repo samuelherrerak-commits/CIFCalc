@@ -6,8 +6,19 @@ import { showLogin, showChangePassword } from './pages/login.js';
 
 function syncBadge() {
   const el = document.getElementById('nav-respaldo');
-  if (!el) return;
-  el.classList.toggle('hidden', Store.isSheetsReachable());
+  if (el) el.classList.toggle('hidden', Store.isSheetsReachable());
+  // Aviso con el motivo real cuando no se puede leer la base de datos.
+  let bar = document.getElementById('sync-error-bar');
+  const reason = Store.isSheetsReachable() || Store.isSandbox() ? '' : Store.lastSyncError();
+  if (!reason) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'sync-error-bar';
+    bar.className = 'bg-red-50 border-b border-red-200 text-red-800 text-xs px-4 py-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1';
+    document.getElementById('topbar').prepend(bar);
+  }
+  bar.innerHTML = `<span><strong>No se pudieron cargar los datos de la base de datos.</strong> Motivo: <span class="font-mono">${reason.replace(/[<>&]/g, '')}</span></span><button class="underline font-semibold" id="sync-retry">Reintentar</button>`;
+  bar.querySelector('#sync-retry').addEventListener('click', () => Store.syncWithCloud().then(() => window.dispatchEvent(new CustomEvent('cif-data-updated'))));
 }
 
 // Sesión vencida (o el servidor la rechazó): se pide entrar de nuevo. Los

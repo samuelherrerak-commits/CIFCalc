@@ -1,6 +1,6 @@
 import Store from '../store.js';
 import { fmtNum, esc, num } from '../utils.js';
-import { line, withRoundingPlug } from '../accounting.js';
+import { line, withRoundingPlug, CHART_OF_ACCOUNTS } from '../accounting.js';
 import { invoiceLinesHtml, mountInvoiceLines } from '../components/invoice-lines.js';
 import { contactOptions, quickAddContact } from '../components/contact-picker.js';
 import { invoiceFieldsHtml, mountInvoiceFields, purchaseFiscalDoc } from '../components/invoice-fields.js';
@@ -12,6 +12,9 @@ const Expenses = {
     const destroy = new AbortController();
     const { signal } = destroy;
 
+    // Las cuentas de costo (5.x) y gasto (6.x) del catálogo siempre deben existir
+    // para poder elegirlas en las líneas de la factura.
+    for (const seed of CHART_OF_ACCOUNTS) if (/^[56]/.test(seed.codigo)) Store.ensureCatalogAccount(seed.codigo);
     let accounts = Store.getAll('accounts').filter(a => a.is_active !== false);
     let contacts = Store.getAll('contacts');
 
@@ -22,7 +25,9 @@ const Expenses = {
     const fs = Store.getFiscalSettings();
     let invoice = null; // bloque de factura fiscal (exento + bases imponibles + IVA)
     let lines = null; // líneas de la factura (concepto → cuenta → monto)
-    const LINE_GROUPS = [{ label: 'Gastos', accounts: byTipo('Gasto') }, { label: 'Costos', accounts: byTipo('Costo') }];
+    // Solo cuentas de gastos (código 6.x), aunque el tipo guardado venga distinto.
+    const lineAccounts = (digit, tipo) => accounts.filter(a => String(a.codigo).startsWith(digit) || (a.tipo === tipo && !/^[1-6]/.test(String(a.codigo)))).sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
+    const LINE_GROUPS = [{ label: 'Gastos', accounts: lineAccounts('6', 'Gasto') }];
 
     // Asiento de la factura: cada línea a su cuenta (descuento al haber), el IVA
     // a IVA crédito fiscal y el total (neto + IVA) contra el método de pago.
