@@ -1686,6 +1686,23 @@ const Store = {
     };
   },
 
+  // Niveles de precio del catálogo (distribuidor, mayorista, retail…): cada
+  // uno es un margen sobre el precio de venta. Se guardan como JSON en la fila
+  // 'default' de accounting_settings.
+  getPriceTiers() {
+    const def = [{ name: 'Distribuidor', pct: 30 }, { name: 'Mayorista', pct: 35 }, { name: 'Retail', pct: 40 }];
+    const s = this.getById('accounting_settings', 'default') || {};
+    try {
+      const t = JSON.parse(s.price_tiers || '[]');
+      const ok = Array.isArray(t) ? t.filter(x => x && x.name && Number(x.pct) > 0 && Number(x.pct) < 100).map(x => ({ name: String(x.name), pct: Number(x.pct) })) : [];
+      return ok.length ? ok : def;
+    } catch { return def; }
+  },
+
+  savePriceTiers(tiers) {
+    return this.upsert('accounting_settings', { id: 'default', price_tiers: JSON.stringify(tiers) });
+  },
+
   saveFiscalSettings(f) {
     return this.upsert('accounting_settings', {
       id: 'default',
