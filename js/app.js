@@ -70,9 +70,17 @@ function startApp() {
   }).catch(() => { /* sin conexión: se sigue con los permisos guardados */ });
   window.__cifUser = Auth.user();
 
-  setInterval(() => {
+  // La lectura es incremental (una llamada, solo lo que cambió), así que basta
+  // cada 3 minutos y al volver a la pestaña.
+  let lastSync = Date.now();
+  const resync = () => {
+    lastSync = Date.now();
     Store.syncWithCloud().then(() => Store.processRetryQueue());
-  }, 60000);
+  };
+  setInterval(resync, 180000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && Date.now() - lastSync > 60000) resync();
+  });
 
   // Tasas BCV/USDT del día: después de la primera sincronización (por si otro
   // equipo ya las guardó) y luego cada hora por si cambia el día.

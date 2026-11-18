@@ -306,6 +306,9 @@ function doGet(e) {
       return json_({ ok: false, error: 'unauthorized', code: 401 });
     }
 
+    // Todas las tablas en una sola llamada (la app antes hacía una por tabla).
+    if (p.table === '_all') return json_(readAllTables_(p.since));
+
     const table = p.table;
     const tableErr = validateTable_(table);
     if (tableErr) return json_({ ok: false, error: tableErr, code: 400 });
@@ -326,6 +329,27 @@ function doGet(e) {
   } catch (err) {
     return json_({ ok: false, error: errorMessage_(err), code: errorCode_(err) });
   }
+}
+
+/**
+ * Lectura de todas las tablas de la app en una sola llamada. Por cada tabla
+ * devuelve { rows, ids }: "ids" son TODOS los ids que existen (así la app
+ * detecta lo que se borró aquí o en otro equipo) y "rows" son las filas
+ * completas; con "since" (fecha ISO) solo las modificadas desde entonces.
+ * No incluye users ni einvoices (esas no las lee la app de esta forma).
+ */
+function readAllTables_(since) {
+  const data = {};
+  const cut = since ? String(since) : '';
+  Object.keys(SCHEMAS).forEach(function (name) {
+    if (name === 'users' || name === 'einvoices') return;
+    const all = readTable_(name);
+    const rows = cut
+      ? all.filter(function (r) { return !r.updated_at || String(r.updated_at) > cut; })
+      : all;
+    data[name] = { rows: rows, ids: all.map(function (r) { return r.id; }) };
+  });
+  return { ok: true, data: data, now: new Date().toISOString() };
 }
 
 /**

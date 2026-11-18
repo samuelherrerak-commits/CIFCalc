@@ -110,6 +110,18 @@ export async function select(table) {
   return (json.data || []).map(r => normalizeRow(table, r));
 }
 
+// Todas las tablas en UNA llamada. Devuelve { tables: { tabla: { rows, ids } }, now }.
+// Con "since" solo trae las filas modificadas desde esa fecha, pero siempre
+// todos los ids (para detectar lo que se borró en la hoja).
+export async function selectAll(since = '') {
+  const json = await request('GET', since ? { table: '_all', since } : { table: '_all' });
+  const tables = {};
+  for (const [t, v] of Object.entries(json.data || {})) {
+    tables[t] = { rows: ((v && v.rows) || []).map(r => normalizeRow(t, r)), ids: (v && v.ids) || [] };
+  }
+  return { tables, now: json.now || new Date().toISOString() };
+}
+
 export async function upsert(table, rows) {
   const arr = Array.isArray(rows) ? rows : [rows];
   for (let i = 0; i < arr.length; i += MAX_SEARCH) {
