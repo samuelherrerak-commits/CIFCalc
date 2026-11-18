@@ -485,19 +485,24 @@ const Products = {
       Array.from(relsDoc.getElementsByTagName('Relationship')).forEach(r => {
         const id = r.getAttribute('Id');
         const target = r.getAttribute('Target') || '';
-        relMap[id] = target.replace(/^\.\.\//, 'xl/');
+        // Excel escribe '../media/x.png'; otros programas (openpyxl, LibreOffice) '/xl/media/x.png'.
+        relMap[id] = target.startsWith('/') ? target.slice(1) : target.replace(/^\.\.\//, 'xl/');
       });
 
       const drawingDoc = parser.parseFromString(drawingXml, 'application/xml');
-      const anchors = Array.from(drawingDoc.getElementsByTagName('xdr:twoCellAnchor'));
+      // Por nombre local (sin prefijo): Excel usa xdr:/a:, pero otros programas
+      // (openpyxl, LibreOffice) escriben el XML sin prefijos.
+      const tag = (el, name) => el.getElementsByTagNameNS('*', name)[0];
+      const REL_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+      const anchors = [...Array.from(drawingDoc.getElementsByTagNameNS('*', 'twoCellAnchor')), ...Array.from(drawingDoc.getElementsByTagNameNS('*', 'oneCellAnchor'))];
       const rowToPath = {};
       for (const anchor of anchors) {
-        const fromEl = anchor.getElementsByTagName('xdr:from')[0];
-        const rowEl = fromEl ? fromEl.getElementsByTagName('xdr:row')[0] : null;
-        const blipEl = anchor.getElementsByTagName('a:blip')[0];
+        const fromEl = tag(anchor, 'from');
+        const rowEl = fromEl ? tag(fromEl, 'row') : null;
+        const blipEl = tag(anchor, 'blip');
         if (!rowEl || !blipEl) continue;
         const fromRow = parseInt(rowEl.textContent, 10);
-        const rId = blipEl.getAttribute('r:embed');
+        const rId = blipEl.getAttributeNS(REL_NS, 'embed') || blipEl.getAttribute('r:embed');
         const path = rId && relMap[rId];
         if (Number.isInteger(fromRow) && path) rowToPath[fromRow] = path;
       }
