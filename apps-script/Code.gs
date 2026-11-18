@@ -201,7 +201,9 @@ const SCHEMAS = {
     'issuer_name', 'issuer_rif', 'issuer_address', 'issuer_phone',
     'issuer_email', 'issuer_logo', 'quote_terms', 'issuer_instagram',
     // Configuración fiscal (IVA). iva_enabled vacío = activo.
-    'iva_enabled', 'iva_rate_general', 'iva_rate_reducida', 'prices_include_iva'
+    'iva_enabled', 'iva_rate_general', 'iva_rate_reducida', 'prices_include_iva',
+    // Niveles de precio del catálogo (JSON: [{name, pct}]); pct = margen sobre la venta.
+    'price_tiers'
   ],
   // Registro fiscal de facturas para los Libros de Compras y Ventas del SENIAT.
   // book = 'ventas' | 'compras'; doc_type = factura | nota_credito |
