@@ -613,7 +613,171 @@ function purgeLegacyAccounts() {
 // ============================================
 // Sync bidireccional con Sheets (Supabase solo recibe el espejo de escrituras)
 // ============================================
+
+// Ids que ya se vieron en Sheets, por tabla. Sirve para distinguir un registro
+// NUEVO de este navegador (hay que subirlo) de uno que ya estaba en Sheets y
+// alguien borró allí o desde otro equipo (hay que quitarlo de aquí). Antes la
+// sincronización solo sumaba: un contenedor borrado volvía desde cualquier
+// navegador que todavía lo tuviera guardado.
+const KNOWN_KEY = 'cif_known_remote';
+let knownRemote = null;
+let knownFirstRun = false;
+function loadKnown() {
+  if (knownRemote) return knownRemote;
+  try { knownRemote = JSON.parse(localStorage.getItem(KNOWN_KEY) || 'null'); } catch { knownRemote = null; }
+  knownFirstRun = knownRemote === null;
+  if (!knownRemote || typeof knownRemote !== 'object') knownRemote = {};
+  return knownRemote;
+}
+function saveKnown() {
+  knownFirstRun = false; // desde la primera vuelta guardada, lo nuevo de este navegador se sube
+  try { localStorage.setItem(KNOWN_KEY, JSON.stringify(knownRemote || {})); } catch { /* sin espacio: se reconstruye en la próxima vuelta */ }
+}
+
+// Ids con cambios pendientes de subir (cola de reintentos): nunca se borran.
+function pendingUpsertIds() {
+  const ids = new Set();
+  for (const op of getRetryQueue()) {
+    if (op.type !== 'upsert') continue;
+    for (const r of (Array.isArray(op.record) ? op.record : [op.record])) if (r && r.id) ids.add(r.id);
+  }
+  return ids;
+}
+
+// Mezcla una tabla con lo que hay en Sheets.
+//   remoteRows: filas de Sheets (todas, o solo las cambiadas si hay `since`)
+//   remoteIds:  todos los ids que existen en Sheets (null = los de remoteRows)
+// Devuelve { merged, toUpload, dropped }.
+function reconcileEntity(entity, remoteRows, remoteIds, since) {
+  const known = loadKnown();
+  const knownSet = new Set(known[entity] || []);
+  const pending = pendingUpsertIds();
+  const local = readAll(STORE_KEYS[entity]);
+  const remoteById = new Map(remoteRows.map(r => [r.id, r]));
+  const idSet = new Set(remoteIds || remoteRows.map(r => r.id));
+  // Si Sheets no devuelve nada (hoja vacía o no leída), nunca se borra nada local.
+  const canDrop = idSet.size > 0;
+  const merged = [];
+  const toUpload = [];
+  let dropped = 0;
+  const localIds = new Set();
+
+  for (const l of local) {
+    localIds.add(l.id);
+    const r = remoteById.get(l.id);
+    if (r) {
+      const lt = new Date(l.updated_at || l.created_at || 0).getTime();
+      const rt = new Date(r.updated_at || r.created_at || 0).getTime();
+      // A igual versión gana Sheets (fuente principal).
+      if (lt > rt) { merged.push(l); toUpload.push(l); } else merged.push(r);
+    } else if (idSet.has(l.id)) {
+      merged.push(l); // sin cambios en Sheets desde `since`
+      if (since && String(l.updated_at || '') > since) toUpload.push(l);
+    } else if (pending.has(l.id)) {
+      merged.push(l); toUpload.push(l);
+    } else if (canDrop && (knownSet.has(l.id) || knownFirstRun)) {
+      dropped++; // estaba en Sheets y ya no está: se borró allá
+    } else {
+      merged.push(l); toUpload.push(l); // registro nuevo de este navegador
+    }
+  }
+  for (const r of remoteRows) if (!localIds.has(r.id)) merged.push(r);
+
+  known[entity] = [...new Set([...idSet, ...toUpload.map(x => x.id)])];
+  return { merged, toUpload, dropped };
+}
+
 async function syncWithCloud() {
+  if (SANDBOX || (!sb && !SHEETS_URL)) return;
+  if (SHEETS_URL) {
+    try {
+      const done = await syncWithCloudFast();
+      if (done) return;
+    } catch (e) {
+      lastSyncError = e.message;
+      setSheetsReachable(false);
+      console.error('Maestro de Costo: Error en sync:', e.message);
+      return;
+    }
+  }
+  return syncWithCloudLegacy();
+}
+
+// Una sola llamada a Sheets con todas las tablas. Con una sincronización
+// anterior solo trae lo modificado desde entonces (más una lista de ids para
+// detectar borrados). Devuelve false si el Apps Script desplegado es viejo y no
+// conoce la lectura en bloque (entonces se usa la lectura tabla por tabla).
+const PULL_KEY = 'cif_last_pull';
+const PULL_MARGIN_MS = 10 * 60 * 1000; // por si el reloj de algún equipo va atrasado
+let syncRunning = null;
+async function syncWithCloudFast() {
+  if (syncRunning) return syncRunning;
+  syncRunning = (async () => {
+    let since = localStorage.getItem(PULL_KEY) || '';
+    let pulled;
+    try {
+      pulled = await Sheets.selectAll(since);
+    } catch (e) {
+      if (isUnknownSheetError(e)) return false;
+      throw e;
+    }
+    loadKnown();
+    // Si falta alguna fila (p. ej. se vació una tabla local), se pide todo completo.
+    if (since) {
+      const missing = ENTITIES.some(entity => {
+        const t = pulled.tables[entity];
+        if (!t) return false;
+        const have = new Set([...readAll(STORE_KEYS[entity]).map(x => x.id), ...t.rows.map(x => x.id)]);
+        return t.ids.some(id => !have.has(id));
+      });
+      if (missing) { since = ''; pulled = await Sheets.selectAll(''); }
+    }
+    setSheetsReachable(true);
+
+    const touched = [];
+    for (const entity of ENTITIES) {
+      const t = pulled.tables[entity];
+      if (!t) continue; // tabla sin hoja (solo Supabase) o no leída
+      let rows = t.rows, ids = t.ids;
+      if (entity === 'accounts') {
+        for (const a of rows.filter(isLegacyAccount)) sheetsDelete('accounts', a.id);
+        rows = rows.filter(a => !isLegacyAccount(a));
+        ids = ids.filter(id => !t.rows.some(a => a.id === id && isLegacyAccount(a)));
+      }
+      if (entity === 'products') {
+        const empty = rows.filter(isEmptyProduct);
+        if (empty.length) mapWithConcurrency(empty, 2, p => sheetsDelete('products', p.id));
+        rows = rows.filter(p => !isEmptyProduct(p));
+        ids = ids.filter(id => !empty.some(p => p.id === id));
+      }
+      const { merged, toUpload, dropped } = reconcileEntity(entity, rows, ids, since);
+      let out = normalizeEntityRows(entity, merged);
+      if (entity === 'accounts') out = out.filter(a => !isLegacyAccount(a));
+      if (entity === 'products') out = out.filter(p => !isEmptyProduct(p));
+      writeAll(STORE_KEYS[entity], out);
+      if (dropped) log(`Sync: ${dropped} registro(s) de ${entity} borrados en Sheets se quitaron de este navegador.`);
+      touched.push([entity, toUpload]);
+    }
+    saveKnown();
+
+    // Subir lo nuevo/modificado de este navegador (padres antes que hijos).
+    for (const [entity, toUpload] of touched) {
+      let up = toUpload;
+      if (entity === 'items' && up.length) {
+        const okIds = new Set(readAll(STORE_KEYS.containers).map(c => c.id));
+        up = up.filter(m => m.container_id == null || okIds.has(m.container_id));
+      }
+      if (up.length) await cloudUpsert(entity, up);
+    }
+    localStorage.setItem(PULL_KEY, new Date(new Date(pulled.now).getTime() - PULL_MARGIN_MS).toISOString());
+    localStorage.setItem('cif_cloud_synced', '1');
+    log('Sync completado');
+    return true;
+  })();
+  try { return await syncRunning; } finally { syncRunning = null; }
+}
+
+async function syncWithCloudLegacy() {
   if (SANDBOX || (!sb && !SHEETS_URL)) return;
   try {
     const results = await mapWithConcurrency(ENTITIES, SHEETS_READ_CONCURRENCY,
@@ -664,15 +828,14 @@ async function syncWithCloud() {
 
     log('BD remota tiene datos, mergeando...');
     for (const entity of entities) {
-      const local = readAll(STORE_KEYS[entity]);
       const remote = remoteAll[entity];
-      let merged = mergeRecords(local, remote);
-      merged = normalizeEntityRows(entity, merged);
+      const rec = SHEET_TABLES.includes(entity) ? reconcileEntity(entity, remote, null, '') : { merged: mergeRecords(readAll(STORE_KEYS[entity]), remote), toUpload: null };
+      let merged = normalizeEntityRows(entity, rec.merged);
       if (entity === 'accounts') merged = merged.filter(a => !isLegacyAccount(a));
       if (entity === 'products') merged = merged.filter(p => !isEmptyProduct(p));
       writeAll(STORE_KEYS[entity], merged);
 
-      let toUpload = merged.filter(m => {
+      let toUpload = rec.toUpload || merged.filter(m => {
         const r = remote.find(x => x.id === m.id);
         return !r || new Date(m.updated_at || m.created_at || 0) > new Date(r.updated_at || r.created_at || 0);
       });
@@ -688,6 +851,7 @@ async function syncWithCloud() {
       if (toUpload.length) await cloudUpsert(entity, toUpload);
     }
 
+    saveKnown();
     localStorage.setItem('cif_cloud_synced', '1');
     log('Sync completado');
   } catch (e) {
@@ -706,6 +870,11 @@ const SHEETS_SEEDED_KEY = 'cif_sheets_seeded';
 async function mirrorAllToSheets() {
   if (SANDBOX || !SHEETS_URL) return;
   if (localStorage.getItem(SHEETS_SEEDED_KEY)) return;
+  // La sincronización (syncWithCloud) ya sube lo local que falta en Sheets en
+  // una sola llamada; este espejo hacía una lectura por tabla (23 llamadas) en
+  // cada navegador nuevo y saturaba el Apps Script.
+  localStorage.setItem(SHEETS_SEEDED_KEY, '1');
+  return;
   for (const entity of ENTITIES) {
     if (!SHEET_TABLES.includes(entity)) continue;
     try {
