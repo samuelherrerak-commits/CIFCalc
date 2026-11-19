@@ -11,9 +11,13 @@ const DESCRIPTIONS = {
   Eclipse: 'Con una silueta arquitectónica y un carácter definido, Eclipse está diseñada para convertirse en el punto focal del ambiente. Sus formas geométricas crean un contraste sofisticado.'
 };
 
+// Con colección real → "Serie X". Los genéricos (sin colección propia) se
+// agrupan por su categoría → "Categoría X".
 const collectionOf = (p) => {
   const c = String(p.collection || '').trim();
-  return c && c.toLowerCase() !== 'genérico' && c.toLowerCase() !== 'generico' ? c : (String(p.category || '').trim() || 'Otros productos');
+  return c && c.toLowerCase() !== 'genérico' && c.toLowerCase() !== 'generico'
+    ? { name: c, series: true }
+    : { name: String(p.category || '').trim() || 'Otros productos', series: false };
 };
 // BRG-BL-GRA-01-CR → BRG-BL-GRA-01 (el color es lo único que cambia).
 const baseCode = (sku) => String(sku || '').replace(/-(CR|SG|RG|NG|GL|BN|BB|GG)$/i, '').replace(/-$/, '');
@@ -22,10 +26,11 @@ const baseCode = (sku) => String(sku || '').replace(/-(CR|SG|RG|NG|GL|BN|BB|GG)$
 export function buildCatalogModels(products, costOf, tier) {
   const groups = new Map(); // colección → Map(base → modelo)
   for (const p of products) {
-    const col = collectionOf(p);
+    const { name: col, series } = collectionOf(p);
+    const key = (series ? 's:' : 'c:') + col;
     const base = baseCode(p.sku_briggs) || p.id;
-    if (!groups.has(col)) groups.set(col, new Map());
-    const g = groups.get(col);
+    if (!groups.has(key)) groups.set(key, { name: col, series, map: new Map() });
+    const g = groups.get(key).map;
     if (!g.has(base)) g.set(base, { code: base, name: p.name, category: p.category, colors: [], foto: '', cost: 0 });
     const m = g.get(base);
     if (p.color && !m.colors.includes(p.color)) m.colors.push(p.color);
@@ -34,10 +39,11 @@ export function buildCatalogModels(products, costOf, tier) {
     if (!m.cost && c > 0) m.cost = c;
   }
   const rank = (c) => { const i = ORDER.findIndex(o => o.toLowerCase() === c.toLowerCase()); return i < 0 ? 99 : i; };
-  return [...groups.entries()]
-    .sort((a, b) => rank(a[0]) - rank(b[0]) || a[0].localeCompare(b[0]))
-    .map(([name, map]) => ({
-      name,
+  // Primero las series (en el orden del índice) y después las categorías.
+  return [...groups.values()]
+    .sort((a, b) => (b.series - a.series) || rank(a.name) - rank(b.name) || a.name.localeCompare(b.name))
+    .map(({ name, series, map }) => ({
+      name, series,
       models: [...map.values()].sort((a, b) => a.code.localeCompare(b.code)).map(m => ({
         ...m, price: m.cost > 0 ? Math.round(m.cost / (1 - tier.pct / 100) * 100) / 100 : 0
       }))
@@ -65,8 +71,9 @@ export function openCatalogPdf(products, costOf, tier) {
     const chunks = [];
     for (let i = 0; i < col.models.length; i += PER_PAGE) chunks.push(col.models.slice(i, i + PER_PAGE));
     if (!chunks.length) continue;
-    const label = /^serie/i.test(col.name) ? col.name : `SERIE ${col.name.toUpperCase()}`;
-    sheets.push(`<section class="sheet"><div class="half hero"><div class="serie">SERIE</div><div class="cname">${esc(col.name)}</div>${DESCRIPTIONS[col.name] ? `<p>${esc(DESCRIPTIONS[col.name])}</p>` : ''}</div>${list(chunks[0], label, ++page)}</section>`);
+    const kind = col.series ? 'SERIE' : 'CATEGORÍA';
+    const label = `${kind} ${col.name.toUpperCase()}`;
+    sheets.push(`<section class="sheet"><div class="half hero"><div class="serie">${kind}</div><div class="cname">${esc(col.name)}</div>${DESCRIPTIONS[col.name] ? `<p>${esc(DESCRIPTIONS[col.name])}</p>` : ''}</div>${list(chunks[0], label, ++page)}</section>`);
     for (let i = 1; i < chunks.length; i += 2) {
       sheets.push(`<section class="sheet">${list(chunks[i], label, ++page)}${chunks[i + 1] ? list(chunks[i + 1], label, ++page) : '<div class="half hero tail"></div>'}</section>`);
     }
@@ -85,7 +92,7 @@ html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:ex
 .hero{background:linear-gradient(160deg,#1b222c 0,#0a0d12 100%);color:#fff;display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:30mm}
 .hero.tail{background:#fff}
 .serie{font-size:10pt;margin-bottom:2mm}
-.cname{font:italic 700 44pt 'Playfair Display',Georgia,serif;line-height:1.05;margin-bottom:8mm}
+.cname{font:italic 700 40pt 'Playfair Display',Georgia,serif;line-height:1.05;margin-bottom:8mm}
 .hero p{font-size:10.5pt;line-height:1.5;max-width:120mm}
 .lab{position:absolute;top:9mm;right:11mm;font-size:9.5pt;color:#9aa1ab}
 .list{padding-top:18mm;padding-bottom:20mm;display:flex;flex-direction:column}
