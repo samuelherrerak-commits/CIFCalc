@@ -40,6 +40,10 @@ export const TIPO_ESPECIFICO_OPTIONS = {
 export const CHART_OF_ACCOUNTS = [
   { codigo: '1.1.01.01', nombre: 'Caja', tipo_especifico: 'Efectivo' },
   { codigo: '1.1.01.02', nombre: 'Bancos', tipo_especifico: 'Banco' },
+  // Cuentas en bolívares: el monto se registra en Bs y al libro entra en USD
+  // (Bs ÷ tasa USDT).
+  { codigo: '1.1.01.03', nombre: 'Caja Bs', tipo_especifico: 'Efectivo', moneda: 'VES' },
+  { codigo: '1.1.01.04', nombre: 'Bancos Bs', tipo_especifico: 'Banco', moneda: 'VES' },
   { codigo: '1.1.02.01', nombre: 'Cuentas por Cobrar', tipo_especifico: 'Clientes' },
   { codigo: '1.1.03.01', nombre: 'IVA Acreditable', tipo_especifico: 'Otros' },
   { codigo: '1.1.03.02', nombre: 'IVA Retenido por Clientes', tipo_especifico: 'Otros' },
@@ -80,6 +84,26 @@ export function totalsFor(lines) {
   const debit = round2((lines || []).reduce((s, l) => s + (Number(l.debit) || 0), 0));
   const credit = round2((lines || []).reduce((s, l) => s + (Number(l.credit) || 0), 0));
   return { debit, credit, diff: round2(debit - credit) };
+}
+
+// Multimoneda. Los libros están en USD (1 USD = 1 USDT). Un monto escrito en
+// bolívares se convierte con USD = Bs ÷ tasa USDT y se conserva el original.
+// lines: líneas con debit/credit en la moneda escrita; devuelve líneas en USD
+// con moneda, debit_orig/credit_orig y la tasa USDT usada.
+export function convertLinesToUsd(lines, moneda, rate) {
+  const r = Number(rate) || 0;
+  const ves = moneda === 'VES' && r > 0;
+  return (lines || []).map(l => {
+    const d = Number(l.debit) || 0, c = Number(l.credit) || 0;
+    return {
+      ...l,
+      debit: ves ? round2(d / r) : round2(d),
+      credit: ves ? round2(c / r) : round2(c),
+      moneda: ves ? 'VES' : 'USD',
+      debit_orig: round2(d), credit_orig: round2(c),
+      ...(ves ? { tasa_usdt: r } : {})
+    };
+  });
 }
 
 // Si el lote no balancea por culpa de centavos de redondeo, agrega una línea

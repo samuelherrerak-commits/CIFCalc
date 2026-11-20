@@ -131,7 +131,9 @@ const SCHEMAS = {
   // por cobrar (Clientes) y por pagar (Proveedores).
   accounts: [
     'id', 'codigo', 'nombre', 'tipo', 'tipo_especifico', 'naturaleza', 'is_active',
-    'created_at', 'updated_at'
+    'created_at', 'updated_at',
+    // Moneda de la cuenta: USD (vacío = USD) o VES (cuenta en bolívares).
+    'moneda'
   ],
   // Diario plano: una fila = una línea de Debe o Haber, sin encabezado de asiento.
   // Las filas de un mismo evento se correlacionan solo por ref_doc.
@@ -148,7 +150,11 @@ const SCHEMAS = {
     // Tasa BCV (Bs por USD) del día del asiento, para llevar los libros en Bs.
     'tasa_bcv',
     // Número consecutivo del asiento (reinicia cada año): 2026-0001.
-    'entry_number'
+    'entry_number',
+    // Multimoneda: libros en USD (= USDT); si el monto se registró en bolívares,
+    // moneda = VES y debit_orig/credit_orig guardan los Bs originales.
+    // Cada línea guarda las 3 tasas del día (tasa_bcv ya existía).
+    'moneda', 'debit_orig', 'credit_orig', 'tasa_eur', 'tasa_usdt'
   ],
   // Directorio único de clientes/proveedores (CRM) — lo usan los selectores de
   // Ventas, Gastos, Costos, Inventario (Recepción) y las nuevas Cuentas por

@@ -68,7 +68,7 @@ const Accounts = {
               ${accs.map(a => `
                 <tr class="border-b border-slate-100 hover:bg-slate-50 ${a.is_active === false ? 'opacity-40' : ''}">
                   <td class="p-2 font-mono text-slate-700">${esc(a.codigo)}</td>
-                  <td class="p-2 text-slate-800">${esc(a.nombre)}</td>
+                  <td class="p-2 text-slate-800">${esc(a.nombre)}${a.moneda === 'VES' ? ' <span class="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">Bs</span>' : ''}</td>
                   <td class="p-2 text-slate-500">${esc(a.tipo_especifico || 'Otros')}</td>
                   <td class="p-2 text-slate-500">${esc(a.naturaleza)}</td>
                   <td class="p-2">${a.is_active === false ? '<span class="text-slate-400">Inactiva</span>' : '<span class="text-emerald-600">Activa</span>'}</td>
@@ -107,12 +107,13 @@ const Accounts = {
       const nombre = document.getElementById('f-nombre').value.trim();
       const tipo = document.getElementById('f-tipo').value;
       const tipoEspecifico = document.getElementById('f-tipo-especifico').value;
+      const moneda = document.getElementById('f-moneda').value;
       if (!codigo) { alert('El código es obligatorio.'); document.getElementById('f-codigo').focus(); return; }
       if (!Store.isAccountCodigoUnique(codigo)) { alert('Ya existe una cuenta con ese código.'); document.getElementById('f-codigo').focus(); return; }
       if (!nombre) { alert('El nombre es obligatorio.'); document.getElementById('f-nombre').focus(); return; }
       Store.insert('accounts', {
         codigo, nombre, tipo, tipo_especifico: tipoEspecifico,
-        naturaleza: naturalezaForTipo(tipo), is_active: true
+        naturaleza: naturalezaForTipo(tipo), is_active: true, moneda
       });
       accounts = Store.getAll('accounts');
       closeForm();
@@ -145,7 +146,7 @@ const Accounts = {
       const toFix = CHART_OF_ACCOUNTS.filter(s => {
         const a = byCodigo.get(s.codigo);
         const tipo = inferirTipo(s.codigo);
-        return a && (a.nombre !== s.nombre || a.tipo !== tipo || a.tipo_especifico !== s.tipo_especifico || a.is_active === false);
+        return a && (a.nombre !== s.nombre || a.tipo !== tipo || a.tipo_especifico !== s.tipo_especifico || (a.moneda || 'USD') !== (s.moneda || 'USD') || a.is_active === false);
       });
       const extras = accounts.filter(a => !catalogCodes.has(String(a.codigo)));
       const extrasToDeactivate = extras.filter(a => hasMovements(a.id) && a.is_active !== false);
@@ -165,7 +166,7 @@ const Accounts = {
 
       for (const s of CHART_OF_ACCOUNTS) {
         const tipo = inferirTipo(s.codigo);
-        const fields = { codigo: s.codigo, nombre: s.nombre, tipo, tipo_especifico: s.tipo_especifico, naturaleza: naturalezaForTipo(tipo), is_active: true };
+        const fields = { codigo: s.codigo, nombre: s.nombre, tipo, tipo_especifico: s.tipo_especifico, naturaleza: naturalezaForTipo(tipo), is_active: true, moneda: s.moneda || 'USD' };
         const existing = byCodigo.get(s.codigo);
         if (existing) {
           if (toFix.includes(s)) Store.update('accounts', { id: existing.id, ...fields });
@@ -269,6 +270,10 @@ const Accounts = {
               <label class="${label}">Tipo Específico</label>
               <select id="f-tipo-especifico" class="${input}"></select>
             </div>
+          </div>
+          <div>
+            <label class="${label}">Moneda de la cuenta</label>
+            <select id="f-moneda" class="${input}"><option value="USD">Dólares (USD)</option><option value="VES">Bolívares (Bs)</option></select>
           </div>
           <div class="flex justify-end gap-2 pt-1">
             <button id="acc-cancel" class="${btnSecondary}">Cancelar</button>

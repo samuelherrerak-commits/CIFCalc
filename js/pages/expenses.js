@@ -1,6 +1,6 @@
 import Store from '../store.js';
 import { fmtNum, esc, num } from '../utils.js';
-import { line, withRoundingPlug, CHART_OF_ACCOUNTS } from '../accounting.js';
+import { line, withRoundingPlug, convertLinesToUsd, CHART_OF_ACCOUNTS } from '../accounting.js';
 import { invoiceLinesHtml, mountInvoiceLines } from '../components/invoice-lines.js';
 import { contactOptions, quickAddContact } from '../components/contact-picker.js';
 import { invoiceFieldsHtml, mountInvoiceFields, purchaseFiscalDoc } from '../components/invoice-fields.js';
@@ -15,6 +15,8 @@ const Expenses = {
     // Las cuentas de costo (5.x) y gasto (6.x) del catálogo siempre deben existir
     // para poder elegirlas en las líneas de la factura.
     for (const seed of CHART_OF_ACCOUNTS) if (/^[56]/.test(seed.codigo)) Store.ensureCatalogAccount(seed.codigo);
+    // Cuentas en bolívares (Caja Bs y Bancos Bs) del catálogo.
+    for (const c of ['1.1.01.03', '1.1.01.04']) Store.ensureCatalogAccount(c);
     let accounts = Store.getAll('accounts').filter(a => a.is_active !== false);
     let contacts = Store.getAll('contacts');
 
@@ -23,6 +25,10 @@ const Expenses = {
     const accountOptions = (list) => list.map(a => `<option value="${a.id}">${esc(a.codigo)} — ${esc(a.nombre)}</option>`).join('');
     const diffAccount = () => accounts.find(a => a.codigo === '6.9.01.01');
     const fs = Store.getFiscalSettings();
+    // Interruptor de moneda: los montos se escriben en USD o en Bs. Los libros
+    // van en USD (= USDT): USD = Bs ÷ tasa USDT.
+    let cur = 'USD';
+    let rateDirty = false; // tasa editada a mano: no se pisa al cambiar la fecha
     let invoice = null; // bloque de factura fiscal (exento + bases imponibles + IVA)
     let lines = null; // líneas de la factura (concepto → cuenta → monto)
     // Solo cuentas de gastos (código 6.x), aunque el tipo guardado venga distinto.
@@ -98,15 +104,25 @@ const Expenses = {
       const linesMsg = lines.validate();
       if (linesMsg) { msgEl.textContent = linesMsg; return; }
       if (!paymentId) { msgEl.textContent = 'Selecciona la cuenta de pago (Efectivo/Banco/Proveedores).'; return; }
+      const rate = Number(document.getElementById('f-rate').value) || 0;
+      if (cur === 'VES' && !(rate > 0)) { msgEl.textContent = 'Escribe la tasa USDT (Bs por US$) para convertir los bolívares.'; return; }
       const invMsg = invoice.validate();
       if (invMsg) { msgEl.textContent = invMsg; return; }
       if (!concepto) { msgEl.textContent = 'El concepto es obligatorio.'; return; }
 
       const refDoc = Store.uniqueRef('GST');
       const paymentAccount = accounts.find(a => a.id === paymentId);
-      const jl = entryLines({ date, concepto, entidad, refDoc, payAccount: paymentAccount, tax: inv ? inv.tax : 0 });
+      const jl = convertLinesToUsd(entryLines({ date, concepto, entidad, refDoc, payAccount: paymentAccount, tax: inv ? inv.tax : 0 }), cur, rate);
       Store.postJournalRows(withRoundingPlug(jl, diffAccount(), date, refDoc), { source: 'expense', keepLines: true });
-      if (inv) Store.insert('fiscal_docs', purchaseFiscalDoc(Store, inv, { date, contact, entidad, concepto, refDoc }));
+      if (inv) {
+        // El libro fiscal guarda USD con su tasa: en Bs se convierte con la misma
+        // tasa USDT, así Bs = USD × tasa reproduce lo escrito en la factura.
+        const toUsd = (n) => cur === 'VES' ? Math.round(((Number(n) || 0) / rate) * 100) / 100 : n;
+        const t = cur === 'VES' ? { ...inv, total: toUsd(inv.total), exempt: toUsd(inv.exempt), base_general: toUsd(inv.base_general), tax_general: toUsd(inv.tax_general), base_reducida: toUsd(inv.base_reducida), tax_reducida: toUsd(inv.tax_reducida) } : inv;
+        const fd = purchaseFiscalDoc(Store, t, { date, contact, entidad, concepto, refDoc });
+        if (cur === 'VES') fd.tasa_bcv = rate;
+        Store.insert('fiscal_docs', fd);
+      }
 
       document.getElementById('f-concepto').value = '';
       document.getElementById('f-contact').value = '';
@@ -147,6 +163,20 @@ const Expenses = {
             <input id="f-total" type="text" readonly tabindex="-1" placeholder="Suma de las líneas" class="${input} bg-slate-100 text-right font-mono font-semibold">
           </div>
         </div>
+        <div class="flex flex-wrap items-end gap-3">
+          <div>
+            <label class="${label}">Moneda del registro</label>
+            <div id="cur-switch" class="inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
+              <button type="button" data-cur="USD" class="px-3 py-2">US$</button>
+              <button type="button" data-cur="VES" class="px-3 py-2 border-l border-slate-200">Bs</button>
+            </div>
+          </div>
+          <div id="rate-box" class="hidden">
+            <label class="${label}">Tasa USDT (Bs por US$)</label>
+            <input id="f-rate" type="number" min="0" step="0.0001" class="${input} w-36 text-right font-mono">
+          </div>
+          <div id="usd-preview" class="text-xs text-slate-500 pb-2"></div>
+        </div>
         ${invoiceLinesHtml({ label })}
         ${invoiceFieldsHtml(fs, { input, label })}
         <div id="expense-msg" class="text-xs text-red-600"></div>
@@ -174,7 +204,24 @@ const Expenses = {
       if (!lines) return; // aún montándose
       const t = lines.totals();
       const tax = invoice && invoice.active() ? invoice.read().tax : 0;
-      document.getElementById('f-total').value = (t.subtotal || tax) ? r2(t.subtotal + tax).toFixed(2) : '';
+      const total = r2(t.subtotal + tax);
+      document.getElementById('f-total').value = (t.subtotal || tax) ? total.toFixed(2) : '';
+      const rate = Number(document.getElementById('f-rate').value) || 0;
+      document.getElementById('usd-preview').textContent = cur === 'VES' && total && rate > 0
+        ? `= US$ ${fmtNum(total / rate)} a Bs ${fmtNum(rate)} por US$` : '';
+    };
+    const defaultRate = () => Store.rateFor(document.getElementById('f-date').value, 'usdt');
+    const setCurrency = (c) => {
+      cur = c;
+      document.querySelectorAll('#cur-switch [data-cur]').forEach(b => {
+        const on = b.dataset.cur === c;
+        b.classList.toggle('bg-slate-900', on); b.classList.toggle('text-white', on);
+        b.classList.toggle('bg-white', !on); b.classList.toggle('text-slate-500', !on);
+      });
+      document.getElementById('rate-box').classList.toggle('hidden', c !== 'VES');
+      if (c === 'VES' && !rateDirty) { document.getElementById('f-rate').value = defaultRate() || ''; }
+      if (lines) lines.setSymbol(c === 'VES' ? 'Bs' : '$');
+      updateTotal();
     };
     lines = mountInvoiceLines({
       fs, groups: LINE_GROUPS, input,
@@ -185,6 +232,18 @@ const Expenses = {
       onChange: updateTotal,
       onToggle: (on) => { lines.setFiscal(on); if (on) invoice.setBases(lines.totals()); updateTotal(); }
     });
+
+    document.getElementById('cur-switch').addEventListener('click', (e) => { const b = e.target.closest('[data-cur]'); if (b) setCurrency(b.dataset.cur); }, { signal });
+    document.getElementById('f-rate').addEventListener('input', () => { rateDirty = true; updateTotal(); }, { signal });
+    document.getElementById('f-date').addEventListener('change', () => {
+      if (cur === 'VES' && !rateDirty) { document.getElementById('f-rate').value = defaultRate() || ''; updateTotal(); }
+    }, { signal });
+    // Una cuenta en bolívares pone el registro en Bs automáticamente.
+    document.getElementById('f-payment').addEventListener('change', (e) => {
+      const a = accounts.find(x => x.id === e.target.value);
+      if (a && a.moneda === 'VES') setCurrency('VES');
+    }, { signal });
+    setCurrency('USD');
 
     renderList();
 

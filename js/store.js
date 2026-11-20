@@ -1406,6 +1406,13 @@ const Store = {
       costo_unitario: Math.round((Number(l.costo_unitario) || 0) * 100) / 100,
       precio_lista: Math.round((Number(l.precio_lista) || 0) * 100) / 100,
       tasa_bcv: Number(l.tasa_bcv) || Number(opts.rate) || this.usdRateFor(l.entry_date) || 0,
+      // Multimoneda: los libros van en USD; si se escribió en Bs, moneda = VES y
+      // *_orig guardan los Bs. Cada línea guarda las 3 tasas del día.
+      moneda: l.moneda === 'VES' ? 'VES' : 'USD',
+      debit_orig: l.debit_orig != null ? Math.round((Number(l.debit_orig) || 0) * 100) / 100 : Math.round((Number(l.debit) || 0) * 100) / 100,
+      credit_orig: l.credit_orig != null ? Math.round((Number(l.credit_orig) || 0) * 100) / 100 : Math.round((Number(l.credit) || 0) * 100) / 100,
+      tasa_eur: Number(l.tasa_eur) || this.rateFor(l.entry_date, 'eur_bcv'),
+      tasa_usdt: Number(l.tasa_usdt) || this.rateFor(l.entry_date, 'usdt'),
       source: opts.source || 'manual',
       source_ref: opts.sourceRef || null,
       created_at: ts,
@@ -1451,7 +1458,8 @@ const Store = {
     const tipo = inferirTipo(codigo);
     return this.insert('accounts', {
       codigo, nombre: seed.nombre, tipo, tipo_especifico: seed.tipo_especifico,
-      naturaleza: naturalezaForTipo(tipo), is_active: true
+      naturaleza: naturalezaForTipo(tipo), is_active: true,
+      moneda: seed.moneda || 'USD'
     });
   },
 
@@ -1721,6 +1729,13 @@ const Store = {
       .filter(r => r.date && r.date <= d && Number(r.usd_bcv) > 0)
       .sort((a, b) => String(b.date).localeCompare(String(a.date)));
     return rows[0] || null;
+  },
+
+  // Tasa de una fecha: 'usd_bcv' (referencial), 'eur_bcv' o 'usdt' (la que
+  // convierte Bs a dólares reales en los asientos). 0 si no hay.
+  rateFor(date, key) {
+    const r = this.ratesFor(date);
+    return r ? Number(r[key]) || 0 : 0;
   },
 
   usdRateFor(date) {

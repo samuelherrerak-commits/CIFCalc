@@ -56,6 +56,7 @@ export function mountInvoiceLines({ fs, groups, input, onChange }) {
   const body = $('il-body');
   let rows = [];
   let withIva = false;
+  let sym = '$'; // símbolo de la moneda del registro ($ o Bs)
   const allAccounts = groups.flatMap(g => g.accounts);
   const cell = 'w-full p-1.5 border border-slate-200 rounded-md text-xs bg-white';
 
@@ -76,10 +77,10 @@ export function mountInvoiceLines({ fs, groups, input, onChange }) {
 
   const renderTotals = () => {
     const t = totals();
-    $('il-subtotal').textContent = (t.subtotal < 0 ? '−$' : '$') + fmtNum(Math.abs(t.subtotal));
+    $('il-subtotal').textContent = (t.subtotal < 0 ? '−' : '') + sym + (sym === '$' ? '' : ' ') + fmtNum(Math.abs(t.subtotal));
     const names = new Map(allAccounts.map(a => [a.id, `${a.codigo} ${a.nombre}`]));
     $('il-by-account').innerHTML = t.perAccount.size > 1
-      ? 'Por cuenta: ' + [...t.perAccount.entries()].map(([id, v]) => `<span><span class="text-slate-600">${esc(names.get(id) || 'Sin cuenta')}</span> <span class="font-mono">${v < 0 ? '−' : ''}$${fmtNum(Math.abs(v))}</span></span>`).join('')
+      ? 'Por cuenta: ' + [...t.perAccount.entries()].map(([id, v]) => `<span><span class="text-slate-600">${esc(names.get(id) || 'Sin cuenta')}</span> <span class="font-mono">${v < 0 ? '−' : ''}${sym}${fmtNum(Math.abs(v))}</span></span>`).join('')
       : '';
     if (onChange) onChange(t);
   };
@@ -139,6 +140,8 @@ export function mountInvoiceLines({ fs, groups, input, onChange }) {
     totals,
     // Muestra u oculta la columna de IVA (solo con factura fiscal).
     setFiscal(on) { withIva = !!on; render(); },
+    // '$' (dólares) o 'Bs': solo cambia cómo se muestran los totales.
+    setSymbol(s) { sym = s; renderTotals(); },
     validate() {
       const t = totals();
       if (!t.lines.length) return 'Agrega al menos una línea con monto.';
