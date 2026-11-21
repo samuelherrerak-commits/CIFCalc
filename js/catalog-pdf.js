@@ -34,9 +34,9 @@ export function buildCatalogModels(products, costOf, tier) {
     if (!g.has(base)) g.set(base, { code: base, name: p.name, category: p.category, colors: [], foto: '', cost: 0 });
     const m = g.get(base);
     if (p.color && !m.colors.includes(p.color)) m.colors.push(p.color);
-    if (!m.foto && p.foto_url) m.foto = p.foto_url;
+    if (!m.foto && p.foto_url) m.foto = new URL(p.foto_url, window.location.href).href; // la ventana del PDF no resuelve rutas relativas
     const c = costOf(p);
-    if (!m.cost && c > 0) m.cost = c;
+    if (c > 0 && (!m.cost || /-CR$/i.test(String(p.sku_briggs || '')))) m.cost = c;
   }
   const rank = (c) => { const i = ORDER.findIndex(o => o.toLowerCase() === c.toLowerCase()); return i < 0 ? 99 : i; };
   // Primero las series (en el orden del índice) y después las categorías.

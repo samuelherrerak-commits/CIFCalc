@@ -40,7 +40,17 @@ const Catalog = {
     // Precio con margen sobre la venta: costo / (1 − margen).
     const tierPrice = (cost, pct) => cost > 0 ? Math.round(cost / (1 - pct / 100) * 100) / 100 : 0;
 
-    const costOf = (p) => (est.get(p.id) || {}).cost || Number(p.avg_cost) || 0;
+    // Un acabado sin costo propio (todavía no se cambió su FOB) usa el costo
+    // del mismo modelo en Cromado (o, si no, el de otro acabado del modelo).
+    const baseOf = (p) => String(p.sku_briggs || '').replace(/-(CR|SG|RG|NG|GL|BN|BB|GG)$/i, '');
+    const modelCost = new Map();
+    for (const p of products) {
+      const own = (est.get(p.id) || {}).cost || 0;
+      if (!(own > 0)) continue;
+      const k = baseOf(p);
+      if (!modelCost.has(k) || /-CR$/i.test(String(p.sku_briggs || ''))) modelCost.set(k, own);
+    }
+    const costOf = (p) => (est.get(p.id) || {}).cost || Number(p.avg_cost) || modelCost.get(baseOf(p)) || 0;
     const marginOf = (p) => {
       const price = Number(p.sale_price) || 0, cost = costOf(p);
       return price > 0 && cost > 0 ? ((price - cost) / price) * 100 : null;

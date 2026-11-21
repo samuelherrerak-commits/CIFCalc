@@ -491,8 +491,9 @@ function cloudDelete(table, id) {
     return;
   }
 
-  sheetsDelete(table, id);
+  const pending = sheetsDelete(table, id);
   sbDeleteSafe(table, id);
+  return pending;
 }
 
 function cloudDeleteWhere(table, column, value) {
@@ -1089,6 +1090,29 @@ const Store = {
     writeAll(STORE_KEYS[entity], list);
     cloudUpsert(entity, rec);
     return rec;
+  },
+
+  // Varias filas nuevas con una sola escritura a la nube.
+  insertMany(entity, records) {
+    if (!records.length) return [];
+    const ts = now();
+    const recs = records.map(r => ({ ...r, id: r.id || uid(), created_at: r.created_at || ts, updated_at: ts }));
+    writeAll(STORE_KEYS[entity], [...readAll(STORE_KEYS[entity]), ...recs]);
+    cloudUpsert(entity, recs);
+    return recs;
+  },
+
+  // Borra varias filas: primero local y luego en la nube, de a pocas para no
+  // saturar a Apps Script. onProgress(hechas, total).
+  async removeMany(entity, ids, onProgress) {
+    const set = new Set(ids);
+    writeAll(STORE_KEYS[entity], readAll(STORE_KEYS[entity]).filter(x => !set.has(x.id)));
+    let done = 0;
+    for (let i = 0; i < ids.length; i += 4) {
+      await Promise.all(ids.slice(i, i + 4).map(id => cloudDelete(entity, id)));
+      done = Math.min(ids.length, i + 4);
+      if (onProgress) onProgress(done, ids.length);
+    }
   },
 
   update(entity, record) {
