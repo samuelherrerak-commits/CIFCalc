@@ -11,10 +11,10 @@ import { BRIGGS_PLANTILLA, BRIGGS_PHOTO_BASE } from './data/briggs-plantilla.js'
 //   2. Crea los productos de la plantilla que falten (con su código BRG).
 //   3. Por cada fila de la plantilla, actualiza el ítem del contenedor (por
 //      producto o por código de origen) con cantidad, FOB, unidades por caja,
-//      volumen y peso de la caja, arancel 16 % y margen 30 %; si no existe, lo crea.
+//      volumen y peso de la caja, arancel 18 % y margen 30 %; si no existe, lo crea.
 //   4. Si el contenedor tiene ítems que ya no están en la plantilla, pregunta si se quitan.
 // Los gastos del contenedor (flete, aduana, etc.) no se tocan.
-const TARIFF = 16;
+const TARIFF = 18;
 const MARGIN = 30;
 const NEW_NAME = 'Orden de compra Briggs 40ft · Plantilla CIF';
 const COPY_FIELDS = ['company_id', 'container_capacity', 'container_max_weight', 'ocean_freight', 'inland_freight', 'customs_expenses', 'customs_broker_fee', 'op_expenses', 'insurance_enabled', 'insurance_rate', 'insurance_basis', 'port_fee_rate', 'vat_rate'];
@@ -42,11 +42,11 @@ export function ensureBriggsProducts() {
       units_per_box: upb, box_volume: cbm, weight_kg: kg, hs_code: hs, fob_unit: fob, tariff_rate: TARIFF,
       stock: 0, avg_cost: 0, sale_price: 0
     })));
-  // Productos de la plantilla que ya existían sin volumen: se completan (todos deben tener volumen).
+  // Productos de la plantilla que ya existían sin volumen o con otro arancel: se completan/corrigen (todos deben tener volumen y arancel 18 %).
   const fix = [];
   for (const p of Store.getAll('products')) {
     const t = T.find(x => x[4].toLowerCase() === String(p.sku_briggs || '').trim().toLowerCase());
-    if (t && !(Number(p.box_volume) > 0)) fix.push({ id: p.id, units_per_box: t[10], box_volume: t[11], weight_kg: t[12], fob_unit: t[8], hs_code: p.hs_code || t[3], tariff_rate: TARIFF });
+    if (t && (!(Number(p.box_volume) > 0) || Number(p.tariff_rate) !== TARIFF)) fix.push({ id: p.id, units_per_box: t[10], box_volume: Number(p.box_volume) > 0 ? p.box_volume : t[11], weight_kg: Number(p.weight_kg) > 0 ? p.weight_kg : t[12], fob_unit: Number(p.fob_unit) > 0 ? p.fob_unit : t[8], hs_code: p.hs_code || t[3], tariff_rate: TARIFF });
   }
   Store.updateMany('products', fix);
 
@@ -57,6 +57,17 @@ export async function openOrdenCompraBriggs() {
   const d = OC_BRIGGS_40FT;
   const T = BRIGGS_PLANTILLA;
   const summary = { products: 0, updated: 0, added: 0, removed: 0 };
+
+  // Seguridad: si ya hay productos con el mismo código BRG pero OTRO producto (catálogo viejo), no se
+  // importa: los ítems quedarían enlazados a productos que no son los de la plantilla.
+  const clash = Store.getAll('products').filter(p => {
+    const t = T.find(x => x[4].toLowerCase() === String(p.sku_briggs || '').trim().toLowerCase());
+    return t && String(p.sku || '').trim().toLowerCase() !== t[1].toLowerCase();
+  });
+  if (clash.length) {
+    alert(`Hay ${clash.length} productos del catálogo viejo con los mismos códigos BRG que la plantilla (por ejemplo ${clash[0].sku_briggs} = ${clash[0].sku}).\n\nPrimero usa "Dejar solo catálogo Briggs" en Productos y después vuelve a pulsar este botón.`);
+    return;
+  }
 
   const { supplierIds, created } = ensureBriggsProducts();
   summary.products = created.length;
