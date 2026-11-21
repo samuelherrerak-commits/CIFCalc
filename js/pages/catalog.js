@@ -40,6 +40,7 @@ const Catalog = {
     // Precio con margen sobre la venta: costo / (1 − margen).
     const tierPrice = (cost, pct) => cost > 0 ? Math.round(cost / (1 - pct / 100) * 100) / 100 : 0;
 
+    // Un acabado sin costo propio (no vino en la compra: cantidad 0) no tiene precio: sale "Consultar".
     const costOf = (p) => (est.get(p.id) || {}).cost || Number(p.avg_cost) || 0;
     const marginOf = (p) => {
       const price = Number(p.sale_price) || 0, cost = costOf(p);
