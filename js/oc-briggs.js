@@ -46,7 +46,7 @@ export function ensureBriggsProducts() {
   const fix = [];
   for (const p of Store.getAll('products')) {
     const t = T.find(x => x[4].toLowerCase() === String(p.sku_briggs || '').trim().toLowerCase());
-    if (t && (!(Number(p.box_volume) > 0) || Number(p.tariff_rate) !== TARIFF)) fix.push({ id: p.id, units_per_box: t[10], box_volume: Number(p.box_volume) > 0 ? p.box_volume : t[11], weight_kg: Number(p.weight_kg) > 0 ? p.weight_kg : t[12], fob_unit: Number(p.fob_unit) > 0 ? p.fob_unit : t[8], hs_code: p.hs_code || t[3], tariff_rate: TARIFF });
+    if (t && (!(Number(p.box_volume) > 0) || Number(p.tariff_rate) !== TARIFF || String(p.name || '') !== t[2])) fix.push({ id: p.id, name: t[2], units_per_box: t[10], box_volume: Number(p.box_volume) > 0 ? p.box_volume : t[11], weight_kg: Number(p.weight_kg) > 0 ? p.weight_kg : t[12], fob_unit: Number(p.fob_unit) > 0 ? p.fob_unit : t[8], hs_code: p.hs_code || t[3], tariff_rate: TARIFF });
   }
   Store.updateMany('products', fix);
 
