@@ -1,5 +1,6 @@
 import Store from '../store.js';
 import { openCatalogPdf } from '../catalog-pdf.js';
+import { exportCatalogExcel } from '../catalog-xlsx.js';
 import { fmtNum, esc, computeContainer } from '../utils.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { card, input } from '../components/accounting-shell.js';
@@ -116,7 +117,7 @@ const Catalog = {
           <p class="text-xs text-slate-400">Costo estimado del contenedor más reciente y precio de venta.</p>
         </div>
         <div class="flex items-center gap-3">
-          <button id="cat-pdf" class="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-700">Descargar catálogo PDF</button>
+          <button id="cat-pdf" class="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-700">Descargar catálogo (PDF / Excel)</button>
           <a href="#/productos" class="text-xs text-slate-500 hover:text-slate-900">Agregar o editar productos →</a>
         </div>
       </div>
@@ -174,14 +175,31 @@ const Catalog = {
       dlg.className = 'fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4';
       dlg.innerHTML = `<div class="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3">
         <div class="text-base font-semibold text-slate-900">Descargar catálogo</div>
-        <p class="text-xs text-slate-500">¿A quién le vas a vender? El PDF llevará solo los precios de ese nivel.</p>
+        <p class="text-xs text-slate-500">¿A quién le vas a vender? El archivo llevará solo los precios de ese nivel.</p>
         <div class="space-y-1.5">${tiers.map((t, i) => `<label class="flex items-center gap-2 p-2 border border-slate-200 rounded-lg text-sm cursor-pointer"><input type="radio" name="pdf-tier" value="${i}" ${i === tiers.length - 1 ? 'checked' : ''}> ${esc(t.name)} <span class="text-xs text-slate-400">${fmtNum(t.pct)}%</span></label>`).join('')}</div>
-        <p class="text-[11px] text-slate-400">Se abre la vista de impresión: elige "Guardar como PDF".</p>
-        <div class="flex justify-end gap-2"><button id="pdf-cancel" class="px-3 py-2 text-xs text-slate-500">Cancelar</button><button id="pdf-ok" class="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold">Generar PDF</button></div></div>`;
+        <div class="flex gap-2 text-sm"><label class="flex-1 flex items-center gap-2 p-2 border border-slate-200 rounded-lg cursor-pointer"><input type="radio" name="pdf-fmt" value="pdf" checked> PDF</label><label class="flex-1 flex items-center gap-2 p-2 border border-slate-200 rounded-lg cursor-pointer"><input type="radio" name="pdf-fmt" value="xlsx"> Excel con fotos</label></div>
+        <p id="pdf-hint" class="text-[11px] text-slate-400">PDF: se abre la vista de impresión; elige "Guardar como PDF".</p>
+        <div class="flex justify-end gap-2"><button id="pdf-cancel" class="px-3 py-2 text-xs text-slate-500">Cancelar</button><button id="pdf-ok" class="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold">Descargar</button></div></div>`;
       document.body.appendChild(dlg);
       dlg.querySelector('#pdf-cancel').onclick = () => dlg.remove();
-      dlg.querySelector('#pdf-ok').onclick = () => {
+      dlg.querySelectorAll('input[name="pdf-fmt"]').forEach(r => r.addEventListener('change', () => {
+        dlg.querySelector('#pdf-hint').textContent = r.value === 'xlsx' && r.checked
+          ? 'Excel: una fila por producto y acabado, con su foto cuadrada. Puede tardar unos segundos por las fotos.'
+          : 'PDF: se abre la vista de impresión; elige "Guardar como PDF".';
+      }));
+      dlg.querySelector('#pdf-ok').onclick = async () => {
         const i = Number(dlg.querySelector('input[name="pdf-tier"]:checked').value);
+        const fmt = dlg.querySelector('input[name="pdf-fmt"]:checked').value;
+        if (fmt === 'xlsx') {
+          const btn = dlg.querySelector('#pdf-ok');
+          btn.disabled = true;
+          try {
+            const res = await exportCatalogExcel(products, costOf, tiers[i], (d, t) => { btn.textContent = `Fotos ${d}/${t}…`; });
+            dlg.remove();
+            if (res.photosMissing) alert(`Excel generado. ${res.photosMissing} fotos no se pudieron leer y quedaron vacías.`);
+          } catch (e) { btn.disabled = false; btn.textContent = 'Descargar'; alert('No se pudo generar el Excel: ' + e.message); }
+          return;
+        }
         const ok = openCatalogPdf(products, costOf, tiers[i]);
         if (!ok) alert('El navegador bloqueó la ventana. Permite ventanas emergentes para este sitio e inténtalo de nuevo.');
         dlg.remove();
