@@ -1,4 +1,5 @@
 import Store from '../store.js';
+import Auth from '../auth.js';
 import { fmtNum, fmtInt, esc, num, ensureXlsx, ensureJSZip } from '../utils.js';
 import { uploadFoto, upsert as sheetsUpsert } from '../sheets.js';
 import { codeTables, findByName, parseCode, buildCode, collectionSegment, nextCorrelative, VIAS } from '../product-codes.js';
@@ -902,6 +903,7 @@ const Products = {
           <button id="btn-import" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar de Contenedores</button>
           <button id="btn-import-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar Excel</button>
           <input id="excel-file-input" type="file" accept=".xlsx,.xls" class="hidden">
+          ${Auth.isAdmin() ? '<button id="btn-delete-all" class="bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Eliminar todos</button>' : ''}
           <button id="btn-retry-photos" class="bg-slate-600 hover:bg-slate-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Reintentar fotos faltantes</button>
           <input id="retry-photos-file-input" type="file" accept=".xlsx,.xls" class="hidden">
           <button id="btn-new-product" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">
@@ -1211,6 +1213,32 @@ const Products = {
 
     // Botón importar Excel
     document.getElementById('btn-import-excel').addEventListener('click', openExcelImport);
+
+    // Elimina TODOS los productos (solo administradores, con confirmación escrita).
+    // Los ítems de contenedor que apuntaban a un producto quedan sin vínculo.
+    const deleteAllBtn = document.getElementById('btn-delete-all');
+    if (deleteAllBtn) deleteAllBtn.addEventListener('click', async () => {
+      const all = Store.getAll('products');
+      if (!all.length) { alert('No hay productos.'); return; }
+      const ids = new Set(all.map(p => p.id));
+      const linkedItems = Store.getAll('items').filter(i => ids.has(i.product_id));
+      const quotes = Store.getAll('quotes').filter(q => { try { return JSON.parse(q.items || '[]').some(i => ids.has(i.productId)); } catch { return false; } });
+      const orders = Store.getAll('sales_orders').filter(o => { try { return JSON.parse(o.items || '[]').some(i => ids.has(i.productId)); } catch { return false; } });
+      const msg = `Vas a ELIMINAR los ${all.length} productos del catálogo.\n\n` +
+        `• ${linkedItems.length} ítems de contenedores quedarán sin producto vinculado\n` +
+        `• ${quotes.length} presupuestos y ${orders.length} órdenes de venta usan estos productos\n` +
+        `• Las fotos en Drive no se borran\n\nNo se puede deshacer (hay respaldo de la hoja en Drive).\n\nEscribe ELIMINAR para continuar:`;
+      if (prompt(msg) !== 'ELIMINAR') return;
+      deleteAllBtn.disabled = true;
+      Store.updateMany('items', linkedItems.map(i => ({ id: i.id, product_id: null })));
+      await Store.removeMany('products', all.map(p => p.id), (d, t) => { deleteAllBtn.textContent = `Eliminando ${d}/${t}…`; });
+      deleteAllBtn.disabled = false;
+      deleteAllBtn.textContent = 'Eliminar todos';
+      products = Store.getAll('products');
+      renderCount();
+      renderTable();
+      alert('Productos eliminados.');
+    }, { signal });
     document.getElementById('excel-file-input').addEventListener('change', (e) => {
       const file = e.target.files[0];
       e.target.value = '';

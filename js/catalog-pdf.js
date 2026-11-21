@@ -31,12 +31,11 @@ export function buildCatalogModels(products, costOf, tier) {
     const base = baseCode(p.sku_briggs) || p.id;
     if (!groups.has(key)) groups.set(key, { name: col, series, map: new Map() });
     const g = groups.get(key).map;
-    if (!g.has(base)) g.set(base, { code: base, name: p.name, category: p.category, colors: [], foto: '', cost: 0 });
+    if (!g.has(base)) g.set(base, { code: base, name: p.name, category: p.category, colors: [], variants: [], foto: '' });
     const m = g.get(base);
     if (p.color && !m.colors.includes(p.color)) m.colors.push(p.color);
-    if (!m.foto && p.foto_url) m.foto = p.foto_url;
-    const c = costOf(p);
-    if (!m.cost && c > 0) m.cost = c;
+    if (!m.foto && p.foto_url) m.foto = new URL(p.foto_url, window.location.href).href; // la ventana del PDF no resuelve rutas relativas
+    m.variants.push({ color: p.color || '', cost: costOf(p) });
   }
   const rank = (c) => { const i = ORDER.findIndex(o => o.toLowerCase() === c.toLowerCase()); return i < 0 ? 99 : i; };
   // Primero las series (en el orden del índice) y después las categorías.
@@ -45,10 +44,19 @@ export function buildCatalogModels(products, costOf, tier) {
     .map(({ name, series, map }) => ({
       name, series,
       models: [...map.values()].sort((a, b) => a.code.localeCompare(b.code)).map(m => ({
-        ...m, price: m.cost > 0 ? Math.round(m.cost / (1 - tier.pct / 100) * 100) / 100 : 0
+        ...m, variants: m.variants.map(v => ({ color: v.color, price: v.cost > 0 ? Math.round(v.cost / (1 - tier.pct / 100) * 100) / 100 : 0 }))
       }))
     }));
 }
+
+// Un solo precio si todos los acabados cuestan igual; si no, uno por acabado
+// (los que no tienen costo salen "Consultar").
+const priceHtml = (m) => {
+  const money = (v) => (v ? 'US$ ' + fmtNum(v) : 'Consultar');
+  const prices = m.variants.map(v => v.price);
+  if (prices.every(x => x === prices[0])) return `<div class="pr">${money(prices[0])}</div>`;
+  return m.variants.map(v => `<div class="pr2"><span>${esc(v.color)}</span> <b>${money(v.price)}</b></div>`).join('');
+};
 
 const item = (m) => `
   <div class="it">
@@ -57,7 +65,7 @@ const item = (m) => `
       <div class="code">${esc(m.code)}</div>
       <div class="nm">${esc(m.name)}</div>
       ${m.colors.length ? `<div class="fin">Acabados: ${m.colors.map(esc).join(', ')}</div>` : ''}
-      <div class="pr">${m.price ? 'US$ ' + fmtNum(m.price) : 'Consultar'}</div>
+      ${priceHtml(m)}
     </div>
   </div>`;
 
@@ -105,6 +113,7 @@ html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:ex
 .nm{font-size:10.5pt;margin-top:.8mm;line-height:1.25}
 .fin{font-size:8.5pt;color:#555;margin-top:1.2mm}
 .pr{font-weight:600;font-size:12pt;margin-top:2mm}
+.pr2{font-size:9pt;margin-top:.6mm;color:#444}.pr2 b{color:#111;margin-left:1.5mm}
 .foot{position:absolute;left:11mm;right:11mm;bottom:9mm;display:flex;justify-content:space-between;align-items:flex-end}
 .pg{font-size:8.5pt;color:#aab0b8}
 .wm{font:600 18pt Georgia,serif;letter-spacing:.02em}
