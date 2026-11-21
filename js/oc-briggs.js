@@ -58,6 +58,17 @@ export async function openOrdenCompraBriggs() {
   const T = BRIGGS_PLANTILLA;
   const summary = { products: 0, updated: 0, added: 0, removed: 0 };
 
+  // Seguridad: si ya hay productos con el mismo código BRG pero OTRO producto (catálogo viejo), no se
+  // importa: los ítems quedarían enlazados a productos que no son los de la plantilla.
+  const clash = Store.getAll('products').filter(p => {
+    const t = T.find(x => x[4].toLowerCase() === String(p.sku_briggs || '').trim().toLowerCase());
+    return t && String(p.sku || '').trim().toLowerCase() !== t[1].toLowerCase();
+  });
+  if (clash.length) {
+    alert(`Hay ${clash.length} productos del catálogo viejo con los mismos códigos BRG que la plantilla (por ejemplo ${clash[0].sku_briggs} = ${clash[0].sku}).\n\nPrimero usa "Dejar solo catálogo Briggs" en Productos y después vuelve a pulsar este botón.`);
+    return;
+  }
+
   const { supplierIds, created } = ensureBriggsProducts();
   summary.products = created.length;
 
