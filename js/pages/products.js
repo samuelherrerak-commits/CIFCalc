@@ -1,5 +1,6 @@
 import Store from '../store.js';
 import Auth from '../auth.js';
+import { replaceCatalogWithBriggs } from '../oc-briggs.js';
 import { fmtNum, fmtInt, esc, num, ensureXlsx, ensureJSZip } from '../utils.js';
 import { uploadFoto, upsert as sheetsUpsert } from '../sheets.js';
 import { codeTables, findByName, parseCode, buildCode, collectionSegment, nextCorrelative, VIAS } from '../product-codes.js';
@@ -903,6 +904,7 @@ const Products = {
           <button id="btn-import" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar de Contenedores</button>
           <button id="btn-import-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar Excel</button>
           <input id="excel-file-input" type="file" accept=".xlsx,.xls" class="hidden">
+          ${Auth.isAdmin() ? '<button id="btn-replace-briggs" class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Dejar solo catálogo Briggs</button>' : ''}
           ${Auth.isAdmin() ? '<button id="btn-delete-all" class="bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Eliminar todos</button>' : ''}
           <button id="btn-retry-photos" class="bg-slate-600 hover:bg-slate-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Reintentar fotos faltantes</button>
           <input id="retry-photos-file-input" type="file" accept=".xlsx,.xls" class="hidden">
@@ -1216,6 +1218,21 @@ const Products = {
 
     // Elimina TODOS los productos (solo administradores, con confirmación escrita).
     // Los ítems de contenedor que apuntaban a un producto quedan sin vínculo.
+    const replaceBtn = document.getElementById('btn-replace-briggs');
+    if (replaceBtn) replaceBtn.addEventListener('click', async () => {
+      replaceBtn.disabled = true;
+      try {
+        const res = await replaceCatalogWithBriggs((d, t) => { replaceBtn.textContent = `Eliminando ${d}/${t}…`; });
+        if (res) alert(`Listo: ${res.removed} productos eliminados y ${res.created} productos de la plantilla Briggs creados.`);
+      } finally {
+        replaceBtn.disabled = false;
+        replaceBtn.textContent = 'Dejar solo catálogo Briggs';
+        products = Store.getAll('products');
+        renderCount();
+        renderTable();
+      }
+    }, { signal });
+
     const deleteAllBtn = document.getElementById('btn-delete-all');
     if (deleteAllBtn) deleteAllBtn.addEventListener('click', async () => {
       const all = Store.getAll('products');
