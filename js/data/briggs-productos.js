@@ -1,5 +1,5 @@
 // Plantilla de productos Briggs (maestro de códigos con los acabados Cromado, Steel Gray,
-// Rose Gold y Gun Grey). Cada acabado es un producto con el mismo correlativo.
+// Rose Gold). Cada acabado es un producto con el mismo correlativo.
 // Lo carga el botón "Orden de compra Briggs" del Dashboard. Fotos en img/briggs-catalogo/.
 export const BRIGGS_PHOTO_BASE = 'img/briggs-catalogo/';
 // [proveedor, código de origen, descripción, categoría, colección, color, código Briggs, foto]
@@ -73,19 +73,15 @@ export const BRIGGS_PRODUCTS = [
   ["DIYA", "01101BC", "Robe hook", "Accesorios de Baño", "Genérico", "Cromado", "BRG-AC-EM-05-CR", "BRG-AC-EM-05-CR.png"],
   ["DIYA", "01101BC-SG", "Robe hook", "Accesorios de Baño", "Genérico", "Steel Gray", "BRG-AC-EM-05-SG", ""],
   ["DIYA", "01101BC-RG", "Robe hook", "Accesorios de Baño", "Genérico", "Rose Gold", "BRG-AC-EM-05-RG", ""],
-  ["DIYA", "01101BC-GG", "Robe hook", "Accesorios de Baño", "Genérico", "Gun Grey", "BRG-AC-EM-05-GG", "BRG-AC-EM-05-GG.png"],
   ["DIYA", "01107BC", "Paper holder", "Accesorios de Baño", "Genérico", "Cromado", "BRG-AC-EM-06-CR", "BRG-AC-EM-06-CR.png"],
   ["DIYA", "01107BC-SG", "Paper holder", "Accesorios de Baño", "Genérico", "Steel Gray", "BRG-AC-EM-06-SG", ""],
   ["DIYA", "01107BC-RG", "Paper holder", "Accesorios de Baño", "Genérico", "Rose Gold", "BRG-AC-EM-06-RG", ""],
-  ["DIYA", "01107BC-GG", "Paper holder", "Accesorios de Baño", "Genérico", "Gun Grey", "BRG-AC-EM-06-GG", "BRG-AC-EM-06-GG.png"],
   ["DIYA", "01111BC-01", "Towel bar 350mm", "Accesorios de Baño", "Genérico", "Cromado", "BRG-AC-EM-07-CR", "BRG-AC-EM-07-CR.png"],
   ["DIYA", "01111BC-01-SG", "Towel bar 350mm", "Accesorios de Baño", "Genérico", "Steel Gray", "BRG-AC-EM-07-SG", ""],
   ["DIYA", "01111BC-01-RG", "Towel bar 350mm", "Accesorios de Baño", "Genérico", "Rose Gold", "BRG-AC-EM-07-RG", ""],
-  ["DIYA", "01111BC-01-GG", "Towel bar 350mm", "Accesorios de Baño", "Genérico", "Gun Grey", "BRG-AC-EM-07-GG", "BRG-AC-EM-07-GG.png"],
   ["DIYA", "01111BC-02", "Towel bar 600mm", "Accesorios de Baño", "Genérico", "Cromado", "BRG-AC-EM-08-CR", "BRG-AC-EM-08-CR.png"],
   ["DIYA", "01111BC-02-SG", "Towel bar 600mm", "Accesorios de Baño", "Genérico", "Steel Gray", "BRG-AC-EM-08-SG", ""],
   ["DIYA", "01111BC-02-RG", "Towel bar 600mm", "Accesorios de Baño", "Genérico", "Rose Gold", "BRG-AC-EM-08-RG", ""],
-  ["DIYA", "01111BC-02-GG", "Towel bar 600mm", "Accesorios de Baño", "Genérico", "Gun Grey", "BRG-AC-EM-08-GG", "BRG-AC-EM-08-GG.png"],
   ["TONA", "TONA-CARA600", "CARA-600 Vanity Set: basin + cabinet", "Mueble de Baño", "Genérico", "", "BRG-MB-EM-01-", "BRG-MB-EM-01.png"],
   ["TONA", "TONA-REF5-600", "Vanity Set 600mm (Ref 5)", "Mueble de Baño", "Genérico", "", "BRG-MB-EM-02-", "BRG-MB-EM-02.png"],
   ["TONA", "TONA-REF7-600", "Vanity Set 600mm (Ref 7)", "Mueble de Baño", "Genérico", "", "BRG-MB-EM-03-", "BRG-MB-EM-03.png"],

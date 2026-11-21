@@ -10,16 +10,20 @@ import { BRIGGS_PRODUCTS, BRIGGS_PHOTO_BASE } from './data/briggs-productos.js';
 //      Steel Gray, Rose Gold…, con el mismo correlativo). Solo crea los que
 //      faltan; no toca los que ya existen.
 //   3. Vincula cada ítem del contenedor con su producto por el código de origen.
+//   5. Arancel 16 % y margen de ganancia 30 % en todos los ítems.
 //   4. Para los acabados que no vinieron en la compra, agrega un ítem en el
 //      contenedor con cantidad 0 y el mismo FOB y medidas del Cromado del modelo:
 //      así se puede cambiar su FOB cuando llegue la cotización.
+// Arancel de todos los productos y margen de ganancia (sobre la venta) del catálogo.
+const TARIFF = 16;
+const MARGIN = 30;
 const COLOR_SUFFIX = /-(CR|SG|RG|NG|GL|BN|BB|GG)$/i;
 const baseCode = (code) => String(code || '').replace(/-$/, '').replace(COLOR_SUFFIX, '');
 const cleanSku = (s) => String(s || '').replace(/\*/g, '').trim().toLowerCase();
 
 export async function openOrdenCompraBriggs() {
   const d = OC_BRIGGS_40FT;
-  const summary = { products: 0, linked: 0, added: 0 };
+  const summary = { products: 0, linked: 0, added: 0, rated: 0 };
 
   // Proveedores (por nombre).
   const supplierIds = {};
@@ -49,7 +53,7 @@ export async function openOrdenCompraBriggs() {
       sku_briggs: code, sku, name, supplier_id: supplierIds[sup.toUpperCase()] || null, brand: 'BRG',
       origin_country: 'China', category, collection, color,
       foto_url: foto ? BRIGGS_PHOTO_BASE + foto : '', foto_file_id: '',
-      units_per_box: 1, box_volume: 0, weight_kg: 0, hs_code: '', fob_unit: 0, tariff_rate: 0,
+      units_per_box: 1, box_volume: 0, weight_kg: 0, hs_code: '', fob_unit: 0, tariff_rate: TARIFF,
       stock: 0, avg_cost: 0, sale_price: 0
     })));
   summary.products = created.length;
@@ -86,15 +90,23 @@ export async function openOrdenCompraBriggs() {
       container_id: container.id, product_id: p.id, supplier_id: p.supplier_id || ref.supplier_id, origin_country: ref.origin_country || 'China',
       sku: p.sku, sku_briggs: p.sku_briggs, name: p.name, qty: 0,
       units_per_box: ref.units_per_box, box_volume: ref.box_volume, weight_kg: ref.weight_kg, fob_unit: ref.fob_unit,
-      hs_code: ref.hs_code, tariff_rate: ref.tariff_rate, gain_margin: ref.gain_margin || 0,
+      hs_code: ref.hs_code, tariff_rate: TARIFF, gain_margin: MARGIN,
       foto_url: p.foto_url || ref.foto_url || '', foto_file_id: ''
     });
   }
   Store.insertMany('items', extra);
   summary.added = extra.length;
 
-  if (summary.products || summary.linked || summary.added) {
-    alert(`Orden de compra Briggs lista:\n• ${summary.products} productos creados\n• ${summary.linked} ítems vinculados a su producto\n• ${summary.added} ítems agregados (acabados sin compra, cantidad 0 y mismo FOB del Cromado)`);
+  // 5. Arancel 16 % y margen 30 % en los ítems que todavía no los tengan
+  // (no se pisa un valor que ya hayas puesto).
+  const rated = Store.getItemsByContainer(container.id)
+    .filter(i => !(Number(i.tariff_rate) > 0) || !(Number(i.gain_margin) > 0))
+    .map(i => ({ id: i.id, tariff_rate: Number(i.tariff_rate) > 0 ? i.tariff_rate : TARIFF, gain_margin: Number(i.gain_margin) > 0 ? i.gain_margin : MARGIN }));
+  Store.updateMany('items', rated);
+  summary.rated = rated.length;
+
+  if (summary.products || summary.linked || summary.added || summary.rated) {
+    alert(`Orden de compra Briggs lista:\n• ${summary.products} productos creados\n• ${summary.linked} ítems vinculados a su producto\n• ${summary.added} ítems agregados (acabados sin compra, cantidad 0 y mismo FOB del Cromado)\n• ${summary.rated} ítems con arancel ${TARIFF} % y margen ${MARGIN} %`);
   }
   window.location.hash = `#/contenedor/${container.id}`;
 }
