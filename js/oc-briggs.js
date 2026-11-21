@@ -2,10 +2,12 @@ import Store from './store.js';
 import { OC_BRIGGS_40FT } from './data/oc-briggs-40ft.js';
 import { BRIGGS_PLANTILLA, BRIGGS_PHOTO_BASE } from './data/briggs-plantilla.js';
 
-// Botón "Orden de compra Briggs" del Dashboard. Deja el contenedor de esa orden
+// Botón "Orden de compra Briggs" del Dashboard. Crea UN CONTENEDOR NUEVO (no toca el de la
+// orden anterior) y deja el contenedor de esa orden
 // igual a la plantilla Plantilla_CIF_Definitiva.xlsx, para que la calculadora
 // (CIF, costo y precios) trabaje con los mismos datos:
-//   1. Abre el contenedor (si no existe, lo crea en Borrador).
+//   1. Abre el contenedor nuevo (si no existe, lo crea en Borrador, con los gastos copiados del
+//      contenedor anterior de la orden; después se editan por separado).
 //   2. Crea los productos de la plantilla que falten (con su código BRG).
 //   3. Por cada fila de la plantilla, actualiza el ítem del contenedor (por
 //      producto o por código de origen) con cantidad, FOB, unidades por caja,
@@ -14,6 +16,8 @@ import { BRIGGS_PLANTILLA, BRIGGS_PHOTO_BASE } from './data/briggs-plantilla.js'
 // Los gastos del contenedor (flete, aduana, etc.) no se tocan.
 const TARIFF = 16;
 const MARGIN = 30;
+const NEW_NAME = 'Orden de compra Briggs 40ft · Plantilla CIF';
+const COPY_FIELDS = ['company_id', 'container_capacity', 'container_max_weight', 'ocean_freight', 'inland_freight', 'customs_expenses', 'customs_broker_fee', 'op_expenses', 'insurance_enabled', 'insurance_rate', 'insurance_basis', 'port_fee_rate', 'vat_rate'];
 const cleanSku = (s) => String(s || '').replace(/\*/g, '').trim().toLowerCase();
 
 export async function openOrdenCompraBriggs() {
@@ -29,9 +33,15 @@ export async function openOrdenCompraBriggs() {
   }
 
   // 1. Contenedor.
-  let container = Store.getAll('containers').find(c => String(c.bl_number).trim().toLowerCase() === d.name.toLowerCase());
+  const all = Store.getAll('containers');
+  let container = all.find(c => String(c.bl_number).trim().toLowerCase() === NEW_NAME.toLowerCase());
   if (!container) {
-    const draft = { ...Store.newContainer(), bl_number: d.name, ...d.container, status: 'draft' };
+    // Los gastos (flete, aduana, agente…) se copian del contenedor anterior de la orden, si existe.
+    const old = all.find(c => String(c.bl_number).trim().toLowerCase() === d.name.toLowerCase());
+    const base = { container_capacity: 68, container_max_weight: 26500, ocean_freight: 11000, inland_freight: 480, customs_expenses: 635.25,
+      customs_broker_fee: 400, op_expenses: 1375.3, insurance_enabled: true, insurance_rate: 1, insurance_basis: 'cfr110', port_fee_rate: 1, vat_rate: 16 };
+    if (old) for (const k of COPY_FIELDS) if (old[k] !== undefined && old[k] !== '') base[k] = old[k];
+    const draft = { ...Store.newContainer(), ...base, bl_number: NEW_NAME, status: 'draft' };
     container = (await Store.saveContainerWithItems(draft, [])).container;
   }
 
@@ -39,14 +49,21 @@ export async function openOrdenCompraBriggs() {
   const have = new Set(Store.getAll('products').map(p => String(p.sku_briggs || '').trim().toLowerCase()));
   const created = Store.insertMany('products', T
     .filter(t => !have.has(t[4].toLowerCase()))
-    .map(([sup, sku, name, hs, code, color, category, collection, fob, , , , , foto]) => ({
+    .map(([sup, sku, name, hs, code, color, category, collection, fob, , upb, cbm, kg, foto]) => ({
       sku_briggs: code, sku, name, supplier_id: supplierIds[sup.toUpperCase()] || null, brand: 'BRG',
       origin_country: 'China', category, collection, color,
       foto_url: foto ? BRIGGS_PHOTO_BASE + foto : '', foto_file_id: '',
-      units_per_box: 1, box_volume: 0, weight_kg: 0, hs_code: hs, fob_unit: 0, tariff_rate: TARIFF,
+      units_per_box: upb, box_volume: cbm, weight_kg: kg, hs_code: hs, fob_unit: fob, tariff_rate: TARIFF,
       stock: 0, avg_cost: 0, sale_price: 0
     })));
   summary.products = created.length;
+  // Productos de la plantilla que ya existían sin volumen: se completan (todos deben tener volumen).
+  const fix = [];
+  for (const p of Store.getAll('products')) {
+    const t = T.find(x => x[4].toLowerCase() === String(p.sku_briggs || '').trim().toLowerCase());
+    if (t && !(Number(p.box_volume) > 0)) fix.push({ id: p.id, units_per_box: t[10], box_volume: t[11], weight_kg: t[12], fob_unit: t[8], hs_code: p.hs_code || t[3], tariff_rate: TARIFF });
+  }
+  Store.updateMany('products', fix);
 
   // 3. Ítems del contenedor = filas de la plantilla.
   const products = Store.getAll('products');
@@ -88,6 +105,6 @@ export async function openOrdenCompraBriggs() {
     }
   }
 
-  alert(`Orden de compra Briggs sincronizada con la plantilla:\n• ${summary.products} productos creados\n• ${summary.updated} ítems actualizados\n• ${summary.added} ítems agregados\n• ${summary.removed} ítems quitados`);
+  alert(`Contenedor nuevo "${NEW_NAME}" sincronizado con la plantilla:\n• ${summary.products} productos creados\n• ${summary.updated} ítems actualizados\n• ${summary.added} ítems agregados\n• ${summary.removed} ítems quitados`);
   window.location.hash = `#/contenedor/${container.id}`;
 }

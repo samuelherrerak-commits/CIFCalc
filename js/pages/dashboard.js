@@ -84,7 +84,7 @@ const Dashboard = {
           <p class="text-sm text-slate-500">Administra tus contenedores y embarques de importación</p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <button id="oc-briggs" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition" title="Abre el contenedor de la orden de compra Briggs 40ft (43 productos, con fotos)">
+          <button id="oc-briggs" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition" title="Crea y abre el contenedor nuevo de la orden de compra Briggs 40ft con la Plantilla CIF (73 productos, con volumen y fotos)">
             Orden de compra Briggs
           </button>
           <button id="new-container" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition">
