@@ -1,3 +1,4 @@
+import { withBriggsPhotos } from '../oc-briggs.js';
 import Store from '../store.js';
 import { priceFor } from '../pricing.js';
 import { openCatalogPdf } from '../catalog-pdf.js';
@@ -231,13 +232,13 @@ const Catalog = {
           const btn = dlg.querySelector('#pdf-ok');
           btn.disabled = true;
           try {
-            const res = await exportCatalogExcel(products, costOf, tiers[i], tiers, (d, t) => { btn.textContent = `Fotos ${d}/${t}…`; });
+            const res = await exportCatalogExcel(withBriggsPhotos(products), costOf, tiers[i], tiers, (d, t) => { btn.textContent = `Fotos ${d}/${t}…`; });
             dlg.remove();
             if (res.photosMissing) alert(`Excel generado. ${res.photosMissing} fotos no se pudieron leer y quedaron vacías.`);
           } catch (e) { btn.disabled = false; btn.textContent = 'Descargar'; alert('No se pudo generar el Excel: ' + e.message); }
           return;
         }
-        const ok = openCatalogPdf(products, costOf, tiers[i], tiers);
+        const ok = openCatalogPdf(withBriggsPhotos(products), costOf, tiers[i], tiers);
         if (!ok) alert('El navegador bloqueó la ventana. Permite ventanas emergentes para este sitio e inténtalo de nuevo.');
         dlg.remove();
       };
