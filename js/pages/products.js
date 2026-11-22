@@ -23,10 +23,12 @@ const Products = {
       return s ? s.name : '';
     };
 
+    let formaFilter = '';
     const filtered = () => {
       const q = query.trim().toLowerCase();
-      if (!q) return products;
-      return products.filter(p => {
+      const base = formaFilter ? products.filter(p => (formaFilter === '__none' ? !p.forma : p.forma === formaFilter)) : products;
+      if (!q) return base;
+      return base.filter(p => {
         const sup = supplierName(p.supplier_id);
         return [p.sku_briggs, p.sku, p.name, p.origin_country, sup]
           .some(v => String(v || '').toLowerCase().includes(q));
@@ -537,6 +539,7 @@ const Products = {
         descripcion: findColumn(header, ['descripcion']),
         categoria: findColumn(header, ['categoria']),
         color: findColumn(header, ['color']),
+        forma: findColumn(header, ['forma']),
         briggs: findColumn(header, ['codigo de producto generado'])
       };
       if (col.proveedor === -1 || col.briggs === -1) {
@@ -565,6 +568,7 @@ const Products = {
           collection: (col.colGenerador !== -1 && row[col.colGenerador]) ? String(row[col.colGenerador]).trim()
             : (col.colCatalogo !== -1 ? String(row[col.colCatalogo] || '').trim() : ''),
           color: col.color !== -1 ? String(row[col.color] || '').trim() : '',
+          forma: col.forma !== -1 ? String(row[col.forma] || '').trim() : '',
           photo: (images && images[i]) || null,
           origin_country: '',
           units_per_box: 1,
@@ -744,6 +748,7 @@ const Products = {
           category: c.category,
           collection: c.collection,
           color: c.color,
+          forma: c.forma || '',
           foto_url: '',
           foto_file_id: '',
           units_per_box: c.units_per_box,
@@ -902,6 +907,7 @@ const Products = {
           <p class="text-sm text-slate-500">Base de datos maestra de productos para tus contenedores</p>
         </div>
         <div class="flex flex-wrap items-center gap-2 w-full xl:w-auto">
+          <select id="products-forma" class="p-2 border rounded-lg text-sm bg-slate-50" title="Filtrar por forma"><option value="">Todas las formas</option><option>Redondo</option><option>Cuadrado</option><option>Mixto</option><option value="__none">Sin forma</option></select>
           <input id="products-search" type="text" placeholder="Buscar por SKU, SKU BRIGGS, nombre, proveedor…"
                  class="w-full sm:w-72 p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
           <button id="btn-import" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar de Contenedores</button>
@@ -1190,6 +1196,7 @@ const Products = {
       </div>
     `;
 
+    document.getElementById('products-forma').addEventListener('change', (e) => { formaFilter = e.target.value; renderCount(); renderTable(); }, { signal });
     // Búsqueda (con debounce para no re-renderizar la tabla en cada tecla)
     let searchDebounce = null;
     document.getElementById('products-search').addEventListener('input', (e) => {
