@@ -61,3 +61,18 @@ export async function tintPhoto(url, color) {
     return out;
   } catch { return url; }
 }
+
+// Foto → data URL (para que la ventana de impresión no dependa de cargar archivos aparte).
+const dataCache = new Map();
+export async function toDataUrl(url) {
+  if (!url || url.startsWith('data:')) return url;
+  if (dataCache.has(url)) return dataCache.get(url);
+  try {
+    const res = await fetch(new URL(url, window.location.href).href);
+    if (!res.ok) return url;
+    const blob = await res.blob();
+    const out = await new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = no; r.readAsDataURL(blob); });
+    dataCache.set(url, out);
+    return out;
+  } catch { return url; }
+}
