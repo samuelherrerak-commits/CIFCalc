@@ -1,7 +1,7 @@
-import { fmtNum } from './utils.js';
+import { priceFor } from './pricing.js';
 
 // Lista de precios en Excel, con foto. Un renglón por producto (cada acabado),
-// con el precio del nivel elegido: precio = costo ÷ (1 − margen). Los productos
+// con el precio del nivel elegido (ver pricing.js). Los productos
 // sin costo salen "Consultar". Las fotos van cuadradas y centradas en su casilla;
 // si un producto no tiene foto (o no se puede leer), la casilla queda vacía.
 const EXCELJS_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
@@ -46,7 +46,7 @@ async function squarePhoto(url, size = 240) {
 }
 
 // onProgress(hechas, total) mientras se leen las fotos.
-export async function exportCatalogExcel(products, costOf, tier, onProgress) {
+export async function exportCatalogExcel(products, costOf, tier, tiers, onProgress) {
   const ExcelJS = await ensureExcelJS();
   const list = [...products].sort((a, b) =>
     rank(a) - rank(b) || groupOf(a).localeCompare(groupOf(b)) || String(a.sku_briggs).localeCompare(String(b.sku_briggs)));
@@ -81,7 +81,7 @@ export async function exportCatalogExcel(products, costOf, tier, onProgress) {
   for (let i = 0; i < list.length; i++) {
     const p = list[i];
     const cost = costOf(p);
-    const price = cost > 0 ? Math.round(cost / (1 - tier.pct / 100) * 100) / 100 : 0;
+    const price = priceFor(cost, tier, tiers);
     const row = ws.getRow(r);
     row.values = [null, p.sku_briggs || '', p.name || '', groupOf(p), p.color || '', price > 0 ? price : 'Consultar'];
     row.height = SIDE * 0.75; // puntos: 100 px = 75 pt, casilla cuadrada
@@ -108,7 +108,7 @@ export async function exportCatalogExcel(products, costOf, tier, onProgress) {
   const url = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = `Lista_de_precios_Briggs_${tier.name.replace(/[^\w]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  a.download = `Lista_de_precios_Briggs_${tier.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
   return { rows: list.length, photosMissing: missing };

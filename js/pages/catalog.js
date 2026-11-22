@@ -1,4 +1,5 @@
 import Store from '../store.js';
+import { priceFor } from '../pricing.js';
 import { openCatalogPdf } from '../catalog-pdf.js';
 import { exportCatalogExcel } from '../catalog-xlsx.js';
 import { fmtNum, esc, computeContainer } from '../utils.js';
@@ -39,7 +40,6 @@ const Catalog = {
     let category = '';
     let tiers = Store.getPriceTiers();
     // Precio con margen sobre la venta: costo / (1 − margen).
-    const tierPrice = (cost, pct) => cost > 0 ? Math.round(cost / (1 - pct / 100) * 100) / 100 : 0;
 
     // Un acabado sin costo propio (no vino en la compra: cantidad 0) no tiene precio: sale "Consultar".
     const costOf = (p) => (est.get(p.id) || {}).cost || Number(p.avg_cost) || 0;
@@ -76,7 +76,7 @@ const Catalog = {
               <div class="tabular-nums text-slate-700">${costOf(p) > 0 ? '$' + fmtNum(costOf(p)) : '<span class="text-slate-300">—</span>'}</div>
               <div class="text-[10px] text-slate-400">${e ? `${esc(e.bl)} · ${STATUS[e.status] || ''}` : ''}</div>
             </td>
-            ${tiers.map(t => { const v = tierPrice(costOf(p), t.pct); return `<td class="p-2 text-right tabular-nums text-slate-800">${v ? '$' + fmtNum(v) : '<span class="text-slate-300">—</span>'}</td>`; }).join('')}
+            ${tiers.map(t => { const v = priceFor(costOf(p), t, tiers); return `<td class="p-2 text-right tabular-nums text-slate-800">${v ? '$' + fmtNum(v) : '<span class="text-slate-300">—</span>'}</td>`; }).join('')}
             <td class="p-2 text-right">
               <div class="inline-flex items-center gap-1"><span class="text-slate-400">$</span>
                 <input data-price="${esc(p.id)}" type="number" min="0" step="0.01" value="${Number(p.sale_price) || ''}" placeholder="0.00" class="w-24 p-1 border border-slate-200 rounded-md text-right tabular-nums bg-white focus:border-blue-400 outline-none">
@@ -97,6 +97,7 @@ const Catalog = {
         <div class="flex items-end gap-1">
           <label class="text-[10px] text-slate-400 uppercase">Nombre<input data-tn="${i}" type="text" value="${esc(t.name)}" class="${f} block w-32 normal-case text-slate-800"></label>
           <label class="text-[10px] text-slate-400 uppercase">Margen %<input data-tp="${i}" type="number" min="1" max="99" step="0.5" value="${t.pct}" class="${f} block w-20 text-right text-slate-800"></label>
+          ${i > 0 ? `<label class="text-[10px] text-slate-400 uppercase">Sobre<select data-tb="${i}" class="${f} block text-slate-800"><option value="cost" ${t.base !== 'first' ? 'selected' : ''}>Costo</option><option value="first" ${t.base === 'first' ? 'selected' : ''}>Precio ${esc(tiers[0].name)}</option></select></label>` : ''}
           ${tiers.length > 1 ? `<button data-td="${i}" class="pb-1.5 text-slate-300 hover:text-red-600" title="Quitar">✕</button>` : ''}
         </div>`).join('') + (tiers.length < 6 ? '<button id="tier-add" class="text-xs font-semibold text-blue-600 hover:text-blue-800 pb-1.5">+ Nivel</button>' : '');
     };
@@ -124,7 +125,7 @@ const Catalog = {
       <div class="${card} space-y-2">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div class="text-sm font-semibold text-slate-800">Niveles de precio</div>
-          <span class="text-[11px] text-slate-400">El % es el margen sobre la venta: precio = costo ÷ (1 − %). Ej. costo $60 con 40 % → $100.</span>
+          <span class="text-[11px] text-slate-400">El % es el margen sobre la venta: precio = base ÷ (1 − %). Distribuidor: sobre el costo. Los demás niveles: sobre el precio de Distribuidor (o sobre el costo, si lo eliges).</span>
         </div>
         <div id="tiers-box" class="flex flex-wrap items-end gap-3"></div>
       </div>
@@ -160,11 +161,12 @@ const Catalog = {
       const d = e.target.dataset;
       if (d.tn !== undefined) tiers[d.tn].name = e.target.value.trim() || tiers[d.tn].name;
       else if (d.tp !== undefined) { const v = Number(e.target.value); if (v > 0 && v < 100) tiers[d.tp].pct = v; else e.target.value = tiers[d.tp].pct; }
+      else if (d.tb !== undefined) tiers[d.tb].base = e.target.value === 'first' ? 'first' : 'cost';
       else return;
       saveTiers(); renderTiers();
     }, { signal });
     tb.addEventListener('click', (e) => {
-      if (e.target.closest('#tier-add')) { tiers.push({ name: 'Nuevo nivel', pct: 40 }); saveTiers(); renderTiers(); return; }
+      if (e.target.closest('#tier-add')) { tiers.push({ name: 'Nuevo nivel', pct: 40, base: 'cost' }); saveTiers(); renderTiers(); return; }
       const del = e.target.closest('[data-td]');
       if (del) { tiers.splice(Number(del.dataset.td), 1); saveTiers(); renderTiers(); }
     }, { signal });
@@ -194,13 +196,13 @@ const Catalog = {
           const btn = dlg.querySelector('#pdf-ok');
           btn.disabled = true;
           try {
-            const res = await exportCatalogExcel(products, costOf, tiers[i], (d, t) => { btn.textContent = `Fotos ${d}/${t}…`; });
+            const res = await exportCatalogExcel(products, costOf, tiers[i], tiers, (d, t) => { btn.textContent = `Fotos ${d}/${t}…`; });
             dlg.remove();
             if (res.photosMissing) alert(`Excel generado. ${res.photosMissing} fotos no se pudieron leer y quedaron vacías.`);
           } catch (e) { btn.disabled = false; btn.textContent = 'Descargar'; alert('No se pudo generar el Excel: ' + e.message); }
           return;
         }
-        const ok = openCatalogPdf(products, costOf, tiers[i]);
+        const ok = openCatalogPdf(products, costOf, tiers[i], tiers);
         if (!ok) alert('El navegador bloqueó la ventana. Permite ventanas emergentes para este sitio e inténtalo de nuevo.');
         dlg.remove();
       };

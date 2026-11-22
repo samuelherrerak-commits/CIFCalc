@@ -3,6 +3,7 @@ import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
 import { isSandbox, setSandboxFlag, storageKey } from './sandbox.js';
 import { computeContainer } from './utils.js';
+import { DEFAULT_TIERS } from './pricing.js';
 import { PROMOTIONS_ENABLED, CONTAINER_JOURNAL_ENABLED, STOCK_FROM_CONTAINERS, SUPABASE_ENABLED } from './features.js';
 import { analyzeContainer, realCostLines } from './container-costs.js';
 import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping, CHART_OF_ACCOUNTS, inferirTipo, naturalezaForTipo, DEFAULT_CLOSING_MAPPING_CODES } from './accounting.js';
@@ -1722,11 +1723,11 @@ const Store = {
   // uno es un margen sobre el precio de venta. Se guardan como JSON en la fila
   // 'default' de accounting_settings.
   getPriceTiers() {
-    const def = [{ name: 'Distribuidor', pct: 30 }, { name: 'Mayorista', pct: 35 }, { name: 'Retail', pct: 40 }];
+    const def = DEFAULT_TIERS.map(t => ({ ...t }));
     const s = this.getById('accounting_settings', 'default') || {};
     try {
       const t = JSON.parse(s.price_tiers || '[]');
-      const ok = Array.isArray(t) ? t.filter(x => x && x.name && Number(x.pct) > 0 && Number(x.pct) < 100).map(x => ({ name: String(x.name), pct: Number(x.pct) })) : [];
+      const ok = Array.isArray(t) ? t.filter(x => x && x.name && Number(x.pct) > 0 && Number(x.pct) < 100).map(x => ({ name: String(x.name), pct: Number(x.pct), base: x.base === 'first' ? 'first' : 'cost' })) : [];
       return ok.length ? ok : def;
     } catch { return def; }
   },
