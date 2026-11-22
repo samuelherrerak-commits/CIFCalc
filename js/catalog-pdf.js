@@ -1,4 +1,5 @@
 import { esc, fmtNum } from './utils.js';
+import { priceFor } from './pricing.js';
 
 // PDF del catálogo (estilo del catálogo Briggs): portada, y por cada colección
 // una hoja con la página oscura de presentación y la lista de productos con foto,
@@ -23,7 +24,7 @@ const collectionOf = (p) => {
 const baseCode = (sku) => String(sku || '').replace(/-(CR|SG|RG|NG|GL|BN|BB|GG)$/i, '').replace(/-$/, '');
 
 // products: filas de Store; costOf(p) → costo estimado; tier = { name, pct }
-export function buildCatalogModels(products, costOf, tier) {
+export function buildCatalogModels(products, costOf, tier, tiers) {
   const groups = new Map(); // colección → Map(base → modelo)
   for (const p of products) {
     const { name: col, series } = collectionOf(p);
@@ -44,7 +45,7 @@ export function buildCatalogModels(products, costOf, tier) {
     .map(({ name, series, map }) => ({
       name, series,
       models: [...map.values()].sort((a, b) => a.code.localeCompare(b.code)).map(m => ({
-        ...m, variants: m.variants.map(v => ({ color: v.color, price: v.cost > 0 ? Math.round(v.cost / (1 - tier.pct / 100) * 100) / 100 : 0 }))
+        ...m, variants: m.variants.map(v => ({ color: v.color, price: priceFor(v.cost, tier, tiers) }))
       }))
     }));
 }
@@ -71,8 +72,8 @@ const item = (m) => `
 
 const list = (models, label, page) => `<div class="half list"><div class="lab">${esc(label)}</div>${models.map(item).join('')}<div class="foot"><span class="pg">${page}</span><span class="wm">BRIGGS</span></div></div>`;
 
-export function openCatalogPdf(products, costOf, tier) {
-  const cols = buildCatalogModels(products, costOf, tier);
+export function openCatalogPdf(products, costOf, tier, tiers) {
+  const cols = buildCatalogModels(products, costOf, tier, tiers);
   let page = 2;
   const sheets = [`<section class="sheet cover"><div class="logo">BRIGGS<small>THE PREMIUM BATH COLLECTION</small></div></section>`];
   for (const col of cols) {

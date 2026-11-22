@@ -904,6 +904,7 @@ const Products = {
           <button id="btn-import" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar de Contenedores</button>
           <button id="btn-import-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar Excel</button>
           <input id="excel-file-input" type="file" accept=".xlsx,.xls" class="hidden">
+          <button id="btn-link-items" class="bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap" title="Une con este catálogo los ítems de todos los contenedores que no estén vinculados">Vincular ítems de contenedores</button>
           ${Auth.isAdmin() ? '<button id="btn-replace-briggs" class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Dejar solo catálogo Briggs</button>' : ''}
           ${Auth.isAdmin() ? '<button id="btn-delete-all" class="bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Eliminar todos</button>' : ''}
           <button id="btn-retry-photos" class="bg-slate-600 hover:bg-slate-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Reintentar fotos faltantes</button>
@@ -1218,6 +1219,23 @@ const Products = {
 
     // Elimina TODOS los productos (solo administradores, con confirmación escrita).
     // Los ítems de contenedor que apuntaban a un producto quedan sin vínculo.
+    document.getElementById('btn-link-items').addEventListener('click', () => {
+      const res = Store.autoLinkItems();
+      const byCont = new Map();
+      for (const { item, container } of res.unmatched) {
+        const k = container.bl_number || 'Sin nombre';
+        if (!byCont.has(k)) byCont.set(k, []);
+        byCont.get(k).push(item.sku || item.name || 'ítem');
+      }
+      const lines = [...byCont.entries()].map(([k, skus]) => `• ${k}: ${skus.length} (${skus.slice(0, 6).join(', ')}${skus.length > 6 ? '…' : ''})`).join('\n');
+      alert(`Ítems vinculados con el catálogo: ${res.linked}.\n\n` + (res.unmatched.length
+        ? `Sin producto en el catálogo (${res.unmatched.length}) — por eso no pueden salir en la lista de precios:\n${lines}\n\nAgrega esos productos al catálogo (o quita los ítems) y vuelve a pulsar este botón.`
+        : 'Todos los ítems de todos los contenedores quedaron vinculados.'));
+      products = Store.getAll('products');
+      renderCount();
+      renderTable();
+    }, { signal });
+
     const replaceBtn = document.getElementById('btn-replace-briggs');
     if (replaceBtn) replaceBtn.addEventListener('click', async () => {
       replaceBtn.disabled = true;

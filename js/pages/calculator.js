@@ -130,7 +130,7 @@ const Calculator = {
       if (!tbody) return;
 
       if (items.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="21" class="p-4 text-center text-slate-400">Sin productos. Agrega un SKU para calcular.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="22" class="p-4 text-center text-slate-400">Sin productos. Agrega un SKU para calcular.</td></tr>`;
         tfoot.innerHTML = '';
       } else {
         const wtTot = weightTotal();
@@ -237,7 +237,8 @@ const Calculator = {
             : `<div class="text-[10px] font-normal text-slate-400 line-through">${esc(item.sku_briggs) || ''}</div>
                <button data-link="${index}" class="whitespace-nowrap text-[11px] font-bold px-2 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-800" title="Sin vincular al catálogo: no entra al inventario">⚠ Vincular</button>`}</td>
           <td class="p-2">${esc(item.sku) || '—'}</td>
-          <td class="p-2"><div class="flex items-center gap-2">${item.foto_url ? `<img src="${esc(item.foto_url)}" loading="lazy" class="w-10 h-10 object-contain rounded border border-slate-200 bg-white flex-shrink-0" alt="">` : ''}<span>${esc(item.name) || '—'}</span></div></td>
+          <td class="p-2 w-14"><div class="w-12 h-12 rounded border border-slate-200 bg-white flex items-center justify-center overflow-hidden">${item.foto_url ? `<img src="${esc(item.foto_url)}" loading="lazy" class="w-full h-full object-contain" alt="">` : ''}</div></td>
+          <td class="p-2 align-middle">${esc(item.name) || '—'}</td>
           <td class="p-2">${esc(supplierName(item.supplier_id)) || '—'}</td>
           <td class="p-2">${esc(item.origin_country) || '—'}</td>
           <td class="p-2 text-right"><input data-field="qty" data-idx="${index}" type="number" step="1" min="0" value="${item.qty}" class="w-20 p-1 border rounded bg-white text-xs text-right"></td>
@@ -646,6 +647,7 @@ const Calculator = {
               <tr class="bg-slate-100 border-b border-slate-200 text-slate-700">
                 <th class="p-2 text-blue-800 font-bold">SKU BRIGGS</th>
                 <th class="p-2">SKU</th>
+                <th class="p-2">Foto</th>
                 <th class="p-2">Nombre</th>
                 <th class="p-2">Proveedor</th>
                 <th class="p-2">País Origen</th>

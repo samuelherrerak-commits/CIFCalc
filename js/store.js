@@ -3,6 +3,7 @@ import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
 import { isSandbox, setSandboxFlag, storageKey } from './sandbox.js';
 import { computeContainer } from './utils.js';
+import { DEFAULT_TIERS } from './pricing.js';
 import { PROMOTIONS_ENABLED, CONTAINER_JOURNAL_ENABLED, STOCK_FROM_CONTAINERS, SUPABASE_ENABLED } from './features.js';
 import { analyzeContainer, realCostLines } from './container-costs.js';
 import { withRoundingPlug, buildContainerClosingLines, isClosingMappingComplete, resolveClosingMapping, CHART_OF_ACCOUNTS, inferirTipo, naturalezaForTipo, DEFAULT_CLOSING_MAPPING_CODES } from './accounting.js';
@@ -1092,6 +1093,38 @@ const Store = {
     return rec;
   },
 
+  // Vincula con el catálogo (Productos) todos los ítems de contenedores que no tengan un
+  // producto válido, por código de origen (SKU de la fábrica; ignora el asterisco y las
+  // mayúsculas). Nunca une por código BRG solo. No toca los ítems ya vinculados.
+  // Devuelve { linked, unmatched: [{ item, container }] }.
+  autoLinkItems() {
+    const clean = (s) => String(s || '').replace(/\*/g, '').trim().toLowerCase();
+    const products = readAll(STORE_KEYS.products);
+    const productIds = new Set(products.map(p => p.id));
+    const containers = new Map(readAll(STORE_KEYS.containers).map(c => [c.id, c]));
+    const byOrigin = new Map();
+    for (const p of products) {
+      const k = clean(p.sku);
+      if (!k) continue;
+      if (!byOrigin.has(k)) byOrigin.set(k, []);
+      byOrigin.get(k).push(p);
+    }
+    const updates = [];
+    const unmatched = [];
+    for (const it of readAll(STORE_KEYS.items)) {
+      const cont = containers.get(it.container_id);
+      if (!cont) continue; // ítem huérfano (su contenedor ya no existe)
+      if (it.product_id && productIds.has(it.product_id)) continue;
+      const cand = byOrigin.get(clean(it.sku)) || [];
+      const p = cand.length === 1 ? cand[0]
+        : cand.find(x => String(x.sku_briggs || '').trim().toLowerCase() === String(it.sku_briggs || '').trim().toLowerCase());
+      if (p) updates.push({ id: it.id, product_id: p.id, sku_briggs: p.sku_briggs });
+      else unmatched.push({ item: it, container: cont });
+    }
+    this.updateMany('items', updates);
+    return { linked: updates.length, unmatched };
+  },
+
   // Varias filas nuevas con una sola escritura a la nube.
   insertMany(entity, records) {
     if (!records.length) return [];
@@ -1722,11 +1755,11 @@ const Store = {
   // uno es un margen sobre el precio de venta. Se guardan como JSON en la fila
   // 'default' de accounting_settings.
   getPriceTiers() {
-    const def = [{ name: 'Distribuidor', pct: 30 }, { name: 'Mayorista', pct: 35 }, { name: 'Retail', pct: 40 }];
+    const def = DEFAULT_TIERS.map(t => ({ ...t }));
     const s = this.getById('accounting_settings', 'default') || {};
     try {
       const t = JSON.parse(s.price_tiers || '[]');
-      const ok = Array.isArray(t) ? t.filter(x => x && x.name && Number(x.pct) > 0 && Number(x.pct) < 100).map(x => ({ name: String(x.name), pct: Number(x.pct) })) : [];
+      const ok = Array.isArray(t) ? t.filter(x => x && x.name && Number(x.pct) > 0 && Number(x.pct) < 100).map(x => ({ name: String(x.name), pct: Number(x.pct), base: x.base === 'first' ? 'first' : 'cost' })) : [];
       return ok.length ? ok : def;
     } catch { return def; }
   },
