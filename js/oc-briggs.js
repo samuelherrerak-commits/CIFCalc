@@ -62,7 +62,7 @@ export function ensureBriggsProducts() {
     if (!(Number(ex.fob_unit) > 0)) patch.fob_unit = fob;
     if (!ex.hs_code && hs) patch.hs_code = hs;
     // La foto de la plantilla se corrige solo si la actual también es de la plantilla (no se pisa una foto de Drive).
-    if (fotoUrl && String(ex.foto_url || '').startsWith(BRIGGS_PHOTO_BASE) && ex.foto_url !== fotoUrl) patch.foto_url = fotoUrl;
+    if (fotoUrl && (!ex.foto_url || String(ex.foto_url).startsWith(BRIGGS_PHOTO_BASE)) && ex.foto_url !== fotoUrl) patch.foto_url = fotoUrl;
     if (Object.keys(patch).length) fix.push({ id: ex.id, ...patch });
   }
   const created = Store.insertMany('products', toCreate);
@@ -183,4 +183,15 @@ export function applyBriggsCodes() {
     .map(i => ({ id: i.id, sku_briggs: byId.get(i.product_id).sku_briggs }));
   Store.updateMany('items', itemFix);
   return { created: created.length, recoded, items: itemFix.length };
+}
+
+// Devuelve los productos con la foto resuelta para catálogo/listas: la propia; si no tiene, la de la plantilla
+// (por código de origen); si tampoco, la de otro acabado del mismo modelo. No modifica el Store.
+export function withBriggsPhotos(products) {
+  const tplFoto = new Map(BRIGGS_PLANTILLA.filter(r => r[13]).map(r => [cleanSku(r[1]), BRIGGS_PHOTO_BASE + r[13]]));
+  const base = (c) => String(c || '').replace(/-(CR|SG|RG|NG|GL|BN|BB|GG)$/i, '').replace(/-$/, '');
+  const out = products.map(p => (p.foto_url ? p : { ...p, foto_url: tplFoto.get(cleanSku(p.sku)) || '' }));
+  const byModel = new Map();
+  for (const p of out) if (p.foto_url && p.sku_briggs && !byModel.has(base(p.sku_briggs))) byModel.set(base(p.sku_briggs), p.foto_url);
+  return out.map(p => (p.foto_url || !p.sku_briggs ? p : { ...p, foto_url: byModel.get(base(p.sku_briggs)) || '' }));
 }

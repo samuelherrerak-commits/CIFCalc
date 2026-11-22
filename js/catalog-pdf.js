@@ -6,7 +6,6 @@ import { priceFor } from './pricing.js';
 // código, acabados y el precio del nivel elegido. Se abre en una ventana lista
 // para imprimir; en "Destino" se elige "Guardar como PDF".
 const ORDER = ['Equinox', 'Eclipse', 'Selene', 'Callisto', 'Luna', 'Zenith', 'Triton', 'Tritón', 'Gravity', 'Accessories'];
-const PER_PAGE = 5;
 const DESCRIPTIONS = {
   Equinox: 'Inspirada en el momento en que el día y la noche alcanzan la misma duración, Equinox combina líneas limpias y proporciones armoniosas para crear espacios modernos, elegantes y atemporales.',
   Eclipse: 'Con una silueta arquitectónica y un carácter definido, Eclipse está diseñada para convertirse en el punto focal del ambiente. Sus formas geométricas crean un contraste sofisticado.'
@@ -64,6 +63,13 @@ const priceHtml = (m) => {
   return m.variants.map(v => `<div class="pr2"><span>${esc(v.color)}</span> <b>${money(v.price)}</b></div>`).join('');
 };
 
+const LIST_H = 168; // mm útiles por página de lista (210 − márgenes)
+const itemHeight = (m) => {
+  const nameLines = Math.max(1, Math.ceil(String(m.name || '').length / 34));
+  const prices = new Set(m.variants.map(v => v.price)).size === 1 ? 7 : m.variants.length * 4.6;
+  const text = 5.5 + nameLines * 4.8 + (m.showCat && m.category ? 4.5 : 0) + (m.colors.length ? 4.5 : 0) + prices + 2;
+  return Math.max(30, text) + 6; // foto 28 mm + aire
+};
 const item = (m) => `
   <div class="it">
     <div class="ph">${m.foto ? `<img src="${esc(m.foto)}" alt="">` : ''}</div>
@@ -83,8 +89,15 @@ export function openCatalogPdf(products, costOf, tier, tiers) {
   let page = 2;
   const sheets = [`<section class="sheet cover"><div class="logo">BRIGGS<small>THE PREMIUM BATH COLLECTION</small></div></section>`];
   for (const col of cols) {
+    // Se llena cada página según la altura real de cada producto (mm) para que nunca se pise el texto.
     const chunks = [];
-    for (let i = 0; i < col.models.length; i += PER_PAGE) chunks.push(col.models.slice(i, i + PER_PAGE));
+    let cur = [], used = 0;
+    for (const m of col.models) {
+      const h = itemHeight(m);
+      if (cur.length && used + h > LIST_H) { chunks.push(cur); cur = []; used = 0; }
+      cur.push(m); used += h;
+    }
+    if (cur.length) chunks.push(cur);
     if (!chunks.length) continue;
     const kind = KIND_LABEL[col.kind];
     const label = `${kind} ${col.name.toUpperCase()}`;
@@ -111,7 +124,7 @@ html,body{background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:ex
 .hero p{font-size:10.5pt;line-height:1.5;max-width:120mm}
 .lab{position:absolute;top:9mm;right:11mm;font-size:9.5pt;color:#9aa1ab}
 .list{padding-top:18mm;padding-bottom:20mm;display:flex;flex-direction:column}
-.it{flex:1;display:flex;align-items:center;gap:6mm;border-bottom:.3mm solid #cfd3d8;min-height:0}
+.it{flex:none;display:flex;align-items:center;gap:6mm;border-bottom:.3mm solid #cfd3d8;padding:3mm 0}
 .it:last-of-type{border-bottom:0}
 .ph{width:44mm;height:28mm;display:flex;align-items:center;justify-content:center;flex:none}
 .ph img{max-width:100%;max-height:100%;object-fit:contain}
