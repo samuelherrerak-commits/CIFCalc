@@ -16,7 +16,7 @@ import { BRIGGS_PLANTILLA, BRIGGS_PHOTO_BASE } from './data/briggs-plantilla.js'
 // Los gastos del contenedor (flete, aduana, etc.) no se tocan.
 const TARIFF = 18;
 const MARGIN = 30;
-const NEW_NAME = 'Orden de compra Briggs 40ft · Plantilla CIF';
+export const NEW_NAME = 'Orden de compra Briggs 40ft · Plantilla CIF';
 const COPY_FIELDS = ['company_id', 'container_capacity', 'container_max_weight', 'ocean_freight', 'inland_freight', 'customs_expenses', 'customs_broker_fee', 'op_expenses', 'insurance_enabled', 'insurance_rate', 'insurance_basis', 'port_fee_rate', 'vat_rate'];
 const cleanSku = (s) => String(s || '').replace(/\*/g, '').trim().toLowerCase();
 

@@ -1,6 +1,6 @@
 import Store from '../store.js';
 import Auth from '../auth.js';
-import { replaceCatalogWithBriggs } from '../oc-briggs.js';
+import { replaceCatalogWithBriggs, NEW_NAME } from '../oc-briggs.js';
 import { fmtNum, fmtInt, esc, num, ensureXlsx, ensureJSZip } from '../utils.js';
 import { uploadFoto, upsert as sheetsUpsert } from '../sheets.js';
 import { codeTables, findByName, parseCode, buildCode, collectionSegment, nextCorrelative, VIAS } from '../product-codes.js';
@@ -904,7 +904,7 @@ const Products = {
           <button id="btn-import" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar de Contenedores</button>
           <button id="btn-import-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar Excel</button>
           <input id="excel-file-input" type="file" accept=".xlsx,.xls" class="hidden">
-          <button id="btn-link-items" class="bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap" title="Une con este catálogo los ítems de todos los contenedores que no estén vinculados">Vincular ítems de contenedores</button>
+          <button id="btn-link-items" class="bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap" title="Une con este catálogo los ítems del contenedor de la Orden de compra Briggs (Plantilla CIF). No toca ningún otro contenedor.">Vincular Orden de compra Briggs</button>
           ${Auth.isAdmin() ? '<button id="btn-replace-briggs" class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Dejar solo catálogo Briggs</button>' : ''}
           ${Auth.isAdmin() ? '<button id="btn-delete-all" class="bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Eliminar todos</button>' : ''}
           <button id="btn-retry-photos" class="bg-slate-600 hover:bg-slate-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Reintentar fotos faltantes</button>
@@ -1220,7 +1220,9 @@ const Products = {
     // Elimina TODOS los productos (solo administradores, con confirmación escrita).
     // Los ítems de contenedor que apuntaban a un producto quedan sin vínculo.
     document.getElementById('btn-link-items').addEventListener('click', () => {
-      const res = Store.autoLinkItems();
+      const target = Store.getAll('containers').find(c => String(c.bl_number).trim().toLowerCase() === NEW_NAME.toLowerCase());
+      if (!target) { alert(`No existe el contenedor "${NEW_NAME}". Créalo primero con el botón "Orden de compra Briggs" del Dashboard.`); return; }
+      const res = Store.autoLinkItems([target.id]);
       const byCont = new Map();
       for (const { item, container } of res.unmatched) {
         const k = container.bl_number || 'Sin nombre';
@@ -1228,9 +1230,9 @@ const Products = {
         byCont.get(k).push(item.sku || item.name || 'ítem');
       }
       const lines = [...byCont.entries()].map(([k, skus]) => `• ${k}: ${skus.length} (${skus.slice(0, 6).join(', ')}${skus.length > 6 ? '…' : ''})`).join('\n');
-      alert(`Ítems vinculados con el catálogo: ${res.linked}.\n\n` + (res.unmatched.length
-        ? `Sin producto en el catálogo (${res.unmatched.length}) — por eso no pueden salir en la lista de precios:\n${lines}\n\nAgrega esos productos al catálogo (o quita los ítems) y vuelve a pulsar este botón.`
-        : 'Todos los ítems de todos los contenedores quedaron vinculados.'));
+      alert(`Contenedor "${NEW_NAME}": ${res.linked} ítems vinculados con el catálogo.\n\n` + (res.unmatched.length
+        ? `Sin producto en el catálogo (${res.unmatched.length}) — por eso no pueden salir en la lista de precios:\n${lines}\n\nAgrega esos productos al catálogo (o quita los ítems del contenedor) y vuelve a pulsar este botón.`
+        : 'Todos los ítems de ese contenedor quedaron vinculados. Ningún otro contenedor se tocó.'));
       products = Store.getAll('products');
       renderCount();
       renderTable();

@@ -1093,11 +1093,12 @@ const Store = {
     return rec;
   },
 
-  // Vincula con el catálogo (Productos) todos los ítems de contenedores que no tengan un
-  // producto válido, por código de origen (SKU de la fábrica; ignora el asterisco y las
+  // Vincula con el catálogo (Productos) los ítems de los contenedores indicados (containerIds;
+  // si no se indica ninguno, de todos) que no tengan un producto válido, por código de origen (SKU de la fábrica; ignora el asterisco y las
   // mayúsculas). Nunca une por código BRG solo. No toca los ítems ya vinculados.
   // Devuelve { linked, unmatched: [{ item, container }] }.
-  autoLinkItems() {
+  autoLinkItems(containerIds) {
+    const only = containerIds ? new Set(containerIds) : null;
     const clean = (s) => String(s || '').replace(/\*/g, '').trim().toLowerCase();
     const products = readAll(STORE_KEYS.products);
     const productIds = new Set(products.map(p => p.id));
@@ -1112,6 +1113,7 @@ const Store = {
     const updates = [];
     const unmatched = [];
     for (const it of readAll(STORE_KEYS.items)) {
+      if (only && !only.has(it.container_id)) continue;
       const cont = containers.get(it.container_id);
       if (!cont) continue; // ítem huérfano (su contenedor ya no existe)
       if (it.product_id && productIds.has(it.product_id)) continue;
