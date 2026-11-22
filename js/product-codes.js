@@ -22,7 +22,8 @@ export const CATEGORIES = [
   { name: 'Freestanding Griferia', code: 'FRG' },
   { name: 'Freestanding Bañera', code: 'FRB' },
   { name: 'Valvula', code: 'VA' },
-  { name: 'Trim de Ducha', code: 'TD' }
+  { name: 'Trim de Ducha', code: 'TD' },
+  { name: 'Mueble de Baño', code: 'MB' }
 ];
 
 export const COLORS = [
@@ -33,6 +34,10 @@ export const COLORS = [
   { name: 'Brushed Nickel', code: 'BN' },
   { name: 'Rose Gold', code: 'RG' },
   { name: 'Brushed Black', code: 'BB' },
+  { name: 'Gun Grey', code: 'GG' },
+  { name: 'Nogal', code: 'NG' },
+  { name: 'Roble', code: 'RL' },
+  { name: 'Gris', code: 'GR' },
   { name: 'No Aplica', code: '' }
 ];
 

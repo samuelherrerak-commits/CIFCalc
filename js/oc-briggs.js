@@ -21,7 +21,7 @@ const COPY_FIELDS = ['company_id', 'container_capacity', 'container_max_weight',
 const cleanSku = (s) => String(s || '').replace(/\*/g, '').trim().toLowerCase();
 
 // Crea (o completa con volumen) los productos de la plantilla y sus proveedores.
-// Devuelve { supplierIds, created }. No borra nada.
+// Devuelve { supplierIds, created, recoded }. No borra nada.
 export function ensureBriggsProducts() {
   const T = BRIGGS_PLANTILLA;
   // Proveedores (por nombre).
@@ -39,6 +39,7 @@ export function ensureBriggsProducts() {
   for (const p of products) if (cleanSku(p.sku)) bySku.set(cleanSku(p.sku), p);
   const toCreate = [];
   const fix = [];
+  const recoded = []; // productos cuyo código BRG cambió
   for (const [sup, sku, name, hs, code, color, category, collection, fob, , upb, cbm, kg, foto, forma] of T) {
     const fotoUrl = foto ? BRIGGS_PHOTO_BASE + foto : '';
     const ex = bySku.get(cleanSku(sku));
@@ -54,7 +55,8 @@ export function ensureBriggsProducts() {
     }
     const patch = {};
     const set = (k, v) => { if (String(ex[k] ?? '') !== String(v ?? '')) patch[k] = v; };
-    set('sku_briggs', code); set('name', name); set('category', category); set('collection', collection); set('color', color); set('forma', forma || '');
+    set('sku_briggs', code); set('name', name);
+    if (patch.sku_briggs) recoded.push({ sku, from: ex.sku_briggs, to: code }); set('category', category); set('collection', collection); set('color', color); set('forma', forma || '');
     if (Number(ex.tariff_rate) !== TARIFF) patch.tariff_rate = TARIFF;
     if (!(Number(ex.box_volume) > 0)) Object.assign(patch, { units_per_box: upb, box_volume: cbm, weight_kg: kg });
     if (!(Number(ex.fob_unit) > 0)) patch.fob_unit = fob;
@@ -66,7 +68,7 @@ export function ensureBriggsProducts() {
   const created = Store.insertMany('products', toCreate);
   Store.updateMany('products', fix);
 
-  return { supplierIds, created };
+  return { supplierIds, created, recoded };
 }
 
 export async function openOrdenCompraBriggs() {
@@ -168,4 +170,17 @@ export async function replaceCatalogWithBriggs(onProgress) {
   await Store.removeMany('products', old.map(p => p.id), onProgress);
   const { created } = ensureBriggsProducts();
   return { removed: old.length, created: created.length };
+}
+
+// Actualiza los productos del catálogo con los códigos BRG definitivos de la plantilla (por código de
+// origen): código, categoría, colección, forma y color. También pone el código nuevo en los ítems de
+// contenedor que ya están vinculados a esos productos. No crea contenedores ni borra nada.
+export function applyBriggsCodes() {
+  const { created, recoded } = ensureBriggsProducts();
+  const byId = new Map(Store.getAll('products').map(p => [p.id, p]));
+  const itemFix = Store.getAll('items')
+    .filter(i => i.product_id && byId.has(i.product_id) && String(i.sku_briggs || '') !== String(byId.get(i.product_id).sku_briggs || ''))
+    .map(i => ({ id: i.id, sku_briggs: byId.get(i.product_id).sku_briggs }));
+  Store.updateMany('items', itemFix);
+  return { created: created.length, recoded, items: itemFix.length };
 }
