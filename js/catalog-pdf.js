@@ -12,13 +12,17 @@ const DESCRIPTIONS = {
   Eclipse: 'Con una silueta arquitectónica y un carácter definido, Eclipse está diseñada para convertirse en el punto focal del ambiente. Sus formas geométricas crean un contraste sofisticado.'
 };
 
-// Con colección real → "Serie X". Los genéricos (sin colección propia) se
-// agrupan por su categoría → "Categoría X".
+// Con colección Briggs → "Serie X". Los genéricos se agrupan por su forma (Redondo / Cuadrado /
+// Mixto) → "Genéricos · Forma"; si no tienen forma, por su categoría.
+const FORMAS = ['Redondo', 'Cuadrado', 'Mixto'];
+const KIND_LABEL = { series: 'SERIE', forma: 'GENÉRICOS', cat: 'CATEGORÍA' };
+const KIND_ORDER = { series: 0, forma: 1, cat: 2 };
 const collectionOf = (p) => {
   const c = String(p.collection || '').trim();
-  return c && c.toLowerCase() !== 'genérico' && c.toLowerCase() !== 'generico'
-    ? { name: c, series: true }
-    : { name: String(p.category || '').trim() || 'Otros productos', series: false };
+  if (c && c.toLowerCase() !== 'genérico' && c.toLowerCase() !== 'generico') return { name: c, kind: 'series' };
+  const f = FORMAS.find(x => x.toLowerCase() === String(p.forma || '').trim().toLowerCase());
+  if (f) return { name: f, kind: 'forma' };
+  return { name: String(p.category || '').trim() || 'Otros productos', kind: 'cat' };
 };
 // BRG-BL-GRA-01-CR → BRG-BL-GRA-01 (el color es lo único que cambia).
 const baseCode = (sku) => String(sku || '').replace(/-(CR|SG|RG|NG|GL|BN|BB|GG)$/i, '').replace(/-$/, '');
@@ -27,10 +31,10 @@ const baseCode = (sku) => String(sku || '').replace(/-(CR|SG|RG|NG|GL|BN|BB|GG)$
 export function buildCatalogModels(products, costOf, tier, tiers) {
   const groups = new Map(); // colección → Map(base → modelo)
   for (const p of products) {
-    const { name: col, series } = collectionOf(p);
-    const key = (series ? 's:' : 'c:') + col;
+    const { name: col, kind } = collectionOf(p);
+    const key = kind + ':' + col;
     const base = baseCode(p.sku_briggs) || p.id;
-    if (!groups.has(key)) groups.set(key, { name: col, series, map: new Map() });
+    if (!groups.has(key)) groups.set(key, { name: col, kind, map: new Map() });
     const g = groups.get(key).map;
     if (!g.has(base)) g.set(base, { code: base, name: p.name, category: p.category, colors: [], variants: [], foto: '' });
     const m = g.get(base);
@@ -39,14 +43,15 @@ export function buildCatalogModels(products, costOf, tier, tiers) {
     m.variants.push({ color: p.color || '', cost: costOf(p) });
   }
   const rank = (c) => { const i = ORDER.findIndex(o => o.toLowerCase() === c.toLowerCase()); return i < 0 ? 99 : i; };
-  // Primero las series (en el orden del índice) y después las categorías.
+  // Primero las series (en el orden del índice), luego los genéricos por forma y al final las categorías.
+  const ord = (g) => (g.kind === 'forma' ? FORMAS.indexOf(g.name) : rank(g.name));
   return [...groups.values()]
-    .sort((a, b) => (b.series - a.series) || rank(a.name) - rank(b.name) || a.name.localeCompare(b.name))
-    .map(({ name, series, map }) => ({
-      name, series,
-      models: [...map.values()].sort((a, b) => a.code.localeCompare(b.code)).map(m => ({
-        ...m, variants: m.variants.map(v => ({ color: v.color, price: priceFor(v.cost, tier, tiers) }))
-      }))
+    .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || ord(a) - ord(b) || a.name.localeCompare(b.name))
+    .map(({ name, kind, map }) => ({
+      name, kind, series: kind === 'series',
+      models: [...map.values()]
+        .sort((a, b) => (kind === 'forma' ? String(a.category).localeCompare(String(b.category)) : 0) || a.code.localeCompare(b.code))
+        .map(m => ({ ...m, showCat: kind === 'forma', variants: m.variants.map(v => ({ color: v.color, price: priceFor(v.cost, tier, tiers) })) }))
     }));
 }
 
@@ -65,6 +70,7 @@ const item = (m) => `
     <div class="tx">
       <div class="code">${esc(m.code)}</div>
       <div class="nm">${esc(m.name)}</div>
+      ${m.showCat && m.category ? `<div class="fin">${esc(m.category)}</div>` : ''}
       ${m.colors.length ? `<div class="fin">Acabados: ${m.colors.map(esc).join(', ')}</div>` : ''}
       ${priceHtml(m)}
     </div>
@@ -80,7 +86,7 @@ export function openCatalogPdf(products, costOf, tier, tiers) {
     const chunks = [];
     for (let i = 0; i < col.models.length; i += PER_PAGE) chunks.push(col.models.slice(i, i + PER_PAGE));
     if (!chunks.length) continue;
-    const kind = col.series ? 'SERIE' : 'CATEGORÍA';
+    const kind = KIND_LABEL[col.kind];
     const label = `${kind} ${col.name.toUpperCase()}`;
     sheets.push(`<section class="sheet"><div class="half hero"><div class="serie">${kind}</div><div class="cname">${esc(col.name)}</div>${DESCRIPTIONS[col.name] ? `<p>${esc(DESCRIPTIONS[col.name])}</p>` : ''}</div>${list(chunks[0], label, ++page)}</section>`);
     for (let i = 1; i < chunks.length; i += 2) {

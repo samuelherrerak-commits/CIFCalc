@@ -118,6 +118,8 @@ const SCHEMAS = {
     'tariff_rate', 'created_at', 'updated_at', 'foto_url', 'foto_file_id',
     'stock', 'avg_cost', 'sale_price',
     'brand', 'collection', 'category', 'color',
+    // Forma del producto (Redondo / Cuadrado / Mixto): ordena los genéricos en el catálogo y las listas de precio. No va en el código.
+    'forma',
     // IVA del producto: 'general' (vacío = general), 'reducida' o 'exento'.
     'iva_tipo',
     // Prompts para generar las fotos del producto con Nano Banana (Gemini):

@@ -62,6 +62,7 @@ const Catalog = {
     const est = latestEstimates();
     let query = '';
     let category = '';
+    let forma = '';
     let tiers = Store.getPriceTiers();
     // Precio con margen sobre la venta: costo / (1 − margen).
 
@@ -73,12 +74,18 @@ const Catalog = {
     };
     const categories = [...new Set(products.map(p => String(p.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
+    const FORMAS = ['Redondo', 'Cuadrado', 'Mixto'];
+    const isSeries = (p) => { const c = String(p.collection || '').trim().toLowerCase(); return !!c && c !== 'genérico' && c !== 'generico'; };
+    const groupRank = (p) => (isSeries(p) ? 0 : (FORMAS.indexOf(p.forma) >= 0 ? 1 + FORMAS.indexOf(p.forma) : 9));
+    const groupName = (p) => (isSeries(p) ? String(p.collection).trim() : '');
     const renderRows = () => {
       const q = query.trim().toLowerCase();
       const list = products
         .filter(p => !category || String(p.category || '').trim() === category)
+        .filter(p => !forma || (forma === '__none' ? !p.forma : p.forma === forma))
         .filter(p => !q || [p.sku_briggs, p.sku, p.name, p.collection, p.color].some(v => String(v || '').toLowerCase().includes(q)))
-        .sort((a, b) => String(a.category || '').localeCompare(String(b.category || '')) || String(a.name).localeCompare(String(b.name)));
+        // Series Briggs primero (por colección); luego los genéricos por forma (Redondo, Cuadrado, Mixto) y categoría.
+        .sort((a, b) => groupRank(a) - groupRank(b) || groupName(a).localeCompare(groupName(b)) || String(a.category || '').localeCompare(String(b.category || '')) || String(a.name).localeCompare(String(b.name)));
       document.getElementById('cat-count').textContent = `${list.length} producto${list.length === 1 ? '' : 's'}`;
       document.getElementById('cat-tbody').innerHTML = list.length === 0
         ? '<tr><td colspan="${5 + tiers.length}" class="p-6 text-center text-slate-400">Sin productos.</td></tr>'
@@ -95,7 +102,7 @@ const Catalog = {
               <div class="text-sm text-slate-800">${esc(p.name) || '<span class="text-slate-400">Sin nombre</span>'}</div>
               <div class="text-[11px] font-mono text-slate-400">${esc(p.sku_briggs)}${/^PROV-/i.test(p.sku_briggs || '') ? ' <span class="font-sans text-amber-600">· código provisional</span>' : ''}</div>
             </td>
-            <td class="p-2 text-slate-500"><div>${esc(p.category)}</div><div class="text-[11px] text-slate-400">${[p.collection, p.color].filter(Boolean).map(esc).join(' · ')}</div></td>
+            <td class="p-2 text-slate-500"><div>${esc(p.category)}</div><div class="text-[11px] text-slate-400">${[p.collection, p.forma, p.color].filter(Boolean).map(esc).join(' · ')}</div></td>
             <td class="p-2 text-right">
               <div class="tabular-nums text-slate-700">${costOf(p) > 0 ? '$' + fmtNum(costOf(p)) : '<span class="text-slate-300">—</span>'}</div>
               <div class="text-[10px] text-slate-400">${e ? `${esc(e.bl)} · ${STATUS[e.status] || ''}` : ''}</div>
@@ -160,6 +167,9 @@ const Catalog = {
             <option value="">Todas las categorías</option>
             ${categories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
           </select>
+          <select id="cat-forma" class="${input.replace('w-full', 'w-full sm:w-40')}">
+            <option value="">Todas las formas</option><option>Redondo</option><option>Cuadrado</option><option>Mixto</option><option value="__none">Sin forma</option>
+          </select>
           <span id="cat-count" class="text-xs text-slate-400 whitespace-nowrap"></span>
         </div>
         <div class="overflow-x-auto">
@@ -173,6 +183,7 @@ const Catalog = {
     app.innerHTML = AccountingShell.wrap(AccountingTabs.render('catalog'), body);
     document.getElementById('cat-search').addEventListener('input', (e) => { query = e.target.value; renderRows(); }, { signal });
     document.getElementById('cat-category').addEventListener('change', (e) => { category = e.target.value; renderRows(); }, { signal });
+    document.getElementById('cat-forma').addEventListener('change', (e) => { forma = e.target.value; renderRows(); }, { signal });
     document.getElementById('cat-tbody').addEventListener('change', (e) => {
       if (e.target.dataset.price) setPrice(e.target.dataset.price, e.target.value);
     }, { signal });

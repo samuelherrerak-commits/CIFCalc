@@ -1,6 +1,6 @@
 import Store from '../store.js';
 import Auth from '../auth.js';
-import { replaceCatalogWithBriggs, NEW_NAME } from '../oc-briggs.js';
+import { replaceCatalogWithBriggs, applyBriggsCodes, NEW_NAME } from '../oc-briggs.js';
 import { fmtNum, fmtInt, esc, num, ensureXlsx, ensureJSZip } from '../utils.js';
 import { uploadFoto, upsert as sheetsUpsert } from '../sheets.js';
 import { codeTables, findByName, parseCode, buildCode, collectionSegment, nextCorrelative, VIAS } from '../product-codes.js';
@@ -23,10 +23,12 @@ const Products = {
       return s ? s.name : '';
     };
 
+    let formaFilter = '';
     const filtered = () => {
       const q = query.trim().toLowerCase();
-      if (!q) return products;
-      return products.filter(p => {
+      const base = formaFilter ? products.filter(p => (formaFilter === '__none' ? !p.forma : p.forma === formaFilter)) : products;
+      if (!q) return base;
+      return base.filter(p => {
         const sup = supplierName(p.supplier_id);
         return [p.sku_briggs, p.sku, p.name, p.origin_country, sup]
           .some(v => String(v || '').toLowerCase().includes(q));
@@ -94,7 +96,7 @@ const Products = {
       const tbody = document.getElementById('products-tbody');
       const list = filtered();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="16" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
+        ? `<tr><td colspan="17" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
         : list.map(p => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
             <td class="p-2">${p.foto_url ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-8 h-8 object-cover rounded border border-slate-200" alt="">` : '<span class="text-slate-300">—</span>'}</td>
@@ -105,6 +107,7 @@ const Products = {
             <td class="p-2">${esc(p.brand) || '<span class="text-slate-400">—</span>'}</td>
             <td class="p-2">${esc(p.category) || '<span class="text-slate-400">—</span>'}</td>
             <td class="p-2">${esc(p.collection) || '<span class="text-slate-400">—</span>'}</td>
+            <td class="p-2">${esc(p.forma) || '<span class="text-slate-400">—</span>'}</td>
             <td class="p-2">${esc(p.color) || '<span class="text-slate-400">—</span>'}</td>
             <td class="p-2">${esc(p.origin_country)}</td>
             <td class="p-2 text-right">${fmtInt(p.units_per_box)}</td>
@@ -209,6 +212,7 @@ const Products = {
       fillSelect($f('f-category'), tables.cats, p.category, { blank: '— Categoría —' });
       fillSelect($f('f-collection'), tables.cols, p.collection, { blank: '— Colección —' });
       fillSelect($f('f-color'), tables.colors, p.color, { blank: '— Color —' });
+      $f('f-forma').value = p.forma || '';
       const k = parseCode(p.sku_briggs);
       $f('f-via').innerHTML = VIAS.map(v => `<option value="${v.code}" ${(k ? k.via : '') === v.code ? 'selected' : ''}>${v.label}</option>`).join('');
       $f('f-nn').value = k ? k.nn : '';
@@ -313,6 +317,7 @@ const Products = {
         category: document.getElementById('f-category').value.trim(),
         collection: document.getElementById('f-collection').value.trim(),
         color: document.getElementById('f-color').value.trim(),
+        forma: document.getElementById('f-forma').value,
         foto_url: document.getElementById('f-photo').value.trim(),
         units_per_box: num(document.getElementById('f-upb')),
         box_volume: num(document.getElementById('f-vol')),
@@ -534,6 +539,7 @@ const Products = {
         descripcion: findColumn(header, ['descripcion']),
         categoria: findColumn(header, ['categoria']),
         color: findColumn(header, ['color']),
+        forma: findColumn(header, ['forma']),
         briggs: findColumn(header, ['codigo de producto generado'])
       };
       if (col.proveedor === -1 || col.briggs === -1) {
@@ -562,6 +568,7 @@ const Products = {
           collection: (col.colGenerador !== -1 && row[col.colGenerador]) ? String(row[col.colGenerador]).trim()
             : (col.colCatalogo !== -1 ? String(row[col.colCatalogo] || '').trim() : ''),
           color: col.color !== -1 ? String(row[col.color] || '').trim() : '',
+          forma: col.forma !== -1 ? String(row[col.forma] || '').trim() : '',
           photo: (images && images[i]) || null,
           origin_country: '',
           units_per_box: 1,
@@ -741,6 +748,7 @@ const Products = {
           category: c.category,
           collection: c.collection,
           color: c.color,
+          forma: c.forma || '',
           foto_url: '',
           foto_file_id: '',
           units_per_box: c.units_per_box,
@@ -899,12 +907,14 @@ const Products = {
           <p class="text-sm text-slate-500">Base de datos maestra de productos para tus contenedores</p>
         </div>
         <div class="flex flex-wrap items-center gap-2 w-full xl:w-auto">
+          <select id="products-forma" class="p-2 border rounded-lg text-sm bg-slate-50" title="Filtrar por forma"><option value="">Todas las formas</option><option>Redondo</option><option>Cuadrado</option><option>Mixto</option><option value="__none">Sin forma</option></select>
           <input id="products-search" type="text" placeholder="Buscar por SKU, SKU BRIGGS, nombre, proveedor…"
                  class="w-full sm:w-72 p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
           <button id="btn-import" class="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar de Contenedores</button>
           <button id="btn-import-excel" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Importar Excel</button>
           <input id="excel-file-input" type="file" accept=".xlsx,.xls" class="hidden">
           <button id="btn-link-items" class="bg-teal-600 hover:bg-teal-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap" title="Une con este catálogo los ítems del contenedor de la Orden de compra Briggs (Plantilla CIF). No toca ningún otro contenedor.">Vincular Orden de compra Briggs</button>
+          ${Auth.isAdmin() ? '<button id="btn-apply-codes" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap" title="Pone en los productos los códigos BRG definitivos (código, categoría, colección, forma y color) por código de origen. No borra nada.">Actualizar códigos Briggs</button>' : ''}
           ${Auth.isAdmin() ? '<button id="btn-replace-briggs" class="bg-blue-700 hover:bg-blue-800 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Dejar solo catálogo Briggs</button>' : ''}
           ${Auth.isAdmin() ? '<button id="btn-delete-all" class="bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Eliminar todos</button>' : ''}
           <button id="btn-retry-photos" class="bg-slate-600 hover:bg-slate-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-sm transition whitespace-nowrap">Reintentar fotos faltantes</button>
@@ -937,6 +947,7 @@ const Products = {
               <th class="p-2">Marca</th>
               <th class="p-2">Categoría</th>
               <th class="p-2">Colección</th>
+              <th class="p-2">Forma</th>
               <th class="p-2">Color</th>
               <th class="p-2">País</th>
               <th class="p-2 text-right">Unid/Caja</th>
@@ -986,6 +997,10 @@ const Products = {
               <div>
                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">Color *</label>
                 <select id="f-color" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1" title="Redondo / Cuadrado / Mixto: ordena el catálogo y las listas de precio. No va en el código.">Forma</label>
+                <select id="f-forma" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"><option value="">—</option><option>Redondo</option><option>Cuadrado</option><option>Mixto</option></select>
               </div>
             </div>
             <div class="flex flex-wrap items-end gap-3">
@@ -1182,6 +1197,7 @@ const Products = {
       </div>
     `;
 
+    document.getElementById('products-forma').addEventListener('change', (e) => { formaFilter = e.target.value; renderCount(); renderTable(); }, { signal });
     // Búsqueda (con debounce para no re-renderizar la tabla en cada tecla)
     let searchDebounce = null;
     document.getElementById('products-search').addEventListener('input', (e) => {
@@ -1233,6 +1249,16 @@ const Products = {
       alert(`Contenedor "${NEW_NAME}": ${res.linked} ítems vinculados con el catálogo.\n\n` + (res.unmatched.length
         ? `Sin producto en el catálogo (${res.unmatched.length}) — por eso no pueden salir en la lista de precios:\n${lines}\n\nAgrega esos productos al catálogo (o quita los ítems del contenedor) y vuelve a pulsar este botón.`
         : 'Todos los ítems de ese contenedor quedaron vinculados. Ningún otro contenedor se tocó.'));
+      products = Store.getAll('products');
+      renderCount();
+      renderTable();
+    }, { signal });
+
+    const applyBtn = document.getElementById('btn-apply-codes');
+    if (applyBtn) applyBtn.addEventListener('click', () => {
+      const res = applyBriggsCodes();
+      const list = res.recoded.slice(0, 15).map(r => `• ${r.sku}: ${r.from} → ${r.to}`).join('\n') + (res.recoded.length > 15 ? `\n… y ${res.recoded.length - 15} más` : '');
+      alert(`Códigos Briggs actualizados.\n\n• ${res.recoded.length} productos cambiaron de código${list ? ':\n' + list : ''}\n• ${res.created} productos nuevos creados\n• ${res.items} ítems de contenedor con el código nuevo`);
       products = Store.getAll('products');
       renderCount();
       renderTable();
