@@ -1,4 +1,5 @@
 import { priceFor } from './pricing.js';
+import { baseCode, colorRank } from './catalog-pdf.js';
 
 // Lista de precios en Excel, con foto. Un renglón por producto (cada acabado),
 // con el precio del nivel elegido (ver pricing.js). Los productos
@@ -56,7 +57,7 @@ async function squarePhoto(url, size = 240) {
 export async function exportCatalogExcel(products, costOf, tier, tiers, onProgress) {
   const ExcelJS = await ensureExcelJS();
   const list = [...products].sort((a, b) =>
-    rank(a) - rank(b) || groupOf(a).localeCompare(groupOf(b)) || (isSeries(a) ? 0 : String(a.category || '').localeCompare(String(b.category || ''))) || String(a.sku_briggs).localeCompare(String(b.sku_briggs)));
+    rank(a) - rank(b) || groupOf(a).localeCompare(groupOf(b)) || (isSeries(a) ? 0 : String(a.category || '').localeCompare(String(b.category || ''))) || baseCode(a.sku_briggs).localeCompare(baseCode(b.sku_briggs)) || colorRank(a.color) - colorRank(b.color));
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Lista de precios', { views: [{ state: 'frozen', ySplit: 4 }] });
   const SIDE = 100; // px de la casilla cuadrada

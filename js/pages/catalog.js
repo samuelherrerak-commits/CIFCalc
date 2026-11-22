@@ -1,4 +1,5 @@
 import { withBriggsPhotos } from '../oc-briggs.js';
+import { tintPhoto } from '../photo-tint.js';
 import Store from '../store.js';
 import { priceFor } from '../pricing.js';
 import { openCatalogPdf } from '../catalog-pdf.js';
@@ -225,6 +226,13 @@ const Catalog = {
           ? 'Excel: una fila por producto y acabado, con su foto cuadrada. Puede tardar unos segundos por las fotos.'
           : 'PDF: se abre la vista de impresión; elige "Guardar como PDF".';
       }));
+      // Fotos completas; las que se toman de otro acabado (cromado) se recolorean a Steel Gray / Rose Gold.
+      const photosFor = async (list, tint = true) => {
+        const withPh = withBriggsPhotos(list);
+        const pending = !tint ? [] : withPh.filter(p => p.foto_prestada);
+        await Promise.all(pending.map(async p => { p.foto_url = await tintPhoto(p.foto_url, p.color); }));
+        return withPh;
+      };
       dlg.querySelector('#pdf-ok').onclick = async () => {
         const i = Number(dlg.querySelector('input[name="pdf-tier"]:checked').value);
         const fmt = dlg.querySelector('input[name="pdf-fmt"]:checked').value;
@@ -232,13 +240,13 @@ const Catalog = {
           const btn = dlg.querySelector('#pdf-ok');
           btn.disabled = true;
           try {
-            const res = await exportCatalogExcel(withBriggsPhotos(products), costOf, tiers[i], tiers, (d, t) => { btn.textContent = `Fotos ${d}/${t}…`; });
+            const res = await exportCatalogExcel(await photosFor(products), costOf, tiers[i], tiers, (d, t) => { btn.textContent = `Fotos ${d}/${t}…`; });
             dlg.remove();
             if (res.photosMissing) alert(`Excel generado. ${res.photosMissing} fotos no se pudieron leer y quedaron vacías.`);
           } catch (e) { btn.disabled = false; btn.textContent = 'Descargar'; alert('No se pudo generar el Excel: ' + e.message); }
           return;
         }
-        const ok = openCatalogPdf(withBriggsPhotos(products), costOf, tiers[i], tiers);
+        const ok = openCatalogPdf(await photosFor(products, false), costOf, tiers[i], tiers);
         if (!ok) alert('El navegador bloqueó la ventana. Permite ventanas emergentes para este sitio e inténtalo de nuevo.');
         dlg.remove();
       };

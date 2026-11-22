@@ -193,5 +193,5 @@ export function withBriggsPhotos(products) {
   const out = products.map(p => (p.foto_url ? p : { ...p, foto_url: tplFoto.get(cleanSku(p.sku)) || '' }));
   const byModel = new Map();
   for (const p of out) if (p.foto_url && p.sku_briggs && !byModel.has(base(p.sku_briggs))) byModel.set(base(p.sku_briggs), p.foto_url);
-  return out.map(p => (p.foto_url || !p.sku_briggs ? p : { ...p, foto_url: byModel.get(base(p.sku_briggs)) || '' }));
+  return out.map(p => (p.foto_url || !p.sku_briggs ? p : { ...p, foto_url: byModel.get(base(p.sku_briggs)) || '', foto_prestada: !!byModel.get(base(p.sku_briggs)) }));
 }

@@ -23,8 +23,10 @@ const collectionOf = (p) => {
   if (f) return { name: f, kind: 'forma' };
   return { name: String(p.category || '').trim() || 'Otros productos', kind: 'cat' };
 };
+// Orden fijo de acabados: Cromado, Steel Gray, Rose Gold (los demás después).
+export const colorRank = (c) => { const i = ['cromado', 'steel gray', 'rose gold'].indexOf(String(c || '').trim().toLowerCase()); return i < 0 ? 9 : i; };
 // BRG-BL-GRA-01-CR → BRG-BL-GRA-01 (el color es lo único que cambia).
-const baseCode = (sku) => String(sku || '').replace(/-(CR|SG|RG|NG|GL|BN|BB|GG)$/i, '').replace(/-$/, '');
+export const baseCode = (sku) => String(sku || '').replace(/-(CR|SG|RG|NG|GL|BN|BB|GG)$/i, '').replace(/-$/, '');
 
 // products: filas de Store; costOf(p) → costo estimado; tier = { name, pct }
 export function buildCatalogModels(products, costOf, tier, tiers) {
@@ -50,7 +52,7 @@ export function buildCatalogModels(products, costOf, tier, tiers) {
       name, kind, series: kind === 'series',
       models: [...map.values()]
         .sort((a, b) => (kind === 'forma' ? String(a.category).localeCompare(String(b.category)) : 0) || a.code.localeCompare(b.code))
-        .map(m => ({ ...m, showCat: kind === 'forma', variants: m.variants.map(v => ({ color: v.color, price: priceFor(v.cost, tier, tiers) })) }))
+        .map(m => ({ ...m, colors: [...m.colors].sort((a, b) => colorRank(a) - colorRank(b)), variants: [...m.variants].sort((a, b) => colorRank(a.color) - colorRank(b.color)), showCat: kind === 'forma', variants: m.variants.map(v => ({ color: v.color, price: priceFor(v.cost, tier, tiers) })) }))
     }));
 }
 
