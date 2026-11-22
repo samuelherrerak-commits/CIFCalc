@@ -1,11 +1,11 @@
 import { withBriggsPhotos } from '../oc-briggs.js';
-import { tintPhoto } from '../photo-tint.js';
+import { tintPhoto, toDataUrl } from '../photo-tint.js';
 // Fotos de la plantilla de productos cromados que se fotografiaron en otro color (dorado/cobre).
 const FOTOS_A_CROMAR = new Set(['BRG-BL-CAL-01-CR.png', 'BRG-BL-CAL-02-CR.png', 'BRG-BL-CAL-03-CR.png', 'BRG-BL-EQU-01-CR.png', 'BRG-BL-EQU-02-CR.png']);
 import Store from '../store.js';
 import { priceFor } from '../pricing.js';
-import { openCatalogPdf } from '../catalog-pdf.js';
-import { exportCatalogExcel } from '../catalog-xlsx.js';
+import { renderPriceListPdf } from '../pricelist-pdf.js';
+import { exportPriceListsExcel } from '../catalog-xlsx.js';
 import { fmtNum, esc, computeContainer } from '../utils.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { card, input } from '../components/accounting-shell.js';
@@ -153,7 +153,7 @@ const Catalog = {
           <p class="text-xs text-slate-400">Costo estimado del contenedor más reciente y precio de venta.</p>
         </div>
         <div class="flex items-center gap-3">
-          <button id="cat-pdf" class="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-700">Descargar catálogo (PDF / Excel)</button>
+          <button id="cat-pdf" class="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-700">Descargar lista de precios</button>
           <a href="#/productos" class="text-xs text-slate-500 hover:text-slate-900">Agregar o editar productos →</a>
         </div>
       </div>
@@ -215,18 +215,23 @@ const Catalog = {
       dlg.id = 'pdf-dlg';
       dlg.className = 'fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4';
       dlg.innerHTML = `<div class="bg-white rounded-2xl p-5 w-full max-w-sm space-y-3">
-        <div class="text-base font-semibold text-slate-900">Descargar catálogo</div>
+        <div class="text-base font-semibold text-slate-900">Descargar lista de precios</div>
         <p class="text-xs text-slate-500">¿A quién le vas a vender? El archivo llevará solo los precios de ese nivel.</p>
-        <div class="space-y-1.5">${tiers.map((t, i) => `<label class="flex items-center gap-2 p-2 border border-slate-200 rounded-lg text-sm cursor-pointer"><input type="radio" name="pdf-tier" value="${i}" ${i === tiers.length - 1 ? 'checked' : ''}> ${esc(t.name)} <span class="text-xs text-slate-400">${fmtNum(t.pct)}%</span></label>`).join('')}</div>
-        <div class="flex gap-2 text-sm"><label class="flex-1 flex items-center gap-2 p-2 border border-slate-200 rounded-lg cursor-pointer"><input type="radio" name="pdf-fmt" value="pdf" checked> PDF</label><label class="flex-1 flex items-center gap-2 p-2 border border-slate-200 rounded-lg cursor-pointer"><input type="radio" name="pdf-fmt" value="xlsx"> Excel con fotos</label></div>
+        <div id="pdf-tiers" class="space-y-1.5">${tiers.map((t, i) => `<label class="flex items-center gap-2 p-2 border border-slate-200 rounded-lg text-sm cursor-pointer"><input type="radio" name="pdf-tier" value="${i}" ${i === tiers.length - 1 ? 'checked' : ''}> ${esc(t.name)} <span class="text-xs text-slate-400">${fmtNum(t.pct)}%</span></label>`).join('')}</div>
+        <div class="grid grid-cols-3 gap-2 text-sm"><label class="flex items-center gap-2 p-2 border border-slate-200 rounded-lg cursor-pointer"><input type="radio" name="pdf-fmt" value="pdf" checked> PDF</label><label class="flex items-center gap-2 p-2 border border-slate-200 rounded-lg cursor-pointer"><input type="radio" name="pdf-fmt" value="xlsx"> Excel</label><label class="flex items-center gap-2 p-2 border border-slate-200 rounded-lg cursor-pointer" title="Un solo Excel con una pestaña por nivel de precio"><input type="radio" name="pdf-fmt" value="all"> Consolidado</label></div>
         <p id="pdf-hint" class="text-[11px] text-slate-400">PDF: se abre la vista de impresión; elige "Guardar como PDF".</p>
         <div class="flex justify-end gap-2"><button id="pdf-cancel" class="px-3 py-2 text-xs text-slate-500">Cancelar</button><button id="pdf-ok" class="px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold">Descargar</button></div></div>`;
       document.body.appendChild(dlg);
       dlg.querySelector('#pdf-cancel').onclick = () => dlg.remove();
+      const HINTS = {
+        pdf: 'PDF: se abre la vista de impresión; elige "Guardar como PDF".',
+        xlsx: 'Excel: una fila por producto y acabado, con su foto cuadrada. Puede tardar unos segundos por las fotos.',
+        all: 'Consolidado (solo Excel): un archivo con una pestaña por cada nivel de precio (' + tiers.map(t => t.name).join(', ') + ').'
+      };
       dlg.querySelectorAll('input[name="pdf-fmt"]').forEach(r => r.addEventListener('change', () => {
-        dlg.querySelector('#pdf-hint').textContent = r.value === 'xlsx' && r.checked
-          ? 'Excel: una fila por producto y acabado, con su foto cuadrada. Puede tardar unos segundos por las fotos.'
-          : 'PDF: se abre la vista de impresión; elige "Guardar como PDF".';
+        if (!r.checked) return;
+        dlg.querySelector('#pdf-hint').textContent = HINTS[r.value];
+        dlg.querySelector('#pdf-tiers').style.display = r.value === 'all' ? 'none' : '';
       }));
       // Fotos completas; las que se toman de otro acabado (cromado) se recolorean a Steel Gray / Rose Gold.
       const photosFor = async (list, tint = true) => {
@@ -246,19 +251,24 @@ const Catalog = {
       dlg.querySelector('#pdf-ok').onclick = async () => {
         const i = Number(dlg.querySelector('input[name="pdf-tier"]:checked').value);
         const fmt = dlg.querySelector('input[name="pdf-fmt"]:checked').value;
-        if (fmt === 'xlsx') {
-          const btn = dlg.querySelector('#pdf-ok');
-          btn.disabled = true;
-          try {
-            const res = await exportCatalogExcel(await photosFor(products), costOf, tiers[i], tiers, (d, t) => { btn.textContent = `Fotos ${d}/${t}…`; });
-            dlg.remove();
-            if (res.photosMissing) alert(`Excel generado. ${res.photosMissing} fotos no se pudieron leer y quedaron vacías.`);
-          } catch (e) { btn.disabled = false; btn.textContent = 'Descargar'; alert('No se pudo generar el Excel: ' + e.message); }
-          return;
+        const btn = dlg.querySelector('#pdf-ok');
+        let w = null;
+        if (fmt === 'pdf') { // la ventana se abre ya, con el clic, para que el navegador no la bloquee
+          w = window.open('', '_blank');
+          if (!w) { alert('El navegador bloqueó la ventana. Permite ventanas emergentes para este sitio e inténtalo de nuevo.'); return; }
+          w.document.write('<p style="font-family:sans-serif;padding:20px">Preparando la lista de precios…</p>');
         }
-        const ok = openCatalogPdf(await photosFor(products, false), costOf, tiers[i], tiers);
-        if (!ok) alert('El navegador bloqueó la ventana. Permite ventanas emergentes para este sitio e inténtalo de nuevo.');
-        dlg.remove();
+        btn.disabled = true;
+        try {
+          const prods = await photosFor(products);
+          if (fmt === 'pdf') {
+            await Promise.all(prods.map(async p => { p.foto_url = await toDataUrl(p.foto_url); }));
+            renderPriceListPdf(w, prods, costOf, tiers[i], tiers); dlg.remove(); return;
+          }
+          const res = await exportPriceListsExcel(prods, costOf, fmt === 'all' ? tiers : [tiers[i]], tiers, (d, t) => { btn.textContent = `Filas ${d}/${t}…`; }, fmt === 'all');
+          dlg.remove();
+          if (res.photosMissing) alert(`Excel generado. ${res.photosMissing} fotos no se pudieron leer y quedaron vacías.`);
+        } catch (e) { if (w) w.close(); btn.disabled = false; btn.textContent = 'Descargar'; alert('No se pudo generar el archivo: ' + e.message); }
       };
     }, { signal });
     renderTiers(); renderHead();
