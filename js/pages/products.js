@@ -94,7 +94,7 @@ const Products = {
       const tbody = document.getElementById('products-tbody');
       const list = filtered();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="16" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
+        ? `<tr><td colspan="17" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
         : list.map(p => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
             <td class="p-2">${p.foto_url ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-8 h-8 object-cover rounded border border-slate-200" alt="">` : '<span class="text-slate-300">—</span>'}</td>
@@ -105,6 +105,7 @@ const Products = {
             <td class="p-2">${esc(p.brand) || '<span class="text-slate-400">—</span>'}</td>
             <td class="p-2">${esc(p.category) || '<span class="text-slate-400">—</span>'}</td>
             <td class="p-2">${esc(p.collection) || '<span class="text-slate-400">—</span>'}</td>
+            <td class="p-2">${esc(p.forma) || '<span class="text-slate-400">—</span>'}</td>
             <td class="p-2">${esc(p.color) || '<span class="text-slate-400">—</span>'}</td>
             <td class="p-2">${esc(p.origin_country)}</td>
             <td class="p-2 text-right">${fmtInt(p.units_per_box)}</td>
@@ -209,6 +210,7 @@ const Products = {
       fillSelect($f('f-category'), tables.cats, p.category, { blank: '— Categoría —' });
       fillSelect($f('f-collection'), tables.cols, p.collection, { blank: '— Colección —' });
       fillSelect($f('f-color'), tables.colors, p.color, { blank: '— Color —' });
+      $f('f-forma').value = p.forma || '';
       const k = parseCode(p.sku_briggs);
       $f('f-via').innerHTML = VIAS.map(v => `<option value="${v.code}" ${(k ? k.via : '') === v.code ? 'selected' : ''}>${v.label}</option>`).join('');
       $f('f-nn').value = k ? k.nn : '';
@@ -313,6 +315,7 @@ const Products = {
         category: document.getElementById('f-category').value.trim(),
         collection: document.getElementById('f-collection').value.trim(),
         color: document.getElementById('f-color').value.trim(),
+        forma: document.getElementById('f-forma').value,
         foto_url: document.getElementById('f-photo').value.trim(),
         units_per_box: num(document.getElementById('f-upb')),
         box_volume: num(document.getElementById('f-vol')),
@@ -937,6 +940,7 @@ const Products = {
               <th class="p-2">Marca</th>
               <th class="p-2">Categoría</th>
               <th class="p-2">Colección</th>
+              <th class="p-2">Forma</th>
               <th class="p-2">Color</th>
               <th class="p-2">País</th>
               <th class="p-2 text-right">Unid/Caja</th>
@@ -986,6 +990,10 @@ const Products = {
               <div>
                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">Color *</label>
                 <select id="f-color" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"></select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-500 mb-1" title="Redondo / Cuadrado / Mixto: ordena el catálogo y las listas de precio. No va en el código.">Forma</label>
+                <select id="f-forma" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"><option value="">—</option><option>Redondo</option><option>Cuadrado</option><option>Mixto</option></select>
               </div>
             </div>
             <div class="flex flex-wrap items-end gap-3">

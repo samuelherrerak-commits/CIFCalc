@@ -21,9 +21,16 @@ function ensureExcelJS() {
 }
 
 const ORDER = ['Equinox', 'Eclipse', 'Selene', 'Callisto', 'Luna', 'Zenith', 'Triton', 'Tritón', 'Gravity', 'Accessories'];
+const FORMAS = ['Redondo', 'Cuadrado', 'Mixto'];
 const isSeries = (p) => { const c = String(p.collection || '').trim().toLowerCase(); return !!c && c !== 'genérico' && c !== 'generico'; };
-const groupOf = (p) => (isSeries(p) ? String(p.collection).trim() : (String(p.category || '').trim() || 'Otros productos'));
-const rank = (p) => { if (!isSeries(p)) return 1000; const i = ORDER.findIndex(o => o.toLowerCase() === String(p.collection).trim().toLowerCase()); return i < 0 ? 99 : i; };
+const formaOf = (p) => FORMAS.find(f => f.toLowerCase() === String(p.forma || '').trim().toLowerCase()) || '';
+// Series Briggs primero; después los genéricos por forma (Redondo, Cuadrado, Mixto) y, al final, los sin forma.
+const groupOf = (p) => (isSeries(p) ? String(p.collection).trim() : formaOf(p) ? `Genérico · ${formaOf(p)}` : `Genérico · ${String(p.category || '').trim() || 'Otros'}`);
+const rank = (p) => {
+  if (isSeries(p)) { const i = ORDER.findIndex(o => o.toLowerCase() === String(p.collection).trim().toLowerCase()); return i < 0 ? 99 : i; }
+  const f = formaOf(p);
+  return f ? 1000 + FORMAS.indexOf(f) : 2000;
+};
 
 // Foto → PNG cuadrado (fondo blanco) en base64; null si no se puede leer.
 async function squarePhoto(url, size = 240) {
@@ -49,7 +56,7 @@ async function squarePhoto(url, size = 240) {
 export async function exportCatalogExcel(products, costOf, tier, tiers, onProgress) {
   const ExcelJS = await ensureExcelJS();
   const list = [...products].sort((a, b) =>
-    rank(a) - rank(b) || groupOf(a).localeCompare(groupOf(b)) || String(a.sku_briggs).localeCompare(String(b.sku_briggs)));
+    rank(a) - rank(b) || groupOf(a).localeCompare(groupOf(b)) || (isSeries(a) ? 0 : String(a.category || '').localeCompare(String(b.category || ''))) || String(a.sku_briggs).localeCompare(String(b.sku_briggs)));
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Lista de precios', { views: [{ state: 'frozen', ySplit: 4 }] });
   const SIDE = 100; // px de la casilla cuadrada
@@ -57,7 +64,8 @@ export async function exportCatalogExcel(products, costOf, tier, tiers, onProgre
     { header: 'Foto', key: 'foto', width: (SIDE - 5) / 7 },
     { header: 'Código', key: 'code', width: 22 },
     { header: 'Producto', key: 'name', width: 46 },
-    { header: 'Serie / Categoría', key: 'group', width: 26 },
+    { header: 'Serie / Genérico', key: 'group', width: 26 },
+    { header: 'Categoría', key: 'cat', width: 26 },
     { header: 'Acabado', key: 'color', width: 14 },
     { header: 'Precio US$', key: 'price', width: 14 }
   ];
@@ -65,7 +73,7 @@ export async function exportCatalogExcel(products, costOf, tier, tiers, onProgre
   ws.insertRow(1, ['BRIGGS — Lista de precios']);
   ws.insertRow(2, [`Fecha: ${new Date().toLocaleDateString('es-VE')} · precios en US$`]);
   ws.insertRow(3, []);
-  ws.mergeCells('A1:F1');
+  ws.mergeCells('A1:G1');
   ws.getCell('A1').font = { name: 'Calibri', size: 16, bold: true };
   ws.getCell('A2').font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF666666' } };
   const head = ws.getRow(4);
@@ -83,15 +91,15 @@ export async function exportCatalogExcel(products, costOf, tier, tiers, onProgre
     const cost = costOf(p);
     const price = priceFor(cost, tier, tiers);
     const row = ws.getRow(r);
-    row.values = [null, p.sku_briggs || '', p.name || '', groupOf(p), p.color || '', price > 0 ? price : 'Consultar'];
+    row.values = [null, p.sku_briggs || '', p.name || '', groupOf(p), p.category || '', p.color || '', price > 0 ? price : 'Consultar'];
     row.height = SIDE * 0.75; // puntos: 100 px = 75 pt, casilla cuadrada
     row.eachCell({ includeEmpty: true }, c => {
-      c.alignment = { vertical: 'middle', wrapText: true, horizontal: c.col === 6 ? 'right' : 'left' };
+      c.alignment = { vertical: 'middle', wrapText: true, horizontal: c.col === 7 ? 'right' : 'left' };
       c.border = { bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } } };
       c.font = { name: 'Calibri', size: 10 };
     });
     row.getCell(2).font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FF1B365D' } };
-    const pc = row.getCell(6);
+    const pc = row.getCell(7);
     if (price > 0) { pc.numFmt = '"US$" #,##0.00'; pc.font = { name: 'Calibri', size: 11, bold: true }; } else pc.font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF888888' } };
     if (p.foto_url) {
       const b64 = await squarePhoto(p.foto_url);

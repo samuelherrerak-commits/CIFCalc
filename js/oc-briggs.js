@@ -31,23 +31,39 @@ export function ensureBriggsProducts() {
     if (!supplierIds[name.toUpperCase()]) supplierIds[name.toUpperCase()] = Store.insert('suppliers', { name, country: 'China', contact_email: '', contact_phone: '' }).id;
   }
 
-  // 2. Productos que todavía no existen.
-  const have = new Set(Store.getAll('products').map(p => String(p.sku_briggs || '').trim().toLowerCase()));
-  const created = Store.insertMany('products', T
-    .filter(t => !have.has(t[4].toLowerCase()))
-    .map(([sup, sku, name, hs, code, color, category, collection, fob, , upb, cbm, kg, foto]) => ({
-      sku_briggs: code, sku, name, supplier_id: supplierIds[sup.toUpperCase()] || null, brand: 'BRG',
-      origin_country: 'China', category, collection, color,
-      foto_url: foto ? BRIGGS_PHOTO_BASE + foto : '', foto_file_id: '',
-      units_per_box: upb, box_volume: cbm, weight_kg: kg, hs_code: hs, fob_unit: fob, tariff_rate: TARIFF,
-      stock: 0, avg_cost: 0, sale_price: 0
-    })));
-  // Productos de la plantilla que ya existían sin volumen o con otro arancel: se completan/corrigen (todos deben tener volumen y arancel 18 %).
+  // Productos de la plantilla, uno por código de origen (SKU de la fábrica): se crean los que faltan y los
+  // que ya existen se corrigen (código BRG definitivo, colección, forma, categoría, color, nombre, volumen,
+  // arancel y foto de la plantilla).
+  const products = Store.getAll('products');
+  const bySku = new Map();
+  for (const p of products) if (cleanSku(p.sku)) bySku.set(cleanSku(p.sku), p);
+  const toCreate = [];
   const fix = [];
-  for (const p of Store.getAll('products')) {
-    const t = T.find(x => x[4].toLowerCase() === String(p.sku_briggs || '').trim().toLowerCase());
-    if (t && (!(Number(p.box_volume) > 0) || Number(p.tariff_rate) !== TARIFF || String(p.name || '') !== t[2])) fix.push({ id: p.id, name: t[2], units_per_box: t[10], box_volume: Number(p.box_volume) > 0 ? p.box_volume : t[11], weight_kg: Number(p.weight_kg) > 0 ? p.weight_kg : t[12], fob_unit: Number(p.fob_unit) > 0 ? p.fob_unit : t[8], hs_code: p.hs_code || t[3], tariff_rate: TARIFF });
+  for (const [sup, sku, name, hs, code, color, category, collection, fob, , upb, cbm, kg, foto, forma] of T) {
+    const fotoUrl = foto ? BRIGGS_PHOTO_BASE + foto : '';
+    const ex = bySku.get(cleanSku(sku));
+    if (!ex) {
+      toCreate.push({
+        sku_briggs: code, sku, name, supplier_id: supplierIds[sup.toUpperCase()] || null, brand: 'BRG',
+        origin_country: 'China', category, collection, color, forma: forma || '',
+        foto_url: fotoUrl, foto_file_id: '',
+        units_per_box: upb, box_volume: cbm, weight_kg: kg, hs_code: hs, fob_unit: fob, tariff_rate: TARIFF,
+        stock: 0, avg_cost: 0, sale_price: 0
+      });
+      continue;
+    }
+    const patch = {};
+    const set = (k, v) => { if (String(ex[k] ?? '') !== String(v ?? '')) patch[k] = v; };
+    set('sku_briggs', code); set('name', name); set('category', category); set('collection', collection); set('color', color); set('forma', forma || '');
+    if (Number(ex.tariff_rate) !== TARIFF) patch.tariff_rate = TARIFF;
+    if (!(Number(ex.box_volume) > 0)) Object.assign(patch, { units_per_box: upb, box_volume: cbm, weight_kg: kg });
+    if (!(Number(ex.fob_unit) > 0)) patch.fob_unit = fob;
+    if (!ex.hs_code && hs) patch.hs_code = hs;
+    // La foto de la plantilla se corrige solo si la actual también es de la plantilla (no se pisa una foto de Drive).
+    if (fotoUrl && String(ex.foto_url || '').startsWith(BRIGGS_PHOTO_BASE) && ex.foto_url !== fotoUrl) patch.foto_url = fotoUrl;
+    if (Object.keys(patch).length) fix.push({ id: ex.id, ...patch });
   }
+  const created = Store.insertMany('products', toCreate);
   Store.updateMany('products', fix);
 
   return { supplierIds, created };
@@ -60,9 +76,10 @@ export async function openOrdenCompraBriggs() {
 
   // Seguridad: si ya hay productos con el mismo código BRG pero OTRO producto (catálogo viejo), no se
   // importa: los ítems quedarían enlazados a productos que no son los de la plantilla.
+  const tplSkus = new Set(T.map(x => cleanSku(x[1])));
   const clash = Store.getAll('products').filter(p => {
     const t = T.find(x => x[4].toLowerCase() === String(p.sku_briggs || '').trim().toLowerCase());
-    return t && String(p.sku || '').trim().toLowerCase() !== t[1].toLowerCase();
+    return t && cleanSku(p.sku) !== cleanSku(t[1]) && !tplSkus.has(cleanSku(p.sku));
   });
   if (clash.length) {
     alert(`Hay ${clash.length} productos del catálogo viejo con los mismos códigos BRG que la plantilla (por ejemplo ${clash[0].sku_briggs} = ${clash[0].sku}).\n\nPrimero usa "Dejar solo catálogo Briggs" en Productos y después vuelve a pulsar este botón.`);
@@ -133,10 +150,10 @@ export async function openOrdenCompraBriggs() {
 // (desvinculando los ítems de contenedor que los usaban) y crea los de la plantilla.
 // Devuelve { removed, created } o null si se cancela.
 export async function replaceCatalogWithBriggs(onProgress) {
-  // Un producto actual solo se conserva si es EXACTAMENTE el de la plantilla (mismo código BRG y mismo
-  // código de origen): los códigos se regeneraron desde cero, así que un mismo código puede ser otro producto.
-  const keep = new Set(BRIGGS_PLANTILLA.map(t => `${t[4]}|${t[1]}`.toLowerCase()));
-  const old = Store.getAll('products').filter(p => !keep.has(`${String(p.sku_briggs || '').trim()}|${String(p.sku || '').trim()}`.toLowerCase()));
+  // Un producto actual solo se conserva si su código de origen (SKU de la fábrica) es el de la plantilla;
+  // después se corrige a su código BRG definitivo.
+  const keep = new Set(BRIGGS_PLANTILLA.map(t => cleanSku(t[1])));
+  const old = Store.getAll('products').filter(p => !keep.has(cleanSku(p.sku)));
   const oldIds = new Set(old.map(p => p.id));
   const linked = Store.getAll('items').filter(i => oldIds.has(i.product_id));
   const quotes = Store.getAll('quotes').filter(q => { try { return JSON.parse(q.items || '[]').some(i => oldIds.has(i.productId)); } catch { return false; } });
