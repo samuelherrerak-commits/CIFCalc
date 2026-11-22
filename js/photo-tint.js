@@ -1,6 +1,7 @@
 // Recolorea la foto de un producto cromado para simular los acabados Steel Gray y Rose Gold
 // cuando no existe foto propia. El fondo blanco se conserva; solo se tiñe el producto.
 const MAPS = {
+  'cromado': [[34, 37, 42], [150, 156, 164], [252, 252, 254]],
   // sombras → medios → luces
   'steel gray': [[16, 18, 21], [76, 80, 86], [168, 171, 177]],
   'rose gold': [[70, 34, 32], [190, 118, 108], [250, 220, 205]]

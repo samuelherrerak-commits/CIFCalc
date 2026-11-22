@@ -1,5 +1,7 @@
 import { withBriggsPhotos } from '../oc-briggs.js';
 import { tintPhoto } from '../photo-tint.js';
+// Fotos de la plantilla de productos cromados que se fotografiaron en otro color (dorado/cobre).
+const FOTOS_A_CROMAR = new Set(['BRG-BL-CAL-01-CR.png', 'BRG-BL-CAL-02-CR.png', 'BRG-BL-CAL-03-CR.png', 'BRG-BL-EQU-01-CR.png', 'BRG-BL-EQU-02-CR.png']);
 import Store from '../store.js';
 import { priceFor } from '../pricing.js';
 import { openCatalogPdf } from '../catalog-pdf.js';
@@ -229,8 +231,16 @@ const Catalog = {
       // Fotos completas; las que se toman de otro acabado (cromado) se recolorean a Steel Gray / Rose Gold.
       const photosFor = async (list, tint = true) => {
         const withPh = withBriggsPhotos(list);
-        const pending = !tint ? [] : withPh.filter(p => p.foto_prestada);
-        await Promise.all(pending.map(async p => { p.foto_url = await tintPhoto(p.foto_url, p.color); }));
+        // Fotos cuyo producto es cromado pero la foto original está en otro color: se "cromean".
+        const toChrome = new Map();
+        for (const p of withPh) {
+          const f = String(p.foto_url || '').split('/').pop();
+          if (FOTOS_A_CROMAR.has(f) && !toChrome.has(p.foto_url)) toChrome.set(p.foto_url, tintPhoto(p.foto_url, 'cromado'));
+        }
+        await Promise.all(withPh.map(async p => {
+          if (toChrome.has(p.foto_url)) p.foto_url = await toChrome.get(p.foto_url);
+        }));
+        if (tint) await Promise.all(withPh.filter(p => p.foto_prestada).map(async p => { p.foto_url = await tintPhoto(p.foto_url, p.color); }));
         return withPh;
       };
       dlg.querySelector('#pdf-ok').onclick = async () => {
