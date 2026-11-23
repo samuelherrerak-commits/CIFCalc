@@ -103,7 +103,12 @@ export function computeContainer(container, items) {
     const factor = totalVolume > 0 ? (volTotal / totalVolume) : 0;
     const unitsPerContainer = Number(item.box_volume) > 0 ? (capacity / Number(item.box_volume)) : 0;
 
-    const fobTotal = qty * (Number(item.fob_unit) || 0);
+    // El FOB unitario del ítem ya trae el % logístico (logistic_pct). Ese % NO entra en el seguro, el arancel,
+    // la tasa portuaria ni el IVA (se calculan sobre el FOB de fábrica): se suma aparte, dentro de "otros gastos".
+    const lp = Number(item.logistic_pct) || 0;
+    const fobUnitFull = Number(item.fob_unit) || 0;
+    const fobTotal = qty * (lp > 0 ? fobUnitFull / (1 + lp / 100) : fobUnitFull);
+    const logisticAmount = qty * fobUnitFull - fobTotal;
     const oceanFreightAssigned = oceanFreight * factor;
     const insuranceBase = insuranceOnCfr ? (fobTotal + oceanFreightAssigned) * 1.1 : fobTotal;
     const insuranceAmount = insuranceEnabled ? (insuranceBase * (insuranceRate / 100)) : 0;
@@ -124,7 +129,7 @@ export function computeContainer(container, items) {
     const customsAssigned = customsExpenses * factor;
     const opAssigned = opExpenses * factor;
 
-    const otherExpenses = inlandAssigned + customsAssigned + opAssigned;
+    const otherExpenses = inlandAssigned + customsAssigned + opAssigned + logisticAmount;
 
     const landedTotal = cifTotal + tariffAmount + portFeeAmount + customsBrokerAmount + otherExpenses + vatAmount;
     const unitLanded = qty > 0 ? (landedTotal / qty) : 0;
@@ -162,6 +167,7 @@ export function computeContainer(container, items) {
       customsAssigned,
       opAssigned,
       otherExpenses,
+      logisticAmount,
       landedTotal,
       unitLanded,
       landedNoVat,

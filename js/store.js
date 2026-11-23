@@ -2,7 +2,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase-config.js';
 import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
 import { isSandbox, setSandboxFlag, storageKey } from './sandbox.js';
-import { computeContainer, fobWithLogistics, DEFAULT_LOGISTIC_PCT } from './utils.js';
+import { computeContainer, fobWithLogistics, logisticPct, DEFAULT_LOGISTIC_PCT } from './utils.js';
 import { DEFAULT_TIERS } from './pricing.js';
 import { PROMOTIONS_ENABLED, CONTAINER_JOURNAL_ENABLED, STOCK_FROM_CONTAINERS, SUPABASE_ENABLED } from './features.js';
 import { analyzeContainer, realCostLines } from './container-costs.js';
@@ -120,7 +120,7 @@ const TABLE_DEFAULTS = {
     origin_country: '',
     sku: '', name: '', hs_code: '',
     qty: 0, units_per_box: 1, box_volume: 0,
-    fob_unit: 0, tariff_rate: 0, gain_margin: 0,
+    fob_unit: 0, tariff_rate: 0, gain_margin: 0, logistic_pct: 0,
     product_id: null, sku_briggs: '', weight_kg: 0,
     created_at: '', updated_at: '', foto_url: '', foto_file_id: ''
   },
@@ -1374,6 +1374,7 @@ const Store = {
       box_volume: Number(product.box_volume) || 0,
       weight_kg: Number(product.weight_kg) || 0,
       fob_unit: Number(overrides.fob_unit != null ? overrides.fob_unit : fobWithLogistics(product)) || 0,
+      logistic_pct: logisticPct(product),
       hs_code: overrides.hs_code != null ? overrides.hs_code : (product.hs_code || ''),
       tariff_rate: Number(overrides.tariff_rate != null ? overrides.tariff_rate : product.tariff_rate) || 0,
       gain_margin: Number(overrides.gain_margin != null ? overrides.gain_margin : product.gain_margin) || 0

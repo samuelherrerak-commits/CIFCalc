@@ -19,7 +19,7 @@ const NUMERIC_FIELDS = {
   ],
   items: [
     'qty', 'units_per_box', 'box_volume', 'weight_kg',
-    'fob_unit', 'tariff_rate', 'gain_margin'
+    'fob_unit', 'tariff_rate', 'gain_margin', 'logistic_pct'
   ],
   products: [
     'units_per_box', 'box_volume', 'weight_kg', 'fob_unit', 'tariff_rate', 'stock', 'avg_cost', 'sale_price'
