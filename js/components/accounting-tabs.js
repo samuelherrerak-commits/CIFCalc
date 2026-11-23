@@ -84,6 +84,67 @@ function ratesCard(dark = false) {
 const repaintRates = () => document.querySelectorAll('[data-rates-card]').forEach(el => { el.innerHTML = ratesCardInner(!!el.dataset.dark); });
 window.addEventListener('cif-rates-updated', repaintRates);
 
+// Buscador del menú: encuentra módulos por nombre, sección o palabras parecidas (sin acentos).
+// ALIASES solo son sinónimos para encontrar rápido el módulo; no agregan funciones.
+const ALIASES = {
+  dashboard: 'inicio panel resumen general',
+  sales: 'venta ventas caja pos vender cobrar',
+  quotes: 'presupuesto cotizacion cotizar oferta proforma',
+  orders: 'orden ordenes pedido pedidos venta despacho',
+  contacts: 'cliente clientes contacto crm proveedor directorio',
+  receivables: 'cobrar cobranza deuda clientes me deben',
+  income: 'ingreso ingresos otros ingresos',
+  promotions: 'promocion promociones descuento oferta',
+  expenses: 'gasto gastos egreso pago factura',
+  payables: 'pagar proveedores deuda debo cuentas por pagar',
+  costs: 'costo costos importacion contenedor cif',
+  'cost-analysis': 'analisis costos margen',
+  payments: 'pagos contenedores fabrica anticipo',
+  catalog: 'catalogo precios lista de precios nivel distribuidor retail',
+  inventory: 'inventario existencias stock almacen',
+  iva: 'iva impuesto fiscal retencion libro de ventas compras tasas',
+  accounts: 'cuentas plan de cuentas contable',
+  journal: 'diario asiento asientos',
+  ledger: 'mayor libro mayor',
+  financials: 'estados financieros balance resultados',
+  reports: 'reporte reportes informe informes',
+  users: 'usuario usuarios permisos acceso'
+};
+const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+// Fuentes extra de búsqueda (p. ej. los temas del manual): [{ label, section, path, text }].
+const extraSources = [];
+export const registerSearchSource = (fn) => { extraSources.push(fn); };
+function searchItems(q) {
+  const words = norm(q).split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  const pool = [
+    ...visibleSections().flatMap(s => s.items.map(it => ({ key: it.key, label: it.label, section: s.title || 'General', path: it.path, icon: it.icon, text: `${it.label} ${s.title} ${ALIASES[it.key] || ''}`, kind: 'modulo' }))),
+    ...extraSources.flatMap(fn => { try { return fn() || []; } catch { return []; } })
+  ];
+  const scored = [];
+  for (const it of pool) {
+    const hay = norm(it.text || it.label), lab = norm(it.label);
+    if (!words.every(w => hay.includes(w))) continue;
+    // más arriba: coincide al inicio del nombre > en el nombre > en alias/sección
+    const score = words.reduce((s, w) => s + (lab.startsWith(w) ? 3 : lab.includes(w) ? 2 : 1), 0) - (it.kind === 'modulo' ? 0 : 0.5);
+    scored.push({ it, score });
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, 12).map(x => x.it);
+}
+const resultHtml = (list, q) => list.length
+  ? list.map((it, i) => `<a href="${it.path}" data-nav-hit data-i="${i}" class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-[13px] text-slate-200 hover:bg-white/10 focus:bg-white/10 focus:outline-none">
+      <span class="text-slate-400">${icon(it.icon || 'file')}</span>
+      <span class="min-w-0"><span class="block truncate">${it.label}</span><span class="block text-[10px] text-slate-400 truncate">${it.section}</span></span></a>`).join('')
+  : `<p class="px-2.5 py-2 text-[12px] text-slate-400">Nada con "${String(q).replace(/[<>&"]/g, '')}". Prueba con otra palabra.</p>`;
+
+const searchBox = `
+  <div data-nav-search-box class="hidden xl:block px-3 pb-2 shrink-0">
+    <div class="relative">
+      <svg class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input data-nav-search type="search" autocomplete="off" placeholder="Buscar… (Ctrl+K)" class="w-full pl-8 pr-2 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[12px] text-white placeholder-slate-500 focus:bg-white/10 focus:border-blue-400/60 focus:outline-none">
+    </div>
+  </div>`;
+
 // Secciones del menú plegables: por defecto solo se abren Ventas y la sección
 // donde estás; lo que el usuario abra o cierre se recuerda en este navegador.
 const NAV_KEY = 'acc_nav_open';
@@ -142,7 +203,7 @@ const AccountingTabs = {
 
     const pinned = isPinned();
     let sidebar = `
-      <aside class="hidden md:flex flex-col shrink-0 w-[3.75rem] xl:w-60 sticky top-[var(--top,3rem)] h-[calc(100vh-var(--top,3rem))] bg-[#0f1d3a] text-slate-300">
+      <aside data-nav-root class="hidden md:flex flex-col shrink-0 w-[3.75rem] xl:w-60 sticky top-[var(--top,3rem)] h-[calc(100vh-var(--top,3rem))] bg-[#0f1d3a] text-slate-300">
         <div class="hidden xl:flex items-center gap-2.5 px-4 pt-4 pb-3 shrink-0">
           <span class="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-300 flex items-center justify-center">${icon('book', 'w-4 h-4')}</span>
           <div class="min-w-0">
@@ -151,7 +212,9 @@ const AccountingTabs = {
           </div>
         </div>
         ${modeSwitch(pinned)}
-        <nav class="flex-1 min-h-0 overflow-y-auto dark-scroll px-2 xl:px-3 pt-3 xl:pt-1 pb-2 space-y-4 xl:space-y-2">
+        ${searchBox}
+        <div data-nav-results class="hidden flex-1 min-h-0 overflow-y-auto dark-scroll px-3 pb-2 space-y-0.5"></div>
+        <nav data-nav-list class="flex-1 min-h-0 overflow-y-auto dark-scroll px-2 xl:px-3 pt-3 xl:pt-1 pb-2 space-y-4 xl:space-y-2">
           ${visibleSections().map((s, i) => { const open = isOpen(s, active); return `
             <div>
               ${s.title ? `<button data-nav-sec="${s.title}" class="hidden xl:flex w-full items-center justify-between px-2.5 py-1 mb-0.5 rounded text-[10px] font-semibold uppercase tracking-wider text-blue-200/50 hover:text-blue-100">
@@ -175,8 +238,8 @@ const AccountingTabs = {
     if (!pinned) {
       for (const [a, b] of AUTO_CLASSES) sidebar = sidebar.split(a).join(b);
       sidebar = sidebar
-        .replace('<aside class="hidden md:flex flex-col shrink-0 w-60 sticky top-[var(--top,3rem)] h-[calc(100vh-var(--top,3rem))]',
-          '<aside class="absolute inset-y-0 left-0 flex flex-col w-60 shadow-2xl -translate-x-full group-hover/nav:translate-x-0 group-data-[closed]/nav:!-translate-x-full transition-transform duration-200')
+        .replace('<aside data-nav-root class="hidden md:flex flex-col shrink-0 w-60 sticky top-[var(--top,3rem)] h-[calc(100vh-var(--top,3rem))]',
+          '<aside data-nav-root class="absolute inset-y-0 left-0 flex flex-col w-60 shadow-2xl -translate-x-full group-hover/nav:translate-x-0 group-data-[closed]/nav:!-translate-x-full transition-transform duration-200')
       sidebar = `
       <div data-nav-auto ${closedUntilLeave ? 'data-closed' : ''} class="group/nav hidden md:block fixed left-0 top-[var(--top,3rem)] bottom-0 z-40 w-3">
         <div class="absolute inset-y-0 left-0 w-1 bg-[#0f1d3a]/70 group-hover/nav:opacity-0 transition-opacity"></div>
@@ -195,11 +258,14 @@ const AccountingTabs = {
         </button>
       </nav>
       <div id="acc-more" class="hidden md:hidden fixed inset-0 z-50 bg-black/30" data-acc-more-close>
-        <div class="absolute bottom-0 inset-x-0 bg-white rounded-t-2xl p-4 max-h-[80vh] overflow-y-auto space-y-4">
+        <div data-nav-root class="absolute bottom-0 inset-x-0 bg-white rounded-t-2xl p-4 max-h-[80vh] overflow-y-auto space-y-4">
           <div class="flex justify-between items-center">
             <p class="font-semibold text-slate-900">Gestión financiera</p>
             <button data-acc-more-close class="text-slate-400 text-xl leading-none">✕</button>
           </div>
+          <input data-nav-search type="search" autocomplete="off" placeholder="Buscar un módulo…" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm focus:outline-none focus:border-blue-400">
+          <div data-nav-results data-light="1" class="hidden space-y-1"></div>
+          <div data-nav-list class="space-y-4">
           ${visibleSections().map(s => `
             <div>
               ${sectionTitle(s, 'mb-1.5')}
@@ -212,6 +278,7 @@ const AccountingTabs = {
             </div>`).join('')}
           ${ratesCard()}
           ${Store.isSandbox() ? '' : `<button data-sbx="enter" class="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-slate-200 text-xs text-slate-500">${icon('flask', 'w-4 h-4')} Modo prueba</button>`}
+          </div>
         </div>
       </div>`;
 
@@ -223,6 +290,42 @@ document.addEventListener('mouseover', (e) => {
   if (!closedUntilLeave || e.target.closest('[data-nav-auto]')) return;
   closedUntilLeave = false;
   document.querySelectorAll('[data-nav-auto][data-closed]').forEach(el => el.removeAttribute('data-closed'));
+});
+
+// Buscador: filtra mientras escribes; Enter abre el primero; ↑/↓ recorren; Esc limpia.
+document.addEventListener('input', (e) => {
+  const inp = e.target.closest && e.target.closest('[data-nav-search]');
+  if (!inp) return;
+  const root = inp.closest('[data-nav-root]');
+  const res = root.querySelector('[data-nav-results]'), list = root.querySelector('[data-nav-list]');
+  const q = inp.value.trim();
+  if (!q) { res.classList.add('hidden'); list.classList.remove('hidden'); return; }
+  const hits = searchItems(q);
+  let html = resultHtml(hits, q);
+  if (res.dataset.light) html = html.replace(/text-slate-200 hover:bg-white\/10 focus:bg-white\/10/g, 'text-slate-700 border border-slate-100 hover:bg-slate-50 focus:bg-slate-50').replace(/text-slate-400/g, 'text-slate-500');
+  res.innerHTML = html;
+  list.classList.add('hidden'); res.classList.remove('hidden');
+});
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    const inp = [...document.querySelectorAll('[data-nav-search]')].find(i => i.offsetParent !== null || i.closest('[data-nav-auto]'));
+    if (inp) {
+      e.preventDefault();
+      const aside = inp.closest('aside');
+      if (aside && inp.closest('[data-nav-auto]')) { aside.classList.add('!translate-x-0'); inp.addEventListener('blur', () => aside.classList.remove('!translate-x-0'), { once: true }); }
+      inp.focus(); inp.select();
+    }
+    return;
+  }
+  const inp = e.target.closest && e.target.closest('[data-nav-search]');
+  const hit = e.target.closest && e.target.closest('[data-nav-hit]');
+  if (!inp && !hit) return;
+  const root = (inp || hit).closest('[data-nav-root]');
+  const hits = [...root.querySelectorAll('[data-nav-hit]')];
+  if (e.key === 'Escape') { if (inp) { inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.blur(); } else root.querySelector('[data-nav-search]').focus(); }
+  else if (e.key === 'Enter' && inp && hits[0]) { e.preventDefault(); hits[0].click(); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); const i = hit ? hits.indexOf(hit) + 1 : 0; if (hits[i]) hits[i].focus(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); const i = hit ? hits.indexOf(hit) - 1 : -1; if (i >= 0) hits[i].focus(); else if (inp == null) root.querySelector('[data-nav-search]').focus(); }
 });
 
 // Un solo juego de listeners para todo el módulo (el HTML se repinta en cada vista).
