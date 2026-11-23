@@ -1,5 +1,5 @@
 import Store from './store.js';
-import { fobWithLogistics } from './utils.js';
+import { fobWithLogistics, logisticPct } from './utils.js';
 
 // El FOB unitario de un ítem de contenedor = FOB del producto + su % logístico (por defecto 6 %).
 // Los contenedores abiertos toman ese valor al abrirse (calculadora) y también aquí, para que el Catálogo
@@ -14,7 +14,8 @@ export function syncOpenContainersFob() {
     const p = products.get(it.product_id);
     if (!p) continue;
     const fob = fobWithLogistics(p);
-    if (fob > 0 && Math.abs(fob - (Number(it.fob_unit) || 0)) > 0.00005) fix.push({ id: it.id, fob_unit: fob });
+    const lp = logisticPct(p);
+    if (fob > 0 && (Math.abs(fob - (Number(it.fob_unit) || 0)) > 0.00005 || (Number(it.logistic_pct) || 0) !== lp)) fix.push({ id: it.id, fob_unit: fob, logistic_pct: lp });
   }
   if (fix.length) Store.updateMany('items', fix);
   return fix.length;

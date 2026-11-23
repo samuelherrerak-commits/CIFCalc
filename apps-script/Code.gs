@@ -105,7 +105,10 @@ const SCHEMAS = {
     'weight_kg', 'fob_unit', 'hs_code', 'tariff_rate', 'gain_margin',
     'created_at', 'updated_at',
     // Foto del ítem (productos que aún no están en el catálogo).
-    'foto_url', 'foto_file_id'
+    'foto_url', 'foto_file_id',
+    // % logístico sobre el FOB que ya viene sumado en fob_unit. Ese % no entra en el seguro, el arancel, la
+    // tasa portuaria ni el IVA: es un costo aparte (ver computeContainer).
+    'logistic_pct'
   ],
   // Catálogo maestro: SIN qty, gain_margin ni weight_lbs.
   // foto_url / foto_file_id van AL FINAL a propósito: las columnas nuevas
@@ -120,14 +123,15 @@ const SCHEMAS = {
     'brand', 'collection', 'category', 'color',
     // Forma del producto (Redondo / Cuadrado / Mixto): ordena los genéricos en el catálogo y las listas de precio. No va en el código.
     'forma',
-    // % logístico sobre el FOB (vacío = 6). El FOB unitario del contenedor = fob_unit × (1 + logistic_pct / 100).
-    'logistic_pct',
     // IVA del producto: 'general' (vacío = general), 'reducida' o 'exento'.
     'iva_tipo',
     // Prompts para generar las fotos del producto con Nano Banana (Gemini):
     // _1 = primer plano, _2 = el producto en uso. Se rellenan con
     // catalogo/tools/prompts-fotos.mjs y se copian a mano; la app no los usa.
-    'prompt_foto_1', 'prompt_foto_2'
+    'prompt_foto_1', 'prompt_foto_2',
+    // % logístico sobre el FOB (vacío = 6). El FOB unitario del contenedor = fob_unit × (1 + logistic_pct / 100).
+    // (Las columnas nuevas van SIEMPRE al final: ensureSheets reescribe los encabezados sin mover los datos.)
+    'logistic_pct'
   ],
   // Catálogo de cuentas unificado (estilo LegalYa): códigos jerárquicos con punto,
   // tipo inferido del primer dígito (1=Activo..6=Gasto). tipo_especifico es lo que

@@ -20,7 +20,7 @@ export const COST_CATEGORIES = [
   { key: 'tariff', label: 'Arancel', code: '5.1.04', est: (c) => c.tariffAmount },
   { key: 'port', label: 'Tasa portuaria', code: '5.1.05', est: (c) => c.portFeeAmount },
   { key: 'broker', label: 'Agente aduanal', code: '5.1.06', est: (c) => c.customsBrokerAmount },
-  { key: 'other', label: 'Otros (flete terrestre, aduana, operación)', code: '5.1.07', est: (c) => c.otherExpenses }
+  { key: 'other', label: 'Otros (flete terrestre, aduana, operación, logística)', code: '5.1.07', est: (c) => c.otherExpenses }
 ];
 
 // Fuentes del diario que pueden llevar costo de un contenedor: los costos

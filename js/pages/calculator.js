@@ -53,6 +53,7 @@ const Calculator = {
           weight_kg: numv(product.weight_kg, Number(item.weight_kg) || 0),
           // El FOB del contenedor ya trae el % logístico del producto (por defecto 6 %).
           fob_unit: numv(fobWithLogistics(product), Number(item.fob_unit) || 0),
+          logistic_pct: logisticPct(product),
           hs_code: text(product.hs_code, item.hs_code || ''),
           tariff_rate: numv(product.tariff_rate, Number(item.tariff_rate) || 0)
         };
@@ -157,7 +158,7 @@ const Calculator = {
             <td class="p-2 text-amber-700 font-medium">$${fmtNum(c.customsBrokerAmount)}</td>
             <td class="p-2 text-purple-700 font-medium">$${fmtNum(c.vatAmount)}</td>
             <td class="p-2 text-purple-600 font-medium">$${fmtNum(c.ivPerUnit)}</td>
-            <td class="p-2">$${fmtNum(c.otherExpenses)}</td>
+            <td class="p-2">$${fmtNum(c.otherExpenses)}${c.logisticAmount > 0 ? `<div class="text-[10px] text-slate-400 whitespace-nowrap" title="El % logístico no entra en seguro, arancel, tasa portuaria ni IVA">incl. logística $${fmtNum(c.logisticAmount)}</div>` : ''}</td>
             <td class="p-2 font-bold text-slate-900">$${fmtNum(c.landedTotal)}</td>
             <td class="p-2 bg-slate-50 font-semibold text-slate-700">$${fmtNum(c.costNoVat)}</td>
             <td class="p-2 bg-blue-100 font-extrabold text-blue-900 text-sm">$${fmtNum(c.costWithVat)}</td>
@@ -317,7 +318,9 @@ const Calculator = {
       items[idx] = {
         ...it, product_id: product.id, sku_briggs: product.sku_briggs || it.sku_briggs,
         name: product.name || it.name, sku: product.sku || it.sku,
-        supplier_id: product.supplier_id || it.supplier_id, origin_country: product.origin_country || it.origin_country
+        supplier_id: product.supplier_id || it.supplier_id, origin_country: product.origin_country || it.origin_country,
+        logistic_pct: logisticPct(product),
+        fob_unit: Number(product.fob_unit) > 0 ? fobWithLogistics(product) : it.fob_unit
       };
       const fill = {};
       if (!(Number(product.fob_unit) > 0) && Number(it.fob_unit) > 0) fill.fob_unit = fobBaseFromItem(it.fob_unit, product);
@@ -986,6 +989,7 @@ const Calculator = {
           'IVA ($)': c.vatAmount,
           'IVA Unit. ($)': c.ivPerUnit,
           'Otros Gastos ($)': c.otherExpenses,
+          'de ello, logística ($)': c.logisticAmount,
           'Landed Total ($)': c.landedTotal,
           'Costo Unit. sin IVA ($)': c.costNoVat,
           'Costo Unit. + IVA ($)': c.costWithVat,
