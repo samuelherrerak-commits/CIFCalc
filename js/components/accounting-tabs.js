@@ -3,7 +3,6 @@ import { ensureTodayRates } from '../rates.js';
 import { icon } from './icons.js';
 import { POS_ENABLED, PROMOTIONS_ENABLED, CONTAINER_PAYMENTS_ENABLED } from '../features.js';
 import Auth from '../auth.js';
-import { MANUAL } from '../data/manual.js';
 
 // Navegación del módulo de Contabilidad, organizada por flujo de trabajo
 // como los ERP modernos (Odoo, Fina): Ventas (todo lo del cliente, hasta lo
@@ -112,11 +111,8 @@ const ALIASES = {
   users: 'usuario usuarios permisos acceso'
 };
 const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-// Fuentes extra de búsqueda: [{ label, section, path, text }]. El manual aporta una entrada por tarea.
-const extraSources = [() => MANUAL.flatMap(e => e.tareas.map(t => ({
-  label: t.q, section: `Manual · ${e.title}`, path: `#/contabilidad/ayuda/${e.id}`, icon: 'book', kind: 'manual',
-  text: `${t.q} ${e.title} ${e.buscar || ""}`
-})))];
+// Fuentes extra de búsqueda (vacío: el buscador del menú solo muestra módulos).
+const extraSources = [];
 export const registerSearchSource = (fn) => { extraSources.push(fn); };
 function searchItems(q) {
   const words = norm(q).split(/\s+/).filter(Boolean);
