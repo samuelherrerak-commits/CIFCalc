@@ -1,6 +1,6 @@
 import Store from '../store.js';
 import { CONTAINER_JOURNAL_ENABLED } from '../features.js';
-import { fmtNum, fmtInt, esc, num, computeContainer, ensureXlsx, fobWithLogistics, fobBaseFromItem, logisticPct } from '../utils.js';
+import { fmtNum, fmtInt, esc, num, computeContainer, ensureXlsx, fobWithLogistics, fobBaseFromItem, logisticPct, fullContainerScenario } from '../utils.js';
 
 const Calculator = {
   async render(app, params) {
@@ -138,6 +138,7 @@ const Calculator = {
         tbody.innerHTML = res.calculated.map(c => {
           const wtItem = c.boxes * (Number(c.item.weight_kg) || 0);
           const wtFactor = wtTot > 0 ? wtItem / wtTot : 0;
+          const full = fullContainerScenario(container, c.item);
           return `
           <tr class="border-b border-slate-200 hover:bg-slate-50">
             <td class="p-2 font-bold text-slate-700">${esc(c.item.sku) || '—'}</td>
@@ -160,8 +161,8 @@ const Calculator = {
             <td class="p-2 font-bold text-slate-900">$${fmtNum(c.landedTotal)}</td>
             <td class="p-2 bg-slate-50 font-semibold text-slate-700">$${fmtNum(c.costNoVat)}</td>
             <td class="p-2 bg-blue-100 font-extrabold text-blue-900 text-sm">$${fmtNum(c.costWithVat)}</td>
-            <td class="p-2 text-emerald-700 font-semibold">$${fmtNum(c.salePriceOnCost)}</td>
-            <td class="p-2 font-bold text-emerald-900">$${fmtNum(c.salePriceOnCostVat)}</td>
+            <td class="p-2 text-violet-700 font-semibold" title="${full ? `Con ${fmtInt(full.units)} unidades (${fmtInt(full.boxes)} cajas, límite de ${full.limit})` : 'Faltan el volumen de caja o las unidades por caja'}">${full ? '$' + fmtNum(full.costNoVat) + `<div class="text-[10px] font-normal text-slate-400 whitespace-nowrap">${fmtInt(full.units)} unid.</div>` : '—'}</td>
+            <td class="p-2 font-bold text-violet-900">${full ? '$' + fmtNum(full.costWithVat) : '—'}</td>
           </tr>
           `;
         }).join('');
@@ -696,8 +697,8 @@ const Calculator = {
                 <th class="p-2">Landed Total ($)</th>
                 <th class="p-2 bg-slate-700">Costo Unit. sin IVA ($)</th>
                 <th class="p-2 bg-blue-900 text-white font-bold">Costo Unit. + IVA ($)</th>
-                <th class="p-2 text-emerald-300">P. Venta / Costo Unit. ($)</th>
-                <th class="p-2 font-bold text-emerald-200">P. Venta / Costo + IVA ($)</th>
+                <th class="p-2 text-violet-300 min-w-[8rem]" title="Costo de una unidad si el contenedor viniera lleno solo de este producto (sin IVA)">Costo Unit. contenedor 100 % de este producto ($)</th>
+                <th class="p-2 font-bold text-violet-200 min-w-[6rem]" title="Lo mismo, con IVA">Costo Unit. 100 % + IVA ($)</th>
               </tr>
             </thead>
             <tbody id="results-tbody"></tbody>
@@ -988,8 +989,9 @@ const Calculator = {
           'Landed Total ($)': c.landedTotal,
           'Costo Unit. sin IVA ($)': c.costNoVat,
           'Costo Unit. + IVA ($)': c.costWithVat,
-          'P. Venta / Costo ($)': c.salePriceOnCost,
-          'P. Venta / Costo + IVA ($)': c.salePriceOnCostVat
+          'Unid. si el contenedor fuera 100 % de este producto': (fullContainerScenario(container, c.item) || {}).units || '',
+          'Costo Unit. 100 % del producto sin IVA ($)': (fullContainerScenario(container, c.item) || {}).costNoVat || '',
+          'Costo Unit. 100 % del producto + IVA ($)': (fullContainerScenario(container, c.item) || {}).costWithVat || ''
         };
       });
 
