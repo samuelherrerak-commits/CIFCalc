@@ -13,6 +13,7 @@
 // }
 import { RESUMEN_Y_ORDENES } from './manual-ingresos-1.js';
 import { INGRESOS_2 } from './manual-ingresos-2.js';
+import { GASTOS_COSTOS } from './manual-gastos-costos.js';
 
 export const MANUAL_BASE = [
   {
@@ -113,5 +114,6 @@ export const MANUAL = [
   ...RESUMEN_Y_ORDENES.filter(e => e.id === 'resumen'),
   ...MANUAL_BASE.filter(e => e.id === 'presupuestos'),
   ...RESUMEN_Y_ORDENES.filter(e => e.id !== 'resumen'),
-  ...INGRESOS_2
+  ...INGRESOS_2,
+  ...GASTOS_COSTOS
 ];
