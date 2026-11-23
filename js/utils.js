@@ -1,3 +1,15 @@
+// % logístico sobre el FOB: se le suma al FOB del producto para obtener el FOB unitario que usa el
+// contenedor. Por producto (campo logistic_pct de Productos); vacío = 6 %, el valor por defecto.
+export const DEFAULT_LOGISTIC_PCT = 6;
+export const logisticPct = (p) => {
+  const v = p ? p.logistic_pct : undefined;
+  return v === undefined || v === null || String(v).trim() === '' ? DEFAULT_LOGISTIC_PCT : Math.max(0, Number(v) || 0);
+};
+const r4 = (n) => Math.round((Number(n) || 0) * 10000) / 10000;
+export const fobWithLogistics = (p) => r4((Number(p && p.fob_unit) || 0) * (1 + logisticPct(p) / 100));
+// FOB del producto a partir del FOB de un ítem de contenedor (que ya trae el % logístico).
+export const fobBaseFromItem = (itemFob, p) => r4((Number(itemFob) || 0) / (1 + logisticPct(p) / 100));
+
 export function fmtNum(val) {
   const n = Number(val) || 0;
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -177,4 +189,24 @@ export function computeContainer(container, items) {
   }, { fob: 0, insurance: 0, cif: 0, tariff: 0, portFee: 0, customsBroker: 0, vat: 0, other: 0, landed: 0, totalQty: 0 });
 
   return { totalVolume, volumePercentage, containersRequired, calculated, summary };
+}
+
+// Comparativa: ¿cuánto costaría UNA unidad de este producto si el contenedor viniera lleno solo de él?
+// Se llena el contenedor con cajas del producto hasta el límite de volumen (m³) o de peso (kg), lo que
+// llegue primero; con esas unidades se recalculan los gastos del contenedor (flete, aduana, agente, etc.).
+// Devuelve null si al producto le faltan el volumen de caja o las unidades por caja.
+export function fullContainerScenario(container, item) {
+  const capacity = Number(container && container.container_capacity) || 0;
+  const maxWeight = Number(container && container.container_max_weight) || 0;
+  const boxVol = Number(item.box_volume) || 0;
+  const upb = Number(item.units_per_box) || 0;
+  const boxKg = Number(item.weight_kg) || 0;
+  if (!(capacity > 0) || !(boxVol > 0) || !(upb > 0)) return null;
+  const byVolume = Math.floor(capacity / boxVol);
+  const byWeight = maxWeight > 0 && boxKg > 0 ? Math.floor(maxWeight / boxKg) : Infinity;
+  const boxes = Math.min(byVolume, byWeight);
+  if (!(boxes > 0)) return null;
+  const units = boxes * upb;
+  const calc = computeContainer(container, [{ ...item, qty: units }]).calculated[0];
+  return { boxes, units, costNoVat: calc.costNoVat, costWithVat: calc.costWithVat, limit: byWeight < byVolume ? 'peso' : 'volumen' };
 }

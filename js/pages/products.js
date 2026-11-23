@@ -1,7 +1,8 @@
 import Store from '../store.js';
 import Auth from '../auth.js';
 import { replaceCatalogWithBriggs, applyBriggsCodes, NEW_NAME } from '../oc-briggs.js';
-import { fmtNum, fmtInt, esc, num, ensureXlsx, ensureJSZip } from '../utils.js';
+import { fmtNum, fmtInt, esc, num, ensureXlsx, ensureJSZip, logisticPct, fobWithLogistics, DEFAULT_LOGISTIC_PCT } from '../utils.js';
+import { syncOpenContainersFob } from '../logistics.js';
 import { uploadFoto, upsert as sheetsUpsert } from '../sheets.js';
 import { codeTables, findByName, parseCode, buildCode, collectionSegment, nextCorrelative, VIAS } from '../product-codes.js';
 
@@ -96,7 +97,7 @@ const Products = {
       const tbody = document.getElementById('products-tbody');
       const list = filtered();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="17" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
+        ? `<tr><td colspan="19" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
         : list.map(p => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
             <td class="p-2">${p.foto_url ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-8 h-8 object-cover rounded border border-slate-200" alt="">` : '<span class="text-slate-300">—</span>'}</td>
@@ -114,6 +115,8 @@ const Products = {
             <td class="p-2 text-right">${Number(p.box_volume) || 0}</td>
             <td class="p-2 text-right">${fmtNum(p.weight_kg)}</td>
             <td class="p-2 text-right">$${fmtNum(p.fob_unit)}</td>
+            <td class="p-2 text-right">${logisticPct(p)}%</td>
+            <td class="p-2 text-right font-semibold">$${fmtNum(fobWithLogistics(p))}</td>
             <td class="p-2 text-right">${Number(p.tariff_rate) || 0}%</td>
             <td class="p-2 whitespace-nowrap">
               <button data-edit="${p.id}" class="text-blue-600 hover:text-blue-800 font-bold px-1" title="Editar">✎</button>
@@ -226,6 +229,16 @@ const Products = {
       renderCode();
     });
 
+    // "FOB + % logístico = FOB del contenedor", bajo el campo del formulario.
+    const updateFobTotal = () => {
+      const fob = Number(document.getElementById('f-fob').value) || 0;
+      const raw = document.getElementById('f-logistic').value;
+      const pct = raw === '' ? DEFAULT_LOGISTIC_PCT : Math.max(0, Number(raw) || 0);
+      document.getElementById('f-fob-total').textContent = fob > 0
+        ? `FOB ${fmtNum(fob)} + ${pct}% = $${fmtNum(fob * (1 + pct / 100))}: este es el FOB unitario que lleva el contenedor.`
+        : 'El FOB unitario del contenedor será el FOB más este porcentaje.';
+    };
+
     const openForm = (id = null) => {
       editingId = id;
       const p = id ? Store.getById('products', id) : Store.newProduct();
@@ -246,6 +259,8 @@ const Products = {
       document.getElementById('f-kg').value = p.weight_kg != null ? p.weight_kg : 0;
       document.getElementById('f-hs').value = p.hs_code || '';
       document.getElementById('f-fob').value = p.fob_unit != null ? p.fob_unit : 0;
+      document.getElementById('f-logistic').value = logisticPct(p);
+      updateFobTotal();
       document.getElementById('f-tariff').value = p.tariff_rate != null ? p.tariff_rate : 0;
       selectedSupplierId = p.supplier_id || null;
       renderSupplierSelect();
@@ -324,10 +339,12 @@ const Products = {
         weight_kg: num(document.getElementById('f-kg')),
         hs_code: document.getElementById('f-hs').value.trim(),
         fob_unit: num(document.getElementById('f-fob')),
+        logistic_pct: document.getElementById('f-logistic').value === '' ? DEFAULT_LOGISTIC_PCT : Math.max(0, num(document.getElementById('f-logistic'))),
         tariff_rate: num(document.getElementById('f-tariff'))
       };
       if (editingId) {
         Store.update('products', { ...data, id: editingId });
+        syncOpenContainersFob();
       } else {
         Store.insert('products', data);
       }
@@ -954,6 +971,8 @@ const Products = {
               <th class="p-2 text-right">Vol. Caja (m³)</th>
               <th class="p-2 text-right">Peso (kg)</th>
               <th class="p-2 text-right">FOB Unit ($)</th>
+              <th class="p-2 text-right" title="% logístico sobre el FOB">% Logíst.</th>
+              <th class="p-2 text-right" title="FOB + % logístico: lo que lleva el contenedor">FOB c/ logíst. ($)</th>
               <th class="p-2 text-right">% Arancel</th>
               <th class="p-2 text-center">Acciones</th>
             </tr>
@@ -1064,6 +1083,11 @@ const Products = {
               <label class="block text-xs font-semibold text-slate-600 mb-1">FOB Unit ($)</label>
               <input id="f-fob" type="number" min="0" step="0.01" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
             </div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">% Logístico sobre el FOB</label>
+            <input id="f-logistic" type="number" min="0" step="0.1" class="w-full p-2 border rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none">
+            <p id="f-fob-total" class="text-[11px] text-slate-500 mt-1"></p>
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-600 mb-1">% Arancel</label>
@@ -1326,6 +1350,7 @@ const Products = {
     document.getElementById('prod-save').addEventListener('click', saveProduct);
     document.getElementById('prod-cancel').addEventListener('click', closeForm);
     document.getElementById('prod-close').addEventListener('click', closeForm);
+    ['f-fob', 'f-logistic'].forEach(id => document.getElementById(id).addEventListener('input', updateFobTotal, { signal }));
     document.getElementById('product-modal').addEventListener('click', (e) => {
       if (e.target.id === 'product-modal') closeForm();
     });

@@ -120,6 +120,8 @@ const SCHEMAS = {
     'brand', 'collection', 'category', 'color',
     // Forma del producto (Redondo / Cuadrado / Mixto): ordena los genéricos en el catálogo y las listas de precio. No va en el código.
     'forma',
+    // % logístico sobre el FOB (vacío = 6). El FOB unitario del contenedor = fob_unit × (1 + logistic_pct / 100).
+    'logistic_pct',
     // IVA del producto: 'general' (vacío = general), 'reducida' o 'exento'.
     'iva_tipo',
     // Prompts para generar las fotos del producto con Nano Banana (Gemini):

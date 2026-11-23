@@ -1,4 +1,5 @@
 import Store from './store.js';
+import { fobWithLogistics, DEFAULT_LOGISTIC_PCT } from './utils.js';
 import { OC_BRIGGS_40FT } from './data/oc-briggs-40ft.js';
 import { BRIGGS_PLANTILLA, BRIGGS_PHOTO_BASE } from './data/briggs-plantilla.js';
 
@@ -48,7 +49,7 @@ export function ensureBriggsProducts() {
         sku_briggs: code, sku, name, supplier_id: supplierIds[sup.toUpperCase()] || null, brand: 'BRG',
         origin_country: 'China', category, collection, color, forma: forma || '',
         foto_url: fotoUrl, foto_file_id: '',
-        units_per_box: upb, box_volume: cbm, weight_kg: kg, hs_code: hs, fob_unit: fob, tariff_rate: TARIFF,
+        units_per_box: upb, box_volume: cbm, weight_kg: kg, hs_code: hs, fob_unit: fob, logistic_pct: DEFAULT_LOGISTIC_PCT, tariff_rate: TARIFF,
         stock: 0, avg_cost: 0, sale_price: 0
       });
       continue;
@@ -119,7 +120,7 @@ export async function openOrdenCompraBriggs() {
     const it = byProduct.get(p.id) || byOrigin.get(cleanSku(sku));
     const fields = {
       product_id: p.id, sku_briggs: code, sku, supplier_id: p.supplier_id || supplierIds[sup.toUpperCase()] || null, origin_country: 'China',
-      qty, fob_unit: fob, units_per_box: upb, box_volume: cbm, weight_kg: kg, hs_code: hs || (it && it.hs_code) || '',
+      qty, fob_unit: fobWithLogistics({ fob_unit: fob, logistic_pct: p.logistic_pct }), units_per_box: upb, box_volume: cbm, weight_kg: kg, hs_code: hs || (it && it.hs_code) || '',
       tariff_rate: TARIFF, gain_margin: MARGIN
     };
     if (it && !used.has(it.id)) {
