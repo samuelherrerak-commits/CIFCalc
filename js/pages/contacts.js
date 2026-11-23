@@ -66,10 +66,11 @@ function contactModal(existing, onSaved) {
         <div class="col-span-2"><label class="${label}">Correo</label><input id="m-email" type="email" class="${input}" value="${esc(c.email)}"></div>
         <div class="col-span-2"><label class="${label}">Dirección</label><input id="m-address" class="${input}" value="${esc(c.address)}"></div>
         <div><label class="${label}">Descuento especial %</label><input id="m-discount" type="number" min="0" max="90" step="0.5" class="${input}" value="${Number(c.discount_pct) || ''}" placeholder="0"></div>
+        <div class="col-span-2"><label class="${label}">Nivel de precio</label><select id="m-tier" class="${input}"><option value="">Sin definir (se elige en cada presupuesto)</option>${Store.getPriceTiers().map(t => `<option value="${esc(t.name)}" ${c.price_tier === t.name ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select></div>
         <div><label class="${label}">Etiquetas</label><input id="m-tags" class="${input}" value="${esc(c.tags)}" placeholder="mayorista, constructora"></div>
         <div class="col-span-2"><label class="${label}">Retención de IVA (contribuyente especial)</label><select id="m-retention" class="${input}">${[[0, 'No retiene'], [75, 'Retiene el 75 % del IVA'], [100, 'Retiene el 100 % del IVA']].map(([v, t]) => `<option value="${v}" ${Number(c.iva_retention_pct) === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
         <div class="col-span-2"><label class="${label}">Notas</label><textarea id="m-notes" rows="3" class="${input}">${esc(c.notes)}</textarea></div>
-        <p class="col-span-2 text-[11px] text-slate-400">El descuento especial se aplica en los presupuestos cuando eliges a este cliente.</p>
+        <p class="col-span-2 text-[11px] text-slate-400">El nivel de precio y el descuento especial se aplican en los presupuestos cuando eliges a este cliente.</p>
         <div id="m-msg" class="col-span-2 text-xs text-red-600"></div>
       </div>
       <div class="px-5 py-4 border-t border-slate-100 flex justify-end gap-2">
@@ -87,7 +88,8 @@ function contactModal(existing, onSaved) {
       name: $('m-name').value.trim(), type: $('m-type').value, stage: $('m-stage').value, rif: $('m-rif').value.trim(),
       phone: $('m-phone').value.trim(), email: $('m-email').value.trim(), address: $('m-address').value.trim(),
       discount_pct: Math.max(0, Math.min(90, Number($('m-discount').value) || 0)), tags: $('m-tags').value.trim(), notes: $('m-notes').value.trim(),
-      iva_retention_pct: Number($('m-retention').value) || 0
+      iva_retention_pct: Number($('m-retention').value) || 0,
+      price_tier: $('m-tier').value
     };
     if (!rec.name) { $('m-msg').textContent = 'El nombre es obligatorio.'; return; }
     if (rec.rif && !Store.isContactRifUnique(rec.rif, existing ? existing.id : null)) { $('m-msg').textContent = 'Ya existe un contacto con ese RIF.'; return; }

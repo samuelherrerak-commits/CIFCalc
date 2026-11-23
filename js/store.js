@@ -1840,7 +1840,7 @@ const Store = {
   newContact(overrides = {}) {
     return {
       rif: '', name: '', type: 'cliente', email: '', phone: '', address: '',
-      stage: 'activo', tags: '', notes: '', discount_pct: 0, next_followup_date: '', iva_retention_pct: 0,
+      stage: 'activo', tags: '', notes: '', discount_pct: 0, next_followup_date: '', iva_retention_pct: 0, price_tier: '',
       ...overrides
     };
   },
@@ -1881,8 +1881,9 @@ const Store = {
   },
 
   // → { listPrice, unitPrice, discountPct, label } para vender `product` a `contact`.
-  priceFor(product, contact, date) {
-    const listPrice = Number(product.sale_price) || 0;
+  // listOverride: precio de lista a usar en vez de product.sale_price (p. ej. el del nivel de precio elegido).
+  priceFor(product, contact, date, listOverride = null) {
+    const listPrice = listOverride != null && listOverride > 0 ? listOverride : (Number(product.sale_price) || 0);
     const promo = PROMOTIONS_ENABLED ? this.bestPromotionFor(product, date) : null;
     const promoPct = promo ? Number(promo.discount_pct) : 0;
     const clientPct = contact ? Number(contact.discount_pct) || 0 : 0;
