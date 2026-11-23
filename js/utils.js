@@ -1,3 +1,15 @@
+// % logístico sobre el FOB: se le suma al FOB del producto para obtener el FOB unitario que usa el
+// contenedor. Por producto (campo logistic_pct de Productos); vacío = 6 %, el valor por defecto.
+export const DEFAULT_LOGISTIC_PCT = 6;
+export const logisticPct = (p) => {
+  const v = p ? p.logistic_pct : undefined;
+  return v === undefined || v === null || String(v).trim() === '' ? DEFAULT_LOGISTIC_PCT : Math.max(0, Number(v) || 0);
+};
+const r4 = (n) => Math.round((Number(n) || 0) * 10000) / 10000;
+export const fobWithLogistics = (p) => r4((Number(p && p.fob_unit) || 0) * (1 + logisticPct(p) / 100));
+// FOB del producto a partir del FOB de un ítem de contenedor (que ya trae el % logístico).
+export const fobBaseFromItem = (itemFob, p) => r4((Number(itemFob) || 0) / (1 + logisticPct(p) / 100));
+
 export function fmtNum(val) {
   const n = Number(val) || 0;
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

@@ -8,6 +8,7 @@ import { renderPriceListPdf } from '../pricelist-pdf.js';
 import { exportPriceListsExcel } from '../catalog-xlsx.js';
 import { fmtNum, esc } from '../utils.js';
 import { latestEstimates } from '../catalog-cost.js';
+import { syncOpenContainersFob } from '../logistics.js';
 import AccountingTabs from '../components/accounting-tabs.js';
 import AccountingShell, { card, input } from '../components/accounting-shell.js';
 
@@ -22,6 +23,7 @@ const Catalog = {
     const destroy = new AbortController();
     const { signal } = destroy;
     const products = Store.getAll('products');
+    syncOpenContainersFob(); // los contenedores abiertos toman el FOB con % logístico antes de calcular costos
     const est = latestEstimates();
     let query = '';
     let category = '';
