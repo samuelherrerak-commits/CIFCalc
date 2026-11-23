@@ -8,6 +8,7 @@ import { openBusinessProfileModal } from '../components/business-profile.js';
 import { salesLines } from '../analytics.js';
 import { computeTax, ivaTipoOf, taxSummaryRows } from '../fiscal.js';
 import { createOrder } from '../orders.js';
+import { latestEstimates, tierPriceOf } from '../catalog-cost.js';
 
 // IVA de un presupuesto con la configuración fiscal actual (informativo: el
 // impuesto se registra al convertirlo en venta).
@@ -308,6 +309,13 @@ function renderBuilder(app, editId, opts = {}) {
   const source = editing
     ? Store.getQuoteItems(editing)
     : (opts.cliente ? [] : draftCart);
+  // Nivel de precio: el del cliente elegido (si tiene) o, si no, el más alto del catálogo.
+  const tiers = Store.getPriceTiers();
+  const est = latestEstimates();
+  const defaultTier = (c) => (c && tiers.some(t => t.name === c.price_tier) ? c.price_tier : (tiers.length ? tiers[tiers.length - 1].name : ''));
+  const initialTier = editing && editing.price_tier && tiers.some(t => t.name === editing.price_tier)
+    ? editing.price_tier : defaultTier(contacts.find(c => c.id === presetContact));
+  const currentTier = () => (document.getElementById('f-tier') || {}).value || initialTier;
   const currentContact = () => contacts.find(c => c.id === (document.getElementById('f-contact') || {}).value);
   // ⭐ Sugeridos: lo que este cliente ya ha comprado.
   const suggested = new Set();
@@ -350,7 +358,8 @@ function renderBuilder(app, editId, opts = {}) {
     suggestedIds: suggested,
     // En bolívares, los precios de lista se multiplican por el factor USDT/BCV.
     priceFor: (p) => {
-      const pr = Store.priceFor(p, currentContact());
+      // Precio de lista = el del nivel elegido (costo del catálogo); si el producto no tiene costo, el precio fijo del producto.
+      const pr = Store.priceFor(p, currentContact(), undefined, tierPriceOf(p, currentTier(), tiers, est));
       if (fxApplied === 1) return pr;
       const k = fxApplied;
       return { ...pr, listPrice: Math.round(pr.listPrice * k * 100) / 100, unitPrice: Math.round(pr.unitPrice * k * 100) / 100 };
@@ -369,6 +378,11 @@ function renderBuilder(app, editId, opts = {}) {
             <option value="no" ${editing && !isQuoteFiscal(editing) ? 'selected' : ''}>Sin factura</option>
           </select>
         </div>
+      </div>
+      <div>
+        <label class="${label}">Nivel de precio</label>
+        <select id="f-tier" class="${input}">${tiers.map(t => `<option value="${esc(t.name)}" ${t.name === initialTier ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>
+        <p class="text-[11px] text-slate-400 mt-1">Los precios salen del catálogo según a quién le vendes. Si el cliente tiene un nivel definido, se elige solo.</p>
       </div>
       <div>
         <label class="${label}">Forma de pago</label>
@@ -443,6 +457,7 @@ function renderBuilder(app, editId, opts = {}) {
       concepto, items: JSON.stringify(items), total: Math.round(pos.total() * 100) / 100, kind,
       fiscal: fiscalNow(),
       payment_currency: payMode,
+      price_tier: currentTier(),
       fx_bcv: payMode === 'bs' && fxUsed ? fxUsed.bcv : 0,
       fx_usdt: payMode === 'bs' && fxUsed ? fxUsed.usdt : 0,
       fx_factor: payMode === 'bs' && fxUsed ? fxUsed.factor : 0
@@ -466,10 +481,14 @@ function renderBuilder(app, editId, opts = {}) {
       contacts = Store.getAll('contacts');
       e.target.innerHTML = contactOptions(contacts, 'cliente', c ? c.id : '');
     }
+    // Si el cliente tiene nivel de precio definido, el selector se acomoda solo.
+    const cl = currentContact();
+    if (cl && tiers.some(t => t.name === cl.price_tier)) document.getElementById('f-tier').value = cl.price_tier;
     refreshSuggested();
     pos.refresh();
     pos.repriceAll();
   }, { signal });
+  document.getElementById('f-tier').addEventListener('change', () => { pos.repriceAll(); }, { signal });
   document.getElementById('f-fiscal').addEventListener('change', () => pos.refresh(), { signal });
   // Botón de forma de pago.
   function renderFx() {

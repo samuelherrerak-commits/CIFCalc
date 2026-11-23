@@ -168,7 +168,9 @@ const SCHEMAS = {
     // descuento especial del cliente (%) y próximo seguimiento.
     'stage', 'tags', 'notes', 'discount_pct', 'next_followup_date',
     // % de IVA que nos retiene el cliente (0, 75 o 100) si es contribuyente especial.
-    'iva_retention_pct'
+    'iva_retention_pct',
+    // Nivel de precio de venta del cliente (nombre de un nivel del Catálogo: Distribuidor, Retail…).
+    'price_tier'
   ],
   // Bitácora del CRM: actividades (llamada, visita, WhatsApp, correo, nota) y
   // tareas de seguimiento con fecha (kind = 'tarea', done = true/false).
@@ -195,7 +197,9 @@ const SCHEMAS = {
     'fiscal',
     // Forma de pago: 'divisas' (USD efectivo / USDT) o 'bs' (bolívares a tasa
     // BCV). En 'bs' los precios van en $ a tasa BCV = precio × (USDT ÷ BCV).
-    'payment_currency', 'fx_bcv', 'fx_usdt', 'fx_factor'
+    'payment_currency', 'fx_bcv', 'fx_usdt', 'fx_factor',
+    // Nivel de precio con el que se armó el presupuesto (Distribuidor, Retail, …).
+    'price_tier'
   ],
   // Mapeo contable del cierre de contenedores (una sola fila, id = 'default').
   // Cada columna guarda el id de la cuenta a la que va ese concepto; si una
