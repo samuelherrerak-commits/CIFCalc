@@ -30,6 +30,7 @@ const Help = {
         <summary class="px-4 py-3 cursor-pointer text-sm font-semibold text-slate-800">${esc(t.q)}</summary>
         <div class="px-4 pb-4 space-y-2">
           <ol class="list-decimal pl-5 space-y-1.5 text-sm text-slate-700">${t.pasos.map(p => `<li>${esc(p)}</li>`).join('')}</ol>
+          ${(t.pendiente || []).length ? `<div class="rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600"><p class="font-semibold mb-1">Sin verificar todavía</p>${t.pendiente.map(n => `<p>• ${esc(n)}</p>`).join('')}</div>` : ''}
           ${(t.notas || []).length ? `<div class="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 space-y-1">${t.notas.map(n => `<p>• ${esc(n)}</p>`).join('')}</div>` : ''}
         </div>
       </details>`;

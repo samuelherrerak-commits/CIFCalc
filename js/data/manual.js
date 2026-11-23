@@ -11,7 +11,10 @@
 //   conecta?: [..],   // con qué otras pantallas se relaciona
 //   buscar?: 'sinónimos para el buscador'
 // }
-export const MANUAL = [
+import { RESUMEN_Y_ORDENES } from './manual-ingresos-1.js';
+import { INGRESOS_2 } from './manual-ingresos-2.js';
+
+export const MANUAL_BASE = [
   {
     id: 'presupuestos', section: 'Ingresos', title: 'Presupuestos',
     path: '#/contabilidad/presupuestos', menu: 'Menú → Ingresos → Presupuestos',
@@ -103,4 +106,12 @@ export const MANUAL = [
       'IVA → Tasas BCV: tasas para cotizar en bolívares.'
     ]
   }
+];
+
+// Orden = el del menú.
+export const MANUAL = [
+  ...RESUMEN_Y_ORDENES.filter(e => e.id === 'resumen'),
+  ...MANUAL_BASE.filter(e => e.id === 'presupuestos'),
+  ...RESUMEN_Y_ORDENES.filter(e => e.id !== 'resumen'),
+  ...INGRESOS_2
 ];
