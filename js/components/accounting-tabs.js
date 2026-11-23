@@ -130,7 +130,7 @@ function searchItems(q) {
     const hay = norm(it.text || it.label), lab = norm(it.label);
     if (!words.every(w => hay.includes(w))) continue;
     // más arriba: coincide al inicio del nombre > en el nombre > en alias/sección
-    const score = words.reduce((s, w) => s + (lab.startsWith(w) ? 3 : lab.includes(w) ? 2 : 1), 0) - (it.kind === 'modulo' ? 0 : 0.5);
+    const score = words.reduce((s, w) => s + (lab.startsWith(w) ? 3 : lab.includes(w) ? 2 : 1), 0) + (it.kind === 'modulo' ? 10 : 0);
     scored.push({ it, score });
   }
   return scored.sort((a, b) => b.score - a.score).slice(0, 12).map(x => x.it);
