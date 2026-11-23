@@ -3,6 +3,7 @@ import { ensureTodayRates } from '../rates.js';
 import { icon } from './icons.js';
 import { POS_ENABLED, PROMOTIONS_ENABLED, CONTAINER_PAYMENTS_ENABLED } from '../features.js';
 import Auth from '../auth.js';
+import { MANUAL } from '../data/manual.js';
 
 // Navegación del módulo de Contabilidad, organizada por flujo de trabajo
 // como los ERP modernos (Odoo, Fina): Ventas (todo lo del cliente, hasta lo
@@ -111,8 +112,11 @@ const ALIASES = {
   users: 'usuario usuarios permisos acceso'
 };
 const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-// Fuentes extra de búsqueda (p. ej. los temas del manual): [{ label, section, path, text }].
-const extraSources = [];
+// Fuentes extra de búsqueda: [{ label, section, path, text }]. El manual aporta una entrada por tarea.
+const extraSources = [() => MANUAL.flatMap(e => e.tareas.map(t => ({
+  label: t.q, section: `Manual · ${e.title}`, path: `#/contabilidad/ayuda/${e.id}`, icon: 'book', kind: 'manual',
+  text: `${t.q} ${e.title} ${e.buscar || ""}`
+})))];
 export const registerSearchSource = (fn) => { extraSources.push(fn); };
 function searchItems(q) {
   const words = norm(q).split(/\s+/).filter(Boolean);
@@ -227,6 +231,7 @@ const AccountingTabs = {
         <div class="shrink-0 border-t border-white/10 px-2 xl:px-3 py-3 space-y-2">
           <div class="hidden xl:block">${ratesCard(true)}</div>
           <a href="#/contabilidad/fiscal/tasas" title="Tasas del día" class="xl:hidden flex justify-center text-slate-400 hover:text-white">${icon('exchange')}</a>
+          <a href="#/contabilidad/ayuda" title="Manual de uso" class="flex items-center justify-center xl:justify-start gap-2 px-2.5 py-1.5 rounded-lg text-[12px] ${active === 'help' ? 'bg-blue-500/20 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'} transition">${icon('book', 'w-4 h-4')}<span class="hidden xl:inline">Manual de uso</span></a>
           ${pinBtn(pinned)}
           ${Store.isSandbox() ? '' : `
           <button data-sbx="enter" title="Modo prueba: trabaja con una copia sin tocar la base de datos" class="w-full flex items-center justify-center xl:justify-start gap-2 px-2.5 py-1.5 rounded-lg text-[12px] text-slate-400 hover:text-white hover:bg-white/5 transition">
@@ -277,6 +282,7 @@ const AccountingTabs = {
               </div>
             </div>`).join('')}
           ${ratesCard()}
+          <a href="#/contabilidad/ayuda" class="flex items-center justify-center gap-2 py-2 rounded-xl border border-slate-200 text-xs text-slate-600">${icon('book', 'w-4 h-4')} Manual de uso</a>
           ${Store.isSandbox() ? '' : `<button data-sbx="enter" class="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-slate-200 text-xs text-slate-500">${icon('flask', 'w-4 h-4')} Modo prueba</button>`}
           </div>
         </div>

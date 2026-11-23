@@ -27,6 +27,7 @@ import Fiscal from './pages/fiscal.js';
 import Orders from './pages/orders.js';
 import { POS_ENABLED, PROMOTIONS_ENABLED, CONTAINER_PAYMENTS_ENABLED } from './features.js';
 import Users from './pages/users.js';
+import Help from './pages/help.js';
 import Auth from './auth.js';
 import { ACCOUNTING_SECTIONS } from './components/accounting-tabs.js';
 
@@ -79,6 +80,7 @@ const routes = [
   { pattern: /^#\/contabilidad\/reportes\/([^/]+)$/, handler: 'reports', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/diario\/?$/, handler: 'journal', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/mayor\/?(?:\?.*)?$/, handler: 'ledger', key: 'contabilidad' },
+  { pattern: /^#\/contabilidad\/ayuda(?:\/([^/]+))?\/?$/, handler: 'help', key: 'contabilidad' },
   { pattern: /^#\/contabilidad\/usuarios\/?$/, handler: 'users', key: 'contabilidad' }
 ];
 
@@ -108,7 +110,8 @@ const pages = {
   financials: FinancialStatements,
   fiscal: Fiscal,
   orders: Orders,
-  users: Users
+  users: Users,
+  help: Help
 };
 
 let currentCleanup = null;
