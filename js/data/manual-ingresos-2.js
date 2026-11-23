@@ -161,7 +161,7 @@ export const INGRESOS_2 = [
     ],
     tareas: [
       {
-        q: 'Cómo registrar un ingreso que no es una venta',
+        q: 'Cómo registrar un ingreso que no es una venta (por ejemplo, un préstamo recibido)',
         pasos: [
           'Entra a Menú → Ingresos → Otros ingresos.',
           'Completa la fecha, la "Cuenta de Ingreso" y el "Monto Total".',
