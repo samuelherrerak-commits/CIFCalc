@@ -1,6 +1,6 @@
 import Store from '../store.js';
 import Auth from '../auth.js';
-import { replaceCatalogWithBriggs, applyBriggsCodes, NEW_NAME } from '../oc-briggs.js';
+import { replaceCatalogWithBriggs, applyBriggsCodes, syncBriggsPhotos, NEW_NAME } from '../oc-briggs.js';
 import { fmtNum, fmtInt, esc, num, ensureXlsx, ensureJSZip, logisticPct, DEFAULT_LOGISTIC_PCT } from '../utils.js';
 import { syncOpenContainersFob } from '../logistics.js';
 import { uploadFoto, upsert as sheetsUpsert } from '../sheets.js';
@@ -11,6 +11,7 @@ const Products = {
     const destroy = new AbortController();
     const { signal } = destroy;
 
+    syncBriggsPhotos(); // fotos finales de la plantilla (cromo, Steel Gray, Rose Gold)
     let products = Store.getAll('products');
     let suppliers = Store.getAll('suppliers');
     let query = '';
@@ -1280,7 +1281,7 @@ const Products = {
     if (applyBtn) applyBtn.addEventListener('click', () => {
       const res = applyBriggsCodes();
       const list = res.recoded.slice(0, 15).map(r => `• ${r.sku}: ${r.from} → ${r.to}`).join('\n') + (res.recoded.length > 15 ? `\n… y ${res.recoded.length - 15} más` : '');
-      alert(`Códigos Briggs actualizados.\n\n• ${res.recoded.length} productos cambiaron de código${list ? ':\n' + list : ''}\n• ${res.created} productos nuevos creados\n• ${res.items} ítems de contenedor con el código nuevo`);
+      alert(`Códigos Briggs actualizados.\n\n• ${res.recoded.length} productos cambiaron de código${list ? ':\n' + list : ''}\n• ${res.created} productos nuevos creados\n• ${res.items} ítems de contenedor con el código nuevo\n• ${res.photos} ítems de contenedor con la foto actual`);
       products = Store.getAll('products');
       renderCount();
       renderTable();

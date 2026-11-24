@@ -1,4 +1,5 @@
 import Store from '../store.js';
+import { syncBriggsPhotos } from '../oc-briggs.js';
 import { CONTAINER_JOURNAL_ENABLED } from '../features.js';
 import { fmtNum, fmtInt, esc, num, computeContainer, ensureXlsx, logisticPct, fullContainerScenario } from '../utils.js';
 
@@ -24,6 +25,7 @@ const Calculator = {
       return;
     }
 
+    syncBriggsPhotos(); // fotos finales de la plantilla en productos e ítems
     let items = Store.getItemsByContainer(containerId);
 
     // Sincronización viva con el catálogo: cada vez que se abre el contenedor, los
@@ -45,6 +47,7 @@ const Calculator = {
           ...item,
           sku_briggs: text(product.sku_briggs, item.sku_briggs),
           name: text(product.name, item.name),
+          foto_url: text(product.foto_url, item.foto_url),
           sku: text(product.sku, item.sku),
           origin_country: text(product.origin_country, item.origin_country),
           supplier_id: text(product.supplier_id, item.supplier_id),
