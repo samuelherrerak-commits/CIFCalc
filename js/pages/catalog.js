@@ -1,7 +1,5 @@
-import { withBriggsPhotos } from '../oc-briggs.js';
-import { tintPhoto, toDataUrl } from '../photo-tint.js';
-// Fotos de la plantilla de productos cromados que se fotografiaron en otro color (dorado/cobre).
-const FOTOS_A_CROMAR = new Set(['BRG-BL-CAL-01-CR.png', 'BRG-BL-CAL-02-CR.png', 'BRG-BL-CAL-03-CR.png', 'BRG-BL-EQU-01-CR.png', 'BRG-BL-EQU-02-CR.png']);
+import { withBriggsPhotos, syncBriggsPhotos } from '../oc-briggs.js';
+import { toDataUrl } from '../photo-tint.js';
 import Store from '../store.js';
 import { priceFor } from '../pricing.js';
 import { renderPriceListPdf } from '../pricelist-pdf.js';
@@ -22,8 +20,9 @@ const Catalog = {
   async render(app) {
     const destroy = new AbortController();
     const { signal } = destroy;
+    syncBriggsPhotos(); // fotos finales de la plantilla en los productos
+    syncOpenContainersFob(); // los contenedores abiertos toman el FOB y el % logístico del producto antes de calcular costos
     const products = Store.getAll('products');
-    syncOpenContainersFob(); // los contenedores abiertos toman el FOB con % logístico antes de calcular costos
     const est = latestEstimates();
     let query = '';
     let category = '';
@@ -194,21 +193,8 @@ const Catalog = {
         dlg.querySelector('#pdf-hint').textContent = HINTS[r.value];
         dlg.querySelector('#pdf-tiers').style.display = r.value === 'all' ? 'none' : '';
       }));
-      // Fotos completas; las que se toman de otro acabado (cromado) se recolorean a Steel Gray / Rose Gold.
-      const photosFor = async (list, tint = true) => {
-        const withPh = withBriggsPhotos(list);
-        // Fotos cuyo producto es cromado pero la foto original está en otro color: se "cromean".
-        const toChrome = new Map();
-        for (const p of withPh) {
-          const f = String(p.foto_url || '').split('/').pop();
-          if (FOTOS_A_CROMAR.has(f) && !toChrome.has(p.foto_url)) toChrome.set(p.foto_url, tintPhoto(p.foto_url, 'cromado'));
-        }
-        await Promise.all(withPh.map(async p => {
-          if (toChrome.has(p.foto_url)) p.foto_url = await toChrome.get(p.foto_url);
-        }));
-        if (tint) await Promise.all(withPh.filter(p => p.foto_prestada).map(async p => { p.foto_url = await tintPhoto(p.foto_url, p.color); }));
-        return withPh;
-      };
+      // Las fotos de cada producto ya son las finales (cromo, Steel Gray y Rose Gold); solo se completan las que falten.
+      const photosFor = async (list) => withBriggsPhotos(list);
       dlg.querySelector('#pdf-ok').onclick = async () => {
         const i = Number(dlg.querySelector('input[name="pdf-tier"]:checked').value);
         const fmt = dlg.querySelector('input[name="pdf-fmt"]:checked').value;

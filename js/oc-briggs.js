@@ -1,7 +1,7 @@
 import Store from './store.js';
 import { logisticPct, DEFAULT_LOGISTIC_PCT } from './utils.js';
 import { OC_BRIGGS_40FT } from './data/oc-briggs-40ft.js';
-import { BRIGGS_PLANTILLA, BRIGGS_PHOTO_BASE } from './data/briggs-plantilla.js';
+import { BRIGGS_PLANTILLA, BRIGGS_PHOTO_BASE, briggsPhotoUrl } from './data/briggs-plantilla.js';
 
 // Botón "Orden de compra Briggs" del Dashboard. Crea UN CONTENEDOR NUEVO (no toca el de la
 // orden anterior) y deja el contenedor de esa orden
@@ -42,7 +42,7 @@ export function ensureBriggsProducts() {
   const fix = [];
   const recoded = []; // productos cuyo código BRG cambió
   for (const [sup, sku, name, hs, code, color, category, collection, fob, , upb, cbm, kg, foto, forma] of T) {
-    const fotoUrl = foto ? BRIGGS_PHOTO_BASE + foto : '';
+    const fotoUrl = briggsPhotoUrl(foto);
     const ex = bySku.get(cleanSku(sku));
     if (!ex) {
       toCreate.push({
@@ -127,7 +127,7 @@ export async function openOrdenCompraBriggs() {
       used.add(it.id);
       updates.push({ id: it.id, ...fields, name: it.name || name });
     } else {
-      news.push({ container_id: container.id, name, ...fields, foto_url: p.foto_url || (foto ? BRIGGS_PHOTO_BASE + foto : ''), foto_file_id: '' });
+      news.push({ container_id: container.id, name, ...fields, foto_url: p.foto_url || briggsPhotoUrl(foto), foto_file_id: '' });
     }
   }
   Store.updateMany('items', updates);
@@ -183,16 +183,42 @@ export function applyBriggsCodes() {
     .filter(i => i.product_id && byId.has(i.product_id) && String(i.sku_briggs || '') !== String(byId.get(i.product_id).sku_briggs || ''))
     .map(i => ({ id: i.id, sku_briggs: byId.get(i.product_id).sku_briggs }));
   Store.updateMany('items', itemFix);
-  return { created: created.length, recoded, items: itemFix.length };
+  // Fotos: los ítems de los contenedores usan la foto actual de su producto.
+  const photoFix = Store.getAll('items')
+    .filter(i => i.product_id && byId.has(i.product_id) && byId.get(i.product_id).foto_url && i.foto_url !== byId.get(i.product_id).foto_url)
+    .map(i => ({ id: i.id, foto_url: byId.get(i.product_id).foto_url }));
+  Store.updateMany('items', photoFix);
+  return { created: created.length, recoded, items: itemFix.length, photos: photoFix.length };
 }
 
 // Devuelve los productos con la foto resuelta para catálogo/listas: la propia; si no tiene, la de la plantilla
 // (por código de origen); si tampoco, la de otro acabado del mismo modelo. No modifica el Store.
 export function withBriggsPhotos(products) {
-  const tplFoto = new Map(BRIGGS_PLANTILLA.filter(r => r[13]).map(r => [cleanSku(r[1]), BRIGGS_PHOTO_BASE + r[13]]));
+  const tplFoto = new Map(BRIGGS_PLANTILLA.filter(r => r[13]).map(r => [cleanSku(r[1]), briggsPhotoUrl(r[13])]));
   const base = (c) => String(c || '').replace(/-(CR|SG|RG|NG|GL|BN|BB|GG)$/i, '').replace(/-$/, '');
   const out = products.map(p => (p.foto_url ? p : { ...p, foto_url: tplFoto.get(cleanSku(p.sku)) || '' }));
   const byModel = new Map();
   for (const p of out) if (p.foto_url && p.sku_briggs && !byModel.has(base(p.sku_briggs))) byModel.set(base(p.sku_briggs), p.foto_url);
   return out.map(p => (p.foto_url || !p.sku_briggs ? p : { ...p, foto_url: byModel.get(base(p.sku_briggs)) || '', foto_prestada: !!byModel.get(base(p.sku_briggs)) }));
+}
+
+// Pone en los productos de la plantilla su foto final (con los filtros de cromo, Steel Gray y Rose Gold ya
+// aplicados, ver img/briggs-catalogo/) y la copia a los ítems de contenedor. Solo cambia fotos vacías o de
+// la carpeta de la app: una foto subida a Drive no se pisa. Se llama al abrir Productos, Catálogo y
+// Contenedor, así las fotos nuevas se ven sin hacer nada; si ya están al día no escribe nada.
+export function syncBriggsPhotos() {
+  const byOrigin = new Map(BRIGGS_PLANTILLA.filter(r => r[13]).map(r => [cleanSku(r[1]), briggsPhotoUrl(r[13])]));
+  const ours = (u) => !u || String(u).startsWith(BRIGGS_PHOTO_BASE);
+  const pFix = [];
+  for (const p of Store.getAll('products')) {
+    const url = byOrigin.get(cleanSku(p.sku));
+    if (url && p.foto_url !== url && ours(p.foto_url)) pFix.push({ id: p.id, foto_url: url });
+  }
+  if (pFix.length) Store.updateMany('products', pFix);
+  const byId = new Map(Store.getAll('products').map(p => [p.id, p]));
+  const iFix = Store.getAll('items')
+    .filter(i => i.product_id && byId.has(i.product_id) && byId.get(i.product_id).foto_url && i.foto_url !== byId.get(i.product_id).foto_url && ours(i.foto_url))
+    .map(i => ({ id: i.id, foto_url: byId.get(i.product_id).foto_url }));
+  if (iFix.length) Store.updateMany('items', iFix);
+  return { products: pFix.length, items: iFix.length };
 }
