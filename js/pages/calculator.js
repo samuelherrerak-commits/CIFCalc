@@ -1,6 +1,6 @@
 import Store from '../store.js';
 import { CONTAINER_JOURNAL_ENABLED } from '../features.js';
-import { fmtNum, fmtInt, esc, num, computeContainer, ensureXlsx, fobWithLogistics, fobBaseFromItem, logisticPct, fullContainerScenario } from '../utils.js';
+import { fmtNum, fmtInt, esc, num, computeContainer, ensureXlsx, logisticPct, fullContainerScenario } from '../utils.js';
 
 const Calculator = {
   async render(app, params) {
@@ -51,8 +51,7 @@ const Calculator = {
           units_per_box: numv(product.units_per_box > 1 ? product.units_per_box : 0, Number(item.units_per_box) || 1),
           box_volume: numv(product.box_volume, Number(item.box_volume) || 0),
           weight_kg: numv(product.weight_kg, Number(item.weight_kg) || 0),
-          // El FOB del contenedor ya trae el % logístico del producto (por defecto 6 %).
-          fob_unit: numv(fobWithLogistics(product), Number(item.fob_unit) || 0),
+          fob_unit: numv(product.fob_unit, Number(item.fob_unit) || 0),
           logistic_pct: logisticPct(product),
           hs_code: text(product.hs_code, item.hs_code || ''),
           tariff_rate: numv(product.tariff_rate, Number(item.tariff_rate) || 0)
@@ -251,7 +250,7 @@ const Calculator = {
           <td class="p-2 bg-blue-50/50 font-extrabold text-blue-900 text-xs">
             ${Number(item.box_volume) > 0 ? fmtInt((Number(container.container_capacity) || 0) / Number(item.box_volume)) : 0}
           </td>
-          <td class="p-2"><input data-field="fob_unit" data-idx="${index}" type="number" step="0.01" value="${item.fob_unit}" class="w-20 p-1 border rounded bg-white text-xs">${(() => { const pr = item.product_id ? Store.getById('products', item.product_id) : null; return pr && Number(pr.fob_unit) > 0 ? `<div class="text-[10px] text-slate-400 mt-0.5 whitespace-nowrap" title="FOB del producto + % logístico">FOB ${fmtNum(pr.fob_unit)} + ${logisticPct(pr)}%</div>` : ''; })()}</td>
+          <td class="p-2"><input data-field="fob_unit" data-idx="${index}" type="number" step="0.01" value="${item.fob_unit}" class="w-20 p-1 border rounded bg-white text-xs">${(() => { const pr = item.product_id ? Store.getById('products', item.product_id) : null; return pr && Number(pr.fob_unit) > 0 ? `<div class="text-[10px] text-slate-400 mt-0.5 whitespace-nowrap" title="El % logístico se suma en Otros gastos; no afecta seguro ni arancel">+ ${logisticPct(pr)}% logíst. en Otros gastos</div>` : ''; })()}</td>
           <td class="p-2"><input data-field="hs_code" data-idx="${index}" value="${esc(item.hs_code)}" class="w-24 p-1 border rounded bg-white text-xs"></td>
           <td class="p-2"><input data-field="tariff_rate" data-idx="${index}" type="number" step="0.1" value="${item.tariff_rate}" class="w-16 p-1 border rounded bg-white text-xs"></td>
           <td class="p-2"><input data-field="gain_margin" data-idx="${index}" type="number" step="0.1" value="${item.gain_margin}" class="w-16 p-1 border rounded bg-white text-xs"></td>
@@ -319,11 +318,10 @@ const Calculator = {
         ...it, product_id: product.id, sku_briggs: product.sku_briggs || it.sku_briggs,
         name: product.name || it.name, sku: product.sku || it.sku,
         supplier_id: product.supplier_id || it.supplier_id, origin_country: product.origin_country || it.origin_country,
-        logistic_pct: logisticPct(product),
-        fob_unit: Number(product.fob_unit) > 0 ? fobWithLogistics(product) : it.fob_unit
+        logistic_pct: logisticPct(product)
       };
       const fill = {};
-      if (!(Number(product.fob_unit) > 0) && Number(it.fob_unit) > 0) fill.fob_unit = fobBaseFromItem(it.fob_unit, product);
+      if (!(Number(product.fob_unit) > 0) && Number(it.fob_unit) > 0) fill.fob_unit = Number(it.fob_unit);
       if (!(Number(product.units_per_box) > 1) && Number(it.units_per_box) > 1) fill.units_per_box = Number(it.units_per_box);
       if (!(Number(product.box_volume) > 0) && Number(it.box_volume) > 0) fill.box_volume = Number(it.box_volume);
       if (!(Number(product.weight_kg) > 0) && Number(it.weight_kg) > 0) fill.weight_kg = Number(it.weight_kg);
@@ -424,7 +422,7 @@ const Calculator = {
           pickerProduct = p;
           document.getElementById('pk-confirm-name').textContent = `${p.sku_briggs || '—'} — ${p.name || ''}`;
           document.getElementById('pk-qty').value = '';
-          document.getElementById('pk-fob').value = fobWithLogistics(p);
+          document.getElementById('pk-fob').value = p.fob_unit != null ? p.fob_unit : 0;
           document.getElementById('pk-hs').value = p.hs_code || '';
           document.getElementById('pk-tariff').value = p.tariff_rate != null ? p.tariff_rate : 0;
           document.getElementById('pk-margin').value = '';
@@ -741,7 +739,7 @@ const Calculator = {
                 <input id="pk-qty" type="number" step="1" min="0" class="w-full p-1.5 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
               </div>
               <div>
-                <label class="block text-xs font-semibold text-slate-600 mb-1">FOB Unit ($) <span class="font-normal text-slate-400">con % logístico</span></label>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">FOB Unit ($)</label>
                 <input id="pk-fob" type="number" step="0.01" class="w-full p-1.5 border rounded text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none">
               </div>
               <div>
