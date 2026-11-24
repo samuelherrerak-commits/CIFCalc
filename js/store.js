@@ -470,7 +470,10 @@ async function mapWithConcurrency(list, limit, fn) {
 
 function cloudUpsert(table, record) {
   if (SANDBOX) return Promise.resolve();
-  const records = normalizeEntityRows(table, Array.isArray(record) ? record : [record]);
+  let records = normalizeEntityRows(table, Array.isArray(record) ? record : [record]);
+  // Un producto sin código BRG es basura (ver isEmptyProduct): subirlo vaciaría la fila real en la hoja.
+  if (table === 'products') records = records.filter(r => !isEmptyProduct(r));
+  if (!records.length) return Promise.resolve();
   const sheetsCapable = SHEETS_URL && SHEET_TABLES.includes(table);
 
   // Tablas sin hoja en Sheets: solo Supabase.
@@ -747,8 +750,10 @@ async function syncWithCloudFast() {
         ids = ids.filter(id => !t.rows.some(a => a.id === id && isLegacyAccount(a)));
       }
       if (entity === 'products') {
+        // Filas sin código BRG: se ignoran aquí, pero NO se borran de la hoja (si una escritura mala las dejó
+        // vacías, la hoja y su historial todavía permiten recuperarlas; borrarlas las perdía para siempre).
         const empty = rows.filter(isEmptyProduct);
-        if (empty.length) mapWithConcurrency(empty, 2, p => sheetsDelete('products', p.id));
+        if (empty.length) log(`Sync: ${empty.length} fila(s) de products sin código BRG se ignoran (no se borran de la hoja).`);
         rows = rows.filter(p => !isEmptyProduct(p));
         ids = ids.filter(id => !empty.some(p => p.id === id));
       }
@@ -800,9 +805,7 @@ async function syncWithCloudLegacy() {
       remoteAll.accounts = remoteAll.accounts.filter(a => !isLegacyAccount(a));
     }
     if (remoteAll.products) {
-      const empty = remoteAll.products.filter(isEmptyProduct);
-      if (empty.length) mapWithConcurrency(empty, 2, p => sheetsDelete('products', p.id));
-      remoteAll.products = remoteAll.products.filter(p => !isEmptyProduct(p));
+      remoteAll.products = remoteAll.products.filter(p => !isEmptyProduct(p)); // se ignoran, no se borran de la hoja
     }
 
     const hasRemoteData = entities.some(e => remoteAll[e].length > 0);
@@ -1153,9 +1156,11 @@ const Store = {
   update(entity, record) {
     let list = readAll(STORE_KEYS[entity]);
     const ts = now();
-    list = list.map(x => (x.id === record.id ? { ...x, ...record, updated_at: ts } : x));
+    let full = null;
+    list = list.map(x => { if (x.id !== record.id) return x; full = { ...x, ...record, updated_at: ts }; return full; });
     writeAll(STORE_KEYS[entity], list);
-    cloudUpsert(entity, { ...record, updated_at: ts });
+    // A la nube va la fila completa (si no existe aquí no hay nada que completar: no se sube un pedazo).
+    if (full) cloudUpsert(entity, full);
     return { ...record, updated_at: ts };
   },
 
@@ -1165,9 +1170,16 @@ const Store = {
     if (!records.length) return;
     const ts = now();
     const byId = new Map(records.map(r => [r.id, r]));
-    const list = readAll(STORE_KEYS[entity]).map(x => byId.has(x.id) ? { ...x, ...byId.get(x.id), updated_at: ts } : x);
+    const changed = [];
+    const list = readAll(STORE_KEYS[entity]).map(x => {
+      if (!byId.has(x.id)) return x;
+      const full = { ...x, ...byId.get(x.id), updated_at: ts };
+      changed.push(full);
+      return full;
+    });
     writeAll(STORE_KEYS[entity], list);
-    cloudUpsert(entity, records.map(r => ({ ...r, updated_at: ts })));
+    // A la nube van las filas completas, nunca solo los campos que cambiaron.
+    if (changed.length) cloudUpsert(entity, changed);
   },
 
   upsert(entity, record) {
