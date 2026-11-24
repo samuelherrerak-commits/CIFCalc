@@ -2,7 +2,7 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY } from './supabase-config.js';
 import { SHEETS_URL } from './sheets-config.js';
 import * as Sheets from './sheets.js';
 import { isSandbox, setSandboxFlag, storageKey } from './sandbox.js';
-import { computeContainer, fobWithLogistics, logisticPct, DEFAULT_LOGISTIC_PCT } from './utils.js';
+import { computeContainer, logisticPct, DEFAULT_LOGISTIC_PCT } from './utils.js';
 import { DEFAULT_TIERS } from './pricing.js';
 import { PROMOTIONS_ENABLED, CONTAINER_JOURNAL_ENABLED, STOCK_FROM_CONTAINERS, SUPABASE_ENABLED } from './features.js';
 import { analyzeContainer, realCostLines } from './container-costs.js';
@@ -1373,7 +1373,7 @@ const Store = {
       units_per_box: Number(product.units_per_box) || 1,
       box_volume: Number(product.box_volume) || 0,
       weight_kg: Number(product.weight_kg) || 0,
-      fob_unit: Number(overrides.fob_unit != null ? overrides.fob_unit : fobWithLogistics(product)) || 0,
+      fob_unit: Number(overrides.fob_unit != null ? overrides.fob_unit : product.fob_unit) || 0,
       logistic_pct: logisticPct(product),
       hs_code: overrides.hs_code != null ? overrides.hs_code : (product.hs_code || ''),
       tariff_rate: Number(overrides.tariff_rate != null ? overrides.tariff_rate : product.tariff_rate) || 0,

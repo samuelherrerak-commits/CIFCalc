@@ -1,14 +1,10 @@
-// % logístico sobre el FOB: se le suma al FOB del producto para obtener el FOB unitario que usa el
-// contenedor. Por producto (campo logistic_pct de Productos); vacío = 6 %, el valor por defecto.
+// % logístico sobre el FOB: un costo aparte que el contenedor suma en "Otros gastos" (no afecta seguro ni
+// arancel). Por producto (campo logistic_pct de Productos); vacío = 6 %, el valor por defecto.
 export const DEFAULT_LOGISTIC_PCT = 6;
 export const logisticPct = (p) => {
   const v = p ? p.logistic_pct : undefined;
   return v === undefined || v === null || String(v).trim() === '' ? DEFAULT_LOGISTIC_PCT : Math.max(0, Number(v) || 0);
 };
-const r4 = (n) => Math.round((Number(n) || 0) * 10000) / 10000;
-export const fobWithLogistics = (p) => r4((Number(p && p.fob_unit) || 0) * (1 + logisticPct(p) / 100));
-// FOB del producto a partir del FOB de un ítem de contenedor (que ya trae el % logístico).
-export const fobBaseFromItem = (itemFob, p) => r4((Number(itemFob) || 0) / (1 + logisticPct(p) / 100));
 
 export function fmtNum(val) {
   const n = Number(val) || 0;
@@ -103,12 +99,10 @@ export function computeContainer(container, items) {
     const factor = totalVolume > 0 ? (volTotal / totalVolume) : 0;
     const unitsPerContainer = Number(item.box_volume) > 0 ? (capacity / Number(item.box_volume)) : 0;
 
-    // El FOB unitario del ítem ya trae el % logístico (logistic_pct). Ese % NO entra en el seguro, el arancel,
-    // la tasa portuaria ni el IVA (se calculan sobre el FOB de fábrica): se suma aparte, dentro de "otros gastos".
-    const lp = Number(item.logistic_pct) || 0;
-    const fobUnitFull = Number(item.fob_unit) || 0;
-    const fobTotal = qty * (lp > 0 ? fobUnitFull / (1 + lp / 100) : fobUnitFull);
-    const logisticAmount = qty * fobUnitFull - fobTotal;
+    const fobTotal = qty * (Number(item.fob_unit) || 0);
+    // % logístico sobre el FOB (logistic_pct del producto): NO entra en el seguro, el arancel, la tasa portuaria
+    // ni el IVA; se suma aparte, dentro de "otros gastos".
+    const logisticAmount = fobTotal * ((Number(item.logistic_pct) || 0) / 100);
     const oceanFreightAssigned = oceanFreight * factor;
     const insuranceBase = insuranceOnCfr ? (fobTotal + oceanFreightAssigned) * 1.1 : fobTotal;
     const insuranceAmount = insuranceEnabled ? (insuranceBase * (insuranceRate / 100)) : 0;

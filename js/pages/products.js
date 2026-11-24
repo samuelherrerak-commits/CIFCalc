@@ -1,7 +1,7 @@
 import Store from '../store.js';
 import Auth from '../auth.js';
 import { replaceCatalogWithBriggs, applyBriggsCodes, NEW_NAME } from '../oc-briggs.js';
-import { fmtNum, fmtInt, esc, num, ensureXlsx, ensureJSZip, logisticPct, fobWithLogistics, DEFAULT_LOGISTIC_PCT } from '../utils.js';
+import { fmtNum, fmtInt, esc, num, ensureXlsx, ensureJSZip, logisticPct, DEFAULT_LOGISTIC_PCT } from '../utils.js';
 import { syncOpenContainersFob } from '../logistics.js';
 import { uploadFoto, upsert as sheetsUpsert } from '../sheets.js';
 import { codeTables, findByName, parseCode, buildCode, collectionSegment, nextCorrelative, VIAS } from '../product-codes.js';
@@ -97,7 +97,7 @@ const Products = {
       const tbody = document.getElementById('products-tbody');
       const list = filtered();
       tbody.innerHTML = list.length === 0
-        ? `<tr><td colspan="19" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
+        ? `<tr><td colspan="18" class="p-4 text-center text-slate-400">Sin productos. Crea uno con "+ Nuevo Producto".</td></tr>`
         : list.map(p => `
           <tr class="border-b border-slate-100 hover:bg-slate-50">
             <td class="p-2">${p.foto_url ? `<img src="${esc(p.foto_url)}" loading="lazy" decoding="async" class="w-8 h-8 object-cover rounded border border-slate-200" alt="">` : '<span class="text-slate-300">—</span>'}</td>
@@ -116,7 +116,6 @@ const Products = {
             <td class="p-2 text-right">${fmtNum(p.weight_kg)}</td>
             <td class="p-2 text-right">$${fmtNum(p.fob_unit)}</td>
             <td class="p-2 text-right">${logisticPct(p)}%</td>
-            <td class="p-2 text-right font-semibold">$${fmtNum(fobWithLogistics(p))}</td>
             <td class="p-2 text-right">${Number(p.tariff_rate) || 0}%</td>
             <td class="p-2 whitespace-nowrap">
               <button data-edit="${p.id}" class="text-blue-600 hover:text-blue-800 font-bold px-1" title="Editar">✎</button>
@@ -235,8 +234,8 @@ const Products = {
       const raw = document.getElementById('f-logistic').value;
       const pct = raw === '' ? DEFAULT_LOGISTIC_PCT : Math.max(0, Number(raw) || 0);
       document.getElementById('f-fob-total').textContent = fob > 0
-        ? `FOB ${fmtNum(fob)} + ${pct}% = $${fmtNum(fob * (1 + pct / 100))}: este es el FOB unitario que lleva el contenedor.`
-        : 'El FOB unitario del contenedor será el FOB más este porcentaje.';
+        ? `${pct}% de $${fmtNum(fob)} = $${fmtNum(fob * pct / 100)} por unidad. El contenedor lo suma en "Otros gastos"; no afecta seguro ni arancel.`
+        : 'El contenedor suma este porcentaje del FOB en "Otros gastos"; no afecta seguro ni arancel.';
     };
 
     const openForm = (id = null) => {
@@ -972,7 +971,6 @@ const Products = {
               <th class="p-2 text-right">Peso (kg)</th>
               <th class="p-2 text-right">FOB Unit ($)</th>
               <th class="p-2 text-right" title="% logístico sobre el FOB">% Logíst.</th>
-              <th class="p-2 text-right" title="FOB + % logístico: lo que lleva el contenedor">FOB c/ logíst. ($)</th>
               <th class="p-2 text-right">% Arancel</th>
               <th class="p-2 text-center">Acciones</th>
             </tr>
