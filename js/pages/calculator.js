@@ -183,6 +183,7 @@ const Calculator = {
             <td class="p-2">$${fmtNum(Number(container.ocean_freight) || 0)}</td>
             <td class="p-2 text-blue-800">$${fmtNum(s.insurance)}</td>
             <td class="p-2 font-extrabold text-slate-900">$${fmtNum(s.cif)}</td>
+            <td class="p-2 font-bold text-blue-900">${s.totalQty > 0 ? '$' + fmtNum(s.cif / s.totalQty) : '-'}</td>
             <td class="p-2 text-amber-800">$${fmtNum(s.tariff)}</td>
             <td class="p-2 text-teal-800">$${fmtNum(s.portFee)}</td>
             <td class="p-2 text-amber-700">$${fmtNum(Number(container.customs_broker_fee) || 0)}</td>
